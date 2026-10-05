@@ -1,0 +1,18 @@
+Albion Zone Fix — сторонний код и файлы
+=======================================
+
+zapret (winws.exe, cygwin1.dll, файлы *.bin) — из сборки
+Flowseal/zapret-discord-youtube 1.10.3 (https://github.com/Flowseal/zapret-discord-youtube),
+движок bol-van/zapret (https://github.com/bol-van/zapret). Файлы положены без изменений.
+
+WinDivert (WinDivert.dll, WinDivert64.sys) — basil00/WinDivert
+(https://github.com/basil00/WinDivert), LGPL v3 / GPL v2, без изменений.
+
+Разборщик протокола Photon (internal/photon) — из albiondata-client
+(https://github.com/ao-data/albiondata-client), MIT, Copyright (c) 2017 The Albion Data Project;
+сам он — порт Protocol18Deserializer из JPCodeCraft/AlbionDataAvalonia.
+
+Названия локаций — из ao-data/ao-bin-dumps.
+
+Albion Online — товарный знак Sandbox Interactive GmbH. Программа неофициальная,
+файлы игры и её память не трогает.
