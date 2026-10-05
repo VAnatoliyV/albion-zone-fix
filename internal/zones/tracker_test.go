@@ -1,6 +1,7 @@
 package zones
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -92,5 +93,64 @@ func TestWorstZones(t *testing.T) {
 	on := Worst(trs, true)
 	if len(on) != 1 || on[0].AvgLoad != 3 || on[0].Fails != 0 {
 		t.Fatalf("с обходом: %+v", on)
+	}
+}
+
+// Как в записи тестера 5 октября: игра шла на сервере .102 (локация не известна,
+// запись началась посреди игры), клиент 10 с стучался на новый сервер .242,
+// тот ни разу не ответил, клиент сдался.
+func TestConnectWithoutAnyReplyIsAFailure(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	old, nw := "193.169.238.102:5056", "193.169.238.242:5056"
+	tr.On(game.Ev{T: at(0), Kind: game.Incoming, Server: old})
+	tr.On(game.Ev{T: at(32.6), Kind: game.Connect, Server: nw})
+	tr.On(game.Ev{T: at(33.4), Kind: game.Connect, Server: nw}) // повтор
+	tr.On(game.Ev{T: at(34), Kind: game.Incoming, Server: old}) // старый ещё шлёт — не мешает
+	tr.On(game.Ev{T: at(43.2), Kind: game.Disconnect, Server: nw})
+	if len(done) != 1 {
+		t.Fatalf("переходов %d: %+v", len(done), done)
+	}
+	g := done[0]
+	if g.OK || g.Replied || g.Server != nw || g.LoadSec != 10.6 || !strings.Contains(g.Fail, "не ответил") {
+		t.Fatalf("переход: %+v", g)
+	}
+}
+
+func TestConnectReplyJoinIsSuccess(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	old, nw := "a:5056", "b:5056"
+	tr.On(game.Ev{T: at(0), Kind: game.Join, Server: old, Location: "0000"})
+	tr.On(game.Ev{T: at(10), Kind: game.Connect, Server: nw})
+	tr.On(game.Ev{T: at(10.3), Kind: game.Reply, Server: nw})
+	tr.On(game.Ev{T: at(12), Kind: game.Join, Server: nw, Location: "4002"})
+	tr.On(game.Ev{T: at(13), Kind: game.Incoming, Server: nw})
+	if len(done) != 1 || !done[0].OK || !done[0].Replied || done[0].ReplySec != 0.3 || done[0].LoadSec != 2 || done[0].To != "4002" {
+		t.Fatalf("переход: %+v", done)
+	}
+}
+
+func TestReplyButNoJoinIsDifferentFailure(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	tr.On(game.Ev{T: at(0), Kind: game.Incoming, Server: "a:5056"})
+	tr.On(game.Ev{T: at(1), Kind: game.Connect, Server: "b:5056"})
+	tr.On(game.Ev{T: at(1.2), Kind: game.Reply, Server: "b:5056"})
+	tr.Tick(at(40))
+	if len(done) != 1 || done[0].OK || !done[0].Replied || !strings.Contains(done[0].Fail, "ответил") || strings.Contains(done[0].Fail, "не ответил") {
+		t.Fatalf("переход: %+v", done)
+	}
+}
+
+func TestFirstConnectAtGameStartIsNotATransition(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	tr.On(game.Ev{T: at(0), Kind: game.Connect, Server: "a:5056"})
+	tr.On(game.Ev{T: at(0.2), Kind: game.Reply, Server: "a:5056"})
+	tr.On(game.Ev{T: at(1), Kind: game.Join, Server: "a:5056", Location: "0000"})
+	tr.Tick(at(100))
+	if len(done) != 0 {
+		t.Fatalf("вход в игру стал переходом: %+v", done)
 	}
 }

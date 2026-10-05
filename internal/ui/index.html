@@ -56,8 +56,8 @@ td.num,th.num{text-align:right}
 
   <div class="panel">
     <h2>Последние переходы</h2>
-    <table><thead><tr><th>Время</th><th>Откуда</th><th>Куда</th><th class="num">Загрузка, с</th><th class="num">Ожило через, с</th><th>Итог</th><th>Обход</th></tr></thead>
-    <tbody id="recent"><tr><td colspan="7" class="muted">Переходов пока нет. Перейдите в другую локацию в игре.</td></tr></tbody></table>
+    <table><thead><tr><th>Время</th><th>Откуда</th><th>Куда</th><th class="num">Загрузка, с</th><th class="num">Ожило через, с</th><th>Сервер ответил</th><th>Итог</th><th>Обход</th></tr></thead>
+    <tbody id="recent"><tr><td colspan="8" class="muted">Переходов пока нет. Перейдите в другую локацию в игре.</td></tr></tbody></table>
     <div class="note">«Загрузка» — от ухода из локации до входа в новую. «Ожило через» — сколько после входа сервер молчал, это и есть чёрный экран после загрузки.</div>
   </div>
 
@@ -70,6 +70,13 @@ td.num,th.num{text-align:right}
       <h2>С обходом</h2>
       <table><thead><tr><th>Локация</th><th class="num">Переходов</th><th class="num">Вылетов</th><th class="num">Средне, с</th><th class="num">Макс, с</th></tr></thead><tbody id="worstOn"></tbody></table>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>Проверка серверов игры</h2>
+    <div class="controls"><button id="probe">Проверить серверы</button><span class="muted" id="probeNote"></span></div>
+    <div class="note">Программа стучится на все игровые серверы Европы (live03-win-01…47) тем же пакетом подключения, что и игра, и смотрит, кто ответил. Из нормальной сети отвечает примерно половина — это нормально. Сделайте проверку с выключенным обходом и с разными стратегиями и сравните числа.</div>
+    <table style="margin-top:10px"><thead><tr><th>Время</th><th>Обход</th><th class="num">Ответили</th><th>Молчали</th></tr></thead><tbody id="probes"></tbody></table>
   </div>
 
   <div class="panel">
@@ -90,6 +97,7 @@ async function post(url, data){
 $('off').onclick = () => post('/api/bypass', {mode:'off'});
 $('apply').onclick = () => post('/api/bypass', {mode:$('strat').value});
 $('auto').onclick = () => post('/api/bypass', {mode:'auto'});
+$('probe').onclick = () => post('/api/probe', {});
 $('rec').onclick = () => post('/api/record', lastRec ? {stop:1} : {});
 function zoneRows(list){
   if(!list || !list.length) return '<tr><td colspan="5" class="muted">нет данных</td></tr>';
@@ -112,8 +120,16 @@ async function refresh(){
     const res = t.ok ? '<span class="ok">ок</span>' : `<span class="bad">${esc(t.fail||'вылет')}</span>`;
     const load = t.ok ? t.loadSec : `<span class="bad">${t.loadSec}</span>`;
     const alive = t.aliveSec < 0 ? '—' : t.aliveSec;
-    return `<tr><td>${time}</td><td>${esc(t.fromName||t.from)}</td><td>${esc(t.toName||t.to||'—')}</td><td class="num">${load}</td><td class="num">${alive}</td><td>${res}</td><td class="muted">${esc(t.strategy==='off'?'нет':t.strategy)}</td></tr>`;
-  }).join('') : '<tr><td colspan="7" class="muted">Переходов пока нет. Перейдите в другую локацию в игре.</td></tr>';
+    const srv = esc((t.server||'').replace(':5056',''));
+    const replied = t.replied ? `<span class="ok">да</span>${t.replySec>=0?` через ${t.replySec} с`:''} <span class="muted">${srv}</span>` : `<span class="bad">нет</span> <span class="muted">${srv}</span>`;
+    return `<tr><td>${time}</td><td>${esc(t.fromName||t.from||'—')}</td><td>${esc(t.toName||t.to||'—')}</td><td class="num">${load}</td><td class="num">${alive}</td><td>${replied}</td><td>${res}</td><td class="muted">${esc(t.strategy==='off'?'нет':t.strategy)}</td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="muted">Переходов пока нет. Перейдите в другую локацию в игре.</td></tr>';
+  $('probe').disabled = !!s.probing;
+  $('probeNote').textContent = s.probing ? 'проверяю, это займёт до 20 секунд…' : '';
+  $('probes').innerHTML = (s.probeRuns && s.probeRuns.length) ? s.probeRuns.map(r => {
+    const silent = (r.results||[]).filter(x=>!x.ok).map(x=>x.name.replace('win-','')).join(' ');
+    return `<tr><td>${new Date(r.t).toLocaleTimeString('ru-RU')}</td><td>${esc(r.strategy==='off'?'нет':r.strategy)}</td><td class="num">${r.ok} из ${r.total}</td><td class="muted" style="white-space:normal">${silent}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="muted">проверок ещё не было</td></tr>';
   $('worstOff').innerHTML = zoneRows(s.worstOff);
   $('worstOn').innerHTML = zoneRows(s.worstOn);
   lastRec = s.recording || '';

@@ -28,6 +28,8 @@ type Transition struct {
 	LoadSec  float64   `json:"loadSec"`
 	AliveSec float64   `json:"aliveSec"`
 	OK       bool      `json:"ok"`
+	Replied  bool      `json:"replied"`  // новый сервер ответил хоть одним пакетом
+	ReplySec float64   `json:"replySec"` // через сколько ответил (−1 — не видели)
 	Fail     string    `json:"fail,omitempty"`
 	Strategy string    `json:"strategy"`
 }
@@ -37,10 +39,16 @@ type Tracker struct {
 	strategy func() string
 	done     func(Transition)
 
-	cur     string    // где сейчас
-	start   time.Time // когда попросили смену кластера (нулевое — не ждём)
+	cur       string // код локации, где сейчас (пусто — не знаем)
+	curServer string // игровой сервер, с которым идёт игра
+
+	start   time.Time // начало перехода (нулевое — перехода нет)
 	from    string
-	waiting *Transition // вошли, ждём первого события
+	target  string // новый игровой сервер
+	replied bool
+	replyT  time.Time
+
+	waiting *Transition // вошли, ждём первого события с нового сервера
 	joinT   time.Time
 }
 
@@ -50,27 +58,82 @@ func NewTracker(name func(string) string, strategy func() string, done func(Tran
 
 func round1(x float64) float64 { return math.Round(x*10) / 10 }
 
+func (t *Tracker) inGame() bool { return t.cur != "" || t.curServer != "" }
+
+func (t *Tracker) begin(at time.Time) {
+	t.start, t.from, t.target, t.replied = at, t.cur, "", false
+}
+
 func (t *Tracker) On(e game.Ev) {
 	switch e.Kind {
-	case game.ChangeCluster:
-		t.flushWaiting(-1)
-		if t.start.IsZero() {
-			t.start, t.from = e.T, t.cur
-		}
-	case game.Join:
-		t.flushWaiting(-1)
-		if !t.start.IsZero() {
-			tr := Transition{T: e.T, From: t.from, To: e.Location, FromName: t.name(t.from), ToName: t.name(e.Location),
-				Server: e.Server, LoadSec: round1(e.T.Sub(t.start).Seconds()), AliveSec: -1, OK: true, Strategy: t.strategy()}
-			t.waiting, t.joinT = &tr, e.T
-			t.start = time.Time{}
-		}
-		t.cur = e.Location
 	case game.Incoming:
 		if t.waiting != nil && e.Server == t.waiting.Server && e.T.After(t.joinT) {
 			t.flushWaiting(round1(e.T.Sub(t.joinT).Seconds()))
 		}
+		if t.start.IsZero() {
+			t.curServer = e.Server // игра идёт здесь, даже если вход в локацию мы не застали
+		}
+	case game.ChangeCluster:
+		t.flushWaiting(-1)
+		if t.start.IsZero() && t.inGame() {
+			t.begin(e.T)
+		}
+	case game.Connect:
+		if e.Server == t.curServer && t.start.IsZero() {
+			return
+		}
+		if t.start.IsZero() {
+			if !t.inGame() {
+				return // первое подключение после запуска — это вход в игру
+			}
+			t.flushWaiting(-1)
+			t.begin(e.T)
+		}
+		if t.target != e.Server {
+			t.target, t.replied = e.Server, false
+		}
+	case game.Reply:
+		if !t.start.IsZero() && e.Server == t.target && !t.replied {
+			t.replied, t.replyT = true, e.T
+		}
+	case game.Disconnect:
+		if !t.start.IsZero() && e.Server == t.target {
+			t.fail(e.T)
+		}
+	case game.Join:
+		t.flushWaiting(-1)
+		if !t.start.IsZero() && (t.target == "" || e.Server == t.target) {
+			replySec := -1.0
+			if t.replied {
+				replySec = round1(t.replyT.Sub(t.start).Seconds())
+			}
+			tr := Transition{T: e.T, From: t.from, To: e.Location, FromName: t.name(t.from), ToName: t.name(e.Location),
+				Server: e.Server, LoadSec: round1(e.T.Sub(t.start).Seconds()), AliveSec: -1, OK: true,
+				Replied: true, ReplySec: replySec, Strategy: t.strategy()}
+			t.waiting, t.joinT = &tr, e.T
+			t.start = time.Time{}
+		}
+		t.cur, t.curServer = e.Location, e.Server
 	}
+}
+
+func (t *Tracker) fail(at time.Time) {
+	msg := "нет входа в новую локацию 30 с"
+	switch {
+	case t.target != "" && !t.replied:
+		msg = "новый сервер не ответил ни разу"
+	case t.target != "" && t.replied:
+		msg = "новый сервер ответил, но в локацию не пустил"
+	}
+	replySec := -1.0
+	if t.replied {
+		replySec = round1(t.replyT.Sub(t.start).Seconds())
+	}
+	t.done(Transition{T: at, From: t.from, FromName: t.name(t.from), Server: t.target,
+		LoadSec: round1(at.Sub(t.start).Seconds()), AliveSec: -1, OK: false, Fail: msg,
+		Replied: t.replied, ReplySec: replySec, Strategy: t.strategy()})
+	// после вылета игра заново входит через сервер входа: начинаем с чистого листа
+	t.start, t.target, t.replied, t.cur, t.curServer = time.Time{}, "", false, "", ""
 }
 
 func (t *Tracker) flushWaiting(alive float64) {
@@ -89,9 +152,7 @@ func (t *Tracker) Tick(now time.Time) {
 		t.flushWaiting(-1)
 	}
 	if !t.start.IsZero() && now.Sub(t.start) > failAfter {
-		t.done(Transition{T: now, From: t.from, FromName: t.name(t.from), LoadSec: round1(now.Sub(t.start).Seconds()),
-			AliveSec: -1, OK: false, Fail: "нет входа в новую локацию 30 с", Strategy: t.strategy()})
-		t.start, t.cur = time.Time{}, "" // после вылета следующий вход — вход в игру
+		t.fail(now)
 	}
 }
 
@@ -122,7 +183,10 @@ func Worst(trs []Transition, withBypass bool) []ZoneStat {
 		}
 		key, name := tr.To, tr.ToName
 		if key == "" {
-			key, name = "?", "вылет до входа, из "+tr.FromName
+			key, name = "?", "вылет при переходе"
+			if tr.FromName != "" {
+				name += ", из " + tr.FromName
+			}
 		}
 		a := m[key]
 		if a == nil {

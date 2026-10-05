@@ -32,6 +32,16 @@ const (
 	ChangeCluster Kind = iota + 1 // клиент уходит из локации
 	Join                          // сервер впустил в локацию
 	Incoming                      // любое событие с сервера (для «когда ожило»)
+	Connect                       // клиент открывает соединение с игровым сервером (Photon CONNECT)
+	Disconnect                    // клиент сам закрыл соединение с игровым сервером
+	Reply                         // первый пакет с игрового сервера после CONNECT
+)
+
+// Команды Photon в заголовке пакета.
+const (
+	cmdConnect    = 2
+	cmdDisconnect = 4
+	gamePort      = ":5056"
 )
 
 type Ev struct {
@@ -46,14 +56,16 @@ type Ev struct {
 type Decoder struct {
 	out     func(Ev)
 	parsers map[string]*photon.PhotonParser
+	replied map[string]bool // сервер уже ответил после последнего CONNECT
 	cur     Packet
 }
 
 func NewDecoder(out func(Ev)) *Decoder {
-	return &Decoder{out: out, parsers: map[string]*photon.PhotonParser{}}
+	return &Decoder{out: out, parsers: map[string]*photon.PhotonParser{}, replied: map[string]bool{}}
 }
 
 func (d *Decoder) Feed(p Packet) {
+	d.transport(p)
 	key := p.Addr
 	if p.Out {
 		key = ">" + key
@@ -133,4 +145,33 @@ func NormalizeLocation(v string) string {
 		return s
 	}
 	return ""
+}
+
+// transport смотрит на сам заголовок Photon: в живой игре переход начинается
+// с CONNECT к новому игровому серверу (порт 5056), и если сервер не отвечает,
+// никаких операций разобрать не удаётся — видно только это.
+func (d *Decoder) transport(p Packet) {
+	if !strings.HasSuffix(p.Addr, gamePort) {
+		return
+	}
+	if !p.Out {
+		if !d.replied[p.Addr] {
+			d.replied[p.Addr] = true
+			d.out(Ev{T: p.T, Kind: Reply, Server: p.Addr})
+		}
+		return
+	}
+	b := p.Payload
+	// Клиентская команда без своего номера пира: 0xFFFF, хотя бы одна команда.
+	// «Фальшивки» zapret начинаются с мусора и сюда не проходят.
+	if len(b) < 24 || b[0] != 0xff || b[1] != 0xff || b[3] < 1 {
+		return
+	}
+	switch b[12] {
+	case cmdConnect:
+		d.replied[p.Addr] = false
+		d.out(Ev{T: p.T, Kind: Connect, Server: p.Addr})
+	case cmdDisconnect:
+		d.out(Ev{T: p.T, Kind: Disconnect, Server: p.Addr})
+	}
 }

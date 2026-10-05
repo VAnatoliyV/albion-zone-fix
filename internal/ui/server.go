@@ -32,6 +32,13 @@ func Start(a *app.App) (string, error) {
 		}
 		reply(w, a.SetBypass(r.FormValue("mode")))
 	})
+	mux.HandleFunc("/api/probe", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST", http.StatusMethodNotAllowed)
+			return
+		}
+		reply(w, a.RunProbe())
+	})
 	mux.HandleFunc("/api/record", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST", http.StatusMethodNotAllowed)

@@ -14,6 +14,7 @@ import (
 
 	"albionzonefix/internal/bypass"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/probe"
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/zones"
 )
@@ -42,6 +43,9 @@ type App struct {
 	packets  int
 	lastPkt  time.Time
 	sniffErr string
+
+	probeRuns []ProbeRun
+	probing   bool
 
 	rec      *record.Writer
 	recFile  *os.File
@@ -219,6 +223,47 @@ func (a *App) stopRecordLocked() {
 	a.rec, a.recFile = nil, nil
 }
 
+// ProbeRun — один прогон проверки серверов.
+type ProbeRun struct {
+	T        time.Time      `json:"t"`
+	Strategy string         `json:"strategy"`
+	OK       int            `json:"ok"`
+	Total    int            `json:"total"`
+	Results  []probe.Result `json:"results"`
+}
+
+// RunProbe запускает проверку серверов в фоне (с текущей стратегией обхода).
+func (a *App) RunProbe() error {
+	a.mu.Lock()
+	if a.probing {
+		a.mu.Unlock()
+		return errors.New("проверка уже идёт")
+	}
+	a.probing = true
+	a.mu.Unlock()
+	go func() {
+		run := ProbeRun{T: time.Now(), Strategy: a.runner.Current()}
+		run.Results = probe.Run(probe.Targets(), 1500*time.Millisecond)
+		run.Total = len(run.Results)
+		for _, r := range run.Results {
+			if r.OK {
+				run.OK++
+			}
+		}
+		if b, err := json.Marshal(run); err == nil {
+			if f, err := os.OpenFile(filepath.Join(a.dir, "проверки.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+				f.Write(append(b, '\n'))
+				f.Close()
+			}
+		}
+		a.mu.Lock()
+		a.probeRuns = append(a.probeRuns, run)
+		a.probing = false
+		a.mu.Unlock()
+	}()
+	return nil
+}
+
 // State — всё, что показывает окно.
 type State struct {
 	Packets    int                `json:"packets"`
@@ -232,6 +277,8 @@ type State struct {
 	Recent     []zones.Transition `json:"recent"`
 	WorstOff   []zones.ZoneStat   `json:"worstOff"`
 	WorstOn    []zones.ZoneStat   `json:"worstOn"`
+	Probing    bool               `json:"probing"`
+	ProbeRuns  []ProbeRun         `json:"probeRuns"`
 	Recording  string             `json:"recording"`
 	RecLeft    int                `json:"recLeft"`
 }
@@ -262,6 +309,10 @@ func (a *App) State() State {
 	}
 	st.WorstOff = zones.Worst(a.trs, false)
 	st.WorstOn = zones.Worst(a.trs, true)
+	st.Probing = a.probing
+	for i := len(a.probeRuns) - 1; i >= 0 && len(st.ProbeRuns) < 10; i-- {
+		st.ProbeRuns = append(st.ProbeRuns, a.probeRuns[i])
+	}
 	if a.rec != nil {
 		st.Recording = a.recFile.Name()
 		st.RecLeft = int(time.Until(a.recUntil).Seconds())

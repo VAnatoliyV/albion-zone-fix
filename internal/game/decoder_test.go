@@ -46,9 +46,11 @@ func TestDecoderSeesZoneChange(t *testing.T) {
 	d.Feed(Packet{T: t0.Add(3 * time.Second), Out: false, Addr: "5.188.125.22:5056", Payload: response(OpJoin, "4002")})
 	d.Feed(Packet{T: t0.Add(4 * time.Second), Out: false, Addr: "5.188.125.22:5056", Payload: pkt(photon.MsgEvent, 29, []byte{0})})
 
-	if len(got) != 3 {
-		t.Fatalf("событий %d, ждали 3: %+v", len(got), got)
+	// первый пакет с нового сервера — ещё и «ответил»
+	if len(got) != 4 || got[1].Kind != Reply {
+		t.Fatalf("событий %d, ждали 4: %+v", len(got), got)
 	}
+	got = append(got[:1], got[2:]...)
 	if got[0].Kind != ChangeCluster || got[0].Server != "5.188.125.10:5056" {
 		t.Errorf("первое: %+v", got[0])
 	}
@@ -63,9 +65,9 @@ func TestDecoderSeesZoneChange(t *testing.T) {
 func TestDecoderIgnoresGarbageAndOtherOps(t *testing.T) {
 	var got []Ev
 	d := NewDecoder(func(e Ev) { got = append(got, e) })
-	d.Feed(Packet{T: time.Unix(1, 0), Addr: "1.1.1.1:5056", Payload: []byte{1, 2, 3}})
-	d.Feed(Packet{T: time.Unix(2, 0), Out: true, Addr: "1.1.1.1:5056", Payload: pkt(photon.MsgRequest, 1, params(77, ""))})
-	d.Feed(Packet{T: time.Unix(3, 0), Addr: "1.1.1.1:5056", Payload: response(OpJoin, "@@мусор")})
+	d.Feed(Packet{T: time.Unix(1, 0), Addr: "1.1.1.1:5055", Payload: []byte{1, 2, 3}})
+	d.Feed(Packet{T: time.Unix(2, 0), Out: true, Addr: "1.1.1.1:5055", Payload: pkt(photon.MsgRequest, 1, params(77, ""))})
+	d.Feed(Packet{T: time.Unix(3, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "@@мусор")})
 	if len(got) != 0 {
 		t.Fatalf("ждали тишину, получили %+v", got)
 	}
@@ -76,6 +78,45 @@ func TestNormalizeLocation(t *testing.T) {
 	for in, want := range cases {
 		if got := NormalizeLocation(in); got != want {
 			t.Errorf("%q → %q, ждали %q", in, got, want)
+		}
+	}
+}
+
+// Пакет CONNECT, как его шлёт клиент (снято с записи тестера 5 октября 2026):
+// peerID 0xFFFF, одна команда, тип 2.
+func connectPkt() []byte {
+	p := make([]byte, 56)
+	p[0], p[1], p[3] = 0xff, 0xff, 1
+	p[12] = 2
+	return p
+}
+
+func disconnectPkt() []byte {
+	p := make([]byte, 24)
+	p[0], p[1], p[3] = 0xff, 0xff, 1
+	p[12] = 4
+	return p
+}
+
+func TestDecoderSeesConnectAndDisconnect(t *testing.T) {
+	var got []Ev
+	d := NewDecoder(func(e Ev) { got = append(got, e) })
+	t0 := time.Unix(1000, 0)
+	fake := make([]byte, 1250) // «фальшивка» zapret: мусор, не должна сойти за CONNECT
+	fake[12] = 2
+	d.Feed(Packet{T: t0, Out: true, Addr: "193.169.238.242:5056", Payload: fake})
+	d.Feed(Packet{T: t0, Out: true, Addr: "193.169.238.242:5056", Payload: connectPkt()})
+	d.Feed(Packet{T: t0.Add(800 * time.Millisecond), Out: true, Addr: "193.169.238.242:5056", Payload: connectPkt()})
+	d.Feed(Packet{T: t0.Add(time.Second), Out: true, Addr: "193.169.238.210:5055", Payload: connectPkt()}) // мастер-сервер, не переход
+	d.Feed(Packet{T: t0.Add(10 * time.Second), Out: true, Addr: "193.169.238.242:5056", Payload: disconnectPkt()})
+	d.Feed(Packet{T: t0.Add(11 * time.Second), Out: false, Addr: "193.169.238.242:5056", Payload: []byte{0, 1, 0, 0}})
+	want := []Kind{Connect, Connect, Disconnect, Reply}
+	if len(got) != len(want) {
+		t.Fatalf("события: %+v", got)
+	}
+	for i, k := range want {
+		if got[i].Kind != k || got[i].Server != "193.169.238.242:5056" {
+			t.Fatalf("событие %d: %+v, ждали вид %d", i, got[i], k)
 		}
 	}
 }
