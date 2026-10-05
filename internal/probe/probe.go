@@ -41,6 +41,9 @@ type Result struct {
 	Ms int  `json:"ms"`
 }
 
+// ConnectPacket — пакет подключения Photon, как у игры, со случайным кодом соединения.
+func ConnectPacket() []byte { return connectPacket() }
+
 func connectPacket() []byte {
 	p, _ := hex.DecodeString(connectHex)
 	rand.Read(p[8:12]) // свой код соединения, как у настоящего клиента

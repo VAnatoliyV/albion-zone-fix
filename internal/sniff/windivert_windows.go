@@ -39,15 +39,18 @@ type Divert struct {
 	once                    sync.Once
 }
 
-// Open открывает драйвер. binDir — папка, где лежат WinDivert.dll и WinDivert64.sys.
-func Open(binDir string) (*Divert, error) {
+// Open открывает драйвер на пакеты Albion. binDir — папка с WinDivert.dll и WinDivert64.sys.
+func Open(binDir string) (*Divert, error) { return OpenFilter(binDir, albionFilter) }
+
+// OpenFilter — то же с любым фильтром WinDivert (только наблюдение).
+func OpenFilter(binDir, filter string) (*Divert, error) {
 	dll := windows.NewLazyDLL(filepath.Join(binDir, "WinDivert.dll"))
 	if err := dll.Load(); err != nil {
 		return nil, errors.New("нет WinDivert.dll в " + binDir + ": " + err.Error())
 	}
 	d := &Divert{dll: dll, open: dll.NewProc("WinDivertOpen"), recv: dll.NewProc("WinDivertRecv"),
 		close: dll.NewProc("WinDivertClose"), shut: dll.NewProc("WinDivertShutdown")}
-	f, _ := windows.BytePtrFromString(albionFilter)
+	f, _ := windows.BytePtrFromString(filter)
 	h, _, err := d.open.Call(uintptr(unsafe.Pointer(f)), layerNetwork, 0, flagSniff|flagRecvOnly)
 	if windows.Handle(h) == windows.InvalidHandle {
 		return nil, explain(err)
@@ -73,8 +76,29 @@ func explain(err error) error {
 	return errors.New("драйвер WinDivert не открылся: " + err.Error())
 }
 
-// Run читает пакеты, пока драйвер не закроют. Блокирующий.
+// Run читает пакеты Albion, пока драйвер не закроют. Блокирующий.
 func (d *Divert) Run(out chan<- game.Packet) error {
+	return d.recvLoop(func(b []byte, outbound bool) {
+		a, pl, ok := ParseIP(b, outbound)
+		if !ok {
+			return
+		}
+		cp := make([]byte, len(pl))
+		copy(cp, pl)
+		out <- game.Packet{T: time.Now(), Out: outbound, Addr: a, Payload: cp}
+	})
+}
+
+// RunRaw отдаёт сырые IP-пакеты (для ICMP в трассировке).
+func (d *Divert) RunRaw(each func([]byte)) error {
+	return d.recvLoop(func(b []byte, _ bool) {
+		cp := make([]byte, len(b))
+		copy(cp, b)
+		each(cp)
+	})
+}
+
+func (d *Divert) recvLoop(each func(b []byte, outbound bool)) error {
 	buf := make([]byte, maxPacket)
 	var addr address
 	for {
@@ -87,14 +111,7 @@ func (d *Divert) Run(out chan<- game.Packet) error {
 			}
 			return errors.New("чтение пакетов: " + err.Error())
 		}
-		outbound := addr.Bits>>17&1 == 1
-		a, pl, ok := ParseIP(buf[:n], outbound)
-		if !ok {
-			continue
-		}
-		cp := make([]byte, len(pl))
-		copy(cp, pl)
-		out <- game.Packet{T: time.Now(), Out: outbound, Addr: a, Payload: cp}
+		each(buf[:n], addr.Bits>>17&1 == 1)
 	}
 }
 

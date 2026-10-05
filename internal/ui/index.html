@@ -80,6 +80,13 @@ td.num,th.num{text-align:right}
   </div>
 
   <div class="panel">
+    <h2>Трассировка: где пропадают пакеты</h2>
+    <div class="controls"><button id="trace">Трассировка</button><span class="muted" id="traceNote"></span></div>
+    <div class="note">Пакет подключения уходит к серверу игры с растущим «временем жизни», и каждый узел по дороге отзывается. Трассируются два сервера: тот, где был чёрный экран, и тот, что отвечает. Если у молчащего сервера последний отозвавшийся узел ещё российский — режет провайдер. Если путь доходит до Амстердама так же, как у живого, — не отвечает сам Albion. Обход перед трассировкой лучше выключить.</div>
+    <div id="traces"></div>
+  </div>
+
+  <div class="panel">
     <h2>Запись для разбора</h2>
     <div class="controls"><button id="rec">Записать 10 минут</button><span class="muted" id="recNote"></span></div>
     <div class="note">Пишет только пакеты Albion (порты 5055/5056) в файл рядом с программой. Его можно прислать разработчику: по нему видно, что происходит при переходах.</div>
@@ -98,6 +105,7 @@ $('off').onclick = () => post('/api/bypass', {mode:'off'});
 $('apply').onclick = () => post('/api/bypass', {mode:$('strat').value});
 $('auto').onclick = () => post('/api/bypass', {mode:'auto'});
 $('probe').onclick = () => post('/api/probe', {});
+$('trace').onclick = () => post('/api/trace', {});
 $('rec').onclick = () => post('/api/record', lastRec ? {stop:1} : {});
 function zoneRows(list){
   if(!list || !list.length) return '<tr><td colspan="5" class="muted">нет данных</td></tr>';
@@ -124,6 +132,14 @@ async function refresh(){
     const replied = t.replied ? `<span class="ok">да</span>${t.replySec>=0?` через ${t.replySec} с`:''} <span class="muted">${srv}</span>` : `<span class="bad">нет</span> <span class="muted">${srv}</span>`;
     return `<tr><td>${time}</td><td>${esc(t.fromName||t.from||'—')}</td><td>${esc(t.toName||t.to||'—')}</td><td class="num">${load}</td><td class="num">${alive}</td><td>${replied}</td><td>${res}</td><td class="muted">${esc(t.strategy==='off'?'нет':t.strategy)}</td></tr>`;
   }).join('') : '<tr><td colspan="8" class="muted">Переходов пока нет. Перейдите в другую локацию в игре.</td></tr>';
+  $('trace').disabled = !!s.tracing;
+  $('traceNote').textContent = s.tracing ? `иду до ${s.tracing.replace(':5056','')}… до минуты на сервер` : '';
+  $('traces').innerHTML = (s.traces||[]).map(r => {
+    const head = `<div style="margin-top:12px"><b>${esc(r.server.replace(':5056',''))}</b> <span class="muted">— ${esc(r.why)}, ${new Date(r.t).toLocaleTimeString('ru-RU')}, обход: ${esc(r.strategy==='off'?'нет':r.strategy)}</span> ${r.reached?'<span class="ok">сервер ответил</span>':'<span class="bad">сервер не ответил</span>'}</div>`;
+    if(r.error) return head + `<div class="err">${esc(r.error)}</div>`;
+    const rows = (r.hops||[]).map(h => `<tr><td class="num">${h.ttl}</td><td>${h.ip?esc(h.ip):'<span class="muted">* не отозвался</span>'}</td><td class="muted">${esc(h.name||'')}</td><td class="num">${h.ms>=0?h.ms+' мс':''}</td><td>${h.server?'<span class="ok">сервер игры</span>':''}</td></tr>`).join('');
+    return head + `<table><thead><tr><th class="num">#</th><th>Узел</th><th>Имя</th><th class="num">Задержка</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }).join('');
   $('probe').disabled = !!s.probing;
   $('probeNote').textContent = s.probing ? 'проверяю, это займёт до 20 секунд…' : '';
   $('probes').innerHTML = (s.probeRuns && s.probeRuns.length) ? s.probeRuns.map(r => {

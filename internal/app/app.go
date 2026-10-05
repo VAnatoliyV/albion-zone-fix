@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/probe"
 	"albionzonefix/internal/record"
+	"albionzonefix/internal/trace"
 	"albionzonefix/internal/zones"
 )
 
@@ -46,6 +50,9 @@ type App struct {
 
 	probeRuns []ProbeRun
 	probing   bool
+	binDir    string
+	traces    []TraceRun
+	tracing   string // что сейчас трассируем
 
 	rec      *record.Writer
 	recFile  *os.File
@@ -53,7 +60,7 @@ type App struct {
 }
 
 func New(dir, binDir string, names map[string]string) *App {
-	a := &App{dir: dir, names: names, runner: bypass.NewRunner(binDir),
+	a := &App{dir: dir, binDir: binDir, names: names, runner: bypass.NewRunner(binDir),
 		strats: bypass.LoadStrategies(filepath.Join(dir, "strategies.json"))}
 	a.tracker = zones.NewTracker(a.name, a.strategyNow, a.onTransition)
 	a.dec = game.NewDecoder(a.onEvent)
@@ -264,6 +271,118 @@ func (a *App) RunProbe() error {
 	return nil
 }
 
+// TraceRun — трассировка до одного сервера.
+type TraceRun struct {
+	T        time.Time   `json:"t"`
+	Server   string      `json:"server"`
+	Why      string      `json:"why"`
+	Strategy string      `json:"strategy"`
+	Reached  bool        `json:"reached"`
+	Hops     []trace.Hop `json:"hops"`
+	Error    string      `json:"error,omitempty"`
+}
+
+// traceTargets: сервер последнего неудачного перехода и сервер, который отвечал.
+func (a *App) traceTargets() [][2]string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	bad := ""
+	for i := len(a.trs) - 1; i >= 0; i-- {
+		if !a.trs[i].Replied && a.trs[i].Server != "" {
+			bad = a.trs[i].Server
+			break
+		}
+	}
+	why := "сервер последнего неудачного перехода"
+	if bad == "" {
+		bad, why = "193.169.238.242:5056", "сервер Лимхёрста из записи (win-22)"
+	}
+	good := ""
+	if n := len(a.probeRuns); n > 0 {
+		for _, r := range a.probeRuns[n-1].Results {
+			if r.OK && r.Addr != bad {
+				good = r.Addr
+				break
+			}
+		}
+	}
+	gwhy := "сервер, ответивший в последней проверке"
+	if good == "" {
+		good, gwhy = "193.169.238.102:5056", "сервер, с которым шла игра в записи (win-08)"
+	}
+	return [][2]string{{bad, why}, {good, gwhy}}
+}
+
+// RunTrace трассирует два сервера по очереди в фоне.
+func (a *App) RunTrace() error {
+	a.mu.Lock()
+	if a.tracing != "" {
+		a.mu.Unlock()
+		return errors.New("трассировка уже идёт")
+	}
+	a.tracing = "…"
+	a.mu.Unlock()
+	go func() {
+		defer func() { a.mu.Lock(); a.tracing = ""; a.mu.Unlock() }()
+		icmp, closeICMP, err := trace.OpenICMP(a.binDir)
+		for _, t := range a.traceTargets() {
+			a.mu.Lock()
+			a.tracing = t[0]
+			a.mu.Unlock()
+			run := TraceRun{T: time.Now(), Server: t[0], Why: t[1], Strategy: a.runner.Current()}
+			if err != nil {
+				run.Error = "не удалось слушать ICMP: " + err.Error()
+			} else if dst, perr := netip.ParseAddrPort(t[0]); perr != nil {
+				run.Error = perr.Error()
+			} else if s, serr := trace.NewUDPSender(dst); serr != nil {
+				run.Error = serr.Error()
+			} else {
+				run.Hops = trace.Run(s, dst, icmp, s.UDP, trace.Options{MaxTTL: 30, Wait: 1500 * time.Millisecond, StopAfterSilent: 5})
+				s.Close()
+				run.Reached = trace.Reached(run.Hops)
+				for i := range run.Hops {
+					run.Hops[i].Name = reverseName(run.Hops[i].IP)
+				}
+			}
+			if b, jerr := json.Marshal(run); jerr == nil {
+				if f, ferr := os.OpenFile(filepath.Join(a.dir, "трассировки.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); ferr == nil {
+					f.Write(append(b, '\n'))
+					f.Close()
+				}
+			}
+			a.mu.Lock()
+			a.traces = append(a.traces, run)
+			a.mu.Unlock()
+		}
+		if closeICMP != nil {
+			closeICMP()
+		}
+	}()
+	return nil
+}
+
+// reverseName — обратное имя узла (по нему видно провайдера и город), не дольше секунды.
+func reverseName(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	ch := make(chan string, 1)
+	go func() {
+		names, _ := net.LookupAddr(ip)
+		if len(names) > 0 {
+			ch <- strings.TrimSuffix(names[0], ".")
+		} else {
+			ch <- ""
+		}
+	}()
+	select {
+	case n := <-ch:
+		return n
+	case <-time.After(time.Second):
+		return ""
+	}
+}
+
 // State — всё, что показывает окно.
 type State struct {
 	Packets    int                `json:"packets"`
@@ -277,6 +396,8 @@ type State struct {
 	Recent     []zones.Transition `json:"recent"`
 	WorstOff   []zones.ZoneStat   `json:"worstOff"`
 	WorstOn    []zones.ZoneStat   `json:"worstOn"`
+	Tracing    string             `json:"tracing"`
+	Traces     []TraceRun         `json:"traces"`
 	Probing    bool               `json:"probing"`
 	ProbeRuns  []ProbeRun         `json:"probeRuns"`
 	Recording  string             `json:"recording"`
@@ -310,6 +431,10 @@ func (a *App) State() State {
 	st.WorstOff = zones.Worst(a.trs, false)
 	st.WorstOn = zones.Worst(a.trs, true)
 	st.Probing = a.probing
+	st.Tracing = a.tracing
+	for i := len(a.traces) - 1; i >= 0 && len(st.Traces) < 4; i-- {
+		st.Traces = append(st.Traces, a.traces[i])
+	}
 	for i := len(a.probeRuns) - 1; i >= 0 && len(st.ProbeRuns) < 10; i-- {
 		st.ProbeRuns = append(st.ProbeRuns, a.probeRuns[i])
 	}

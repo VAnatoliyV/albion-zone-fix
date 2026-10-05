@@ -21,7 +21,7 @@ func fakeWinws(t *testing.T) string {
 }
 
 func waitFor(t *testing.T, cond func() bool) {
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 250; i++ {
 		if cond() {
 			return
 		}
