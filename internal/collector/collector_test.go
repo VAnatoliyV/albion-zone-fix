@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +92,20 @@ func TestFeedReachesForkSession(t *testing.T) {
 
 	if err := c.Apply(Config{}); err != nil || c.Stats().Running {
 		t.Fatalf("не остановился: %v %+v", err, c.Stats())
+	}
+}
+
+func TestFeedPanicIsCaught(t *testing.T) {
+	old := feed
+	t.Cleanup(func() { feed = old })
+	feed = func([]byte) error { panic("проверка") }
+	var log strings.Builder
+	c := &Collector{log: &log}
+	if err := c.feedOne([]byte{1}); err == nil {
+		t.Fatal("паника не превратилась в ошибку")
+	}
+	st := c.Stats()
+	if st.Panics < 1 || !strings.Contains(st.LastPanic, "проверка") || !strings.Contains(log.String(), "проверка") {
+		t.Fatalf("паника не учтена: %+v, журнал %q", st, log.String())
 	}
 }

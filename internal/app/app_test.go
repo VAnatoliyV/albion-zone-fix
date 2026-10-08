@@ -79,8 +79,14 @@ func TestRecordingWritesPackets(t *testing.T) {
 func TestBypassWithoutWinwsReportsError(t *testing.T) {
 	dir := t.TempDir()
 	a := New(dir, dir, nil)
-	if err := a.SetBypass(a.State().Strategies[0]); err == nil {
-		t.Fatal("без winws включилось")
+	if err := a.SetBypass(a.State().Strategies[0]); err != ErrBypassDisabled {
+		t.Fatalf("встроенный обход по умолчанию запрещён, а получили %v", err)
+	}
+	s := a.Settings()
+	s.BuiltinBypass = true
+	a.SetSettings(s)
+	if err := a.SetBypass(a.State().Strategies[0]); err == nil || err == ErrBypassDisabled {
+		t.Fatalf("без winws включилось или не пустило: %v", err)
 	}
 	if a.State().Bypass != "off" {
 		t.Fatal("состояние врёт")

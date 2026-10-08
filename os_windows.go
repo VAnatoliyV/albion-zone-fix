@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bufio"
 	"os"
 	"strings"
 	"syscall"
@@ -21,15 +20,4 @@ func relaunchAsAdmin() error {
 	cwd, _ := os.Getwd()
 	dir, _ := syscall.UTF16PtrFromString(cwd)
 	return windows.ShellExecute(0, verb, file, args, dir, windows.SW_NORMAL)
-}
-
-func openBrowser(url string) {
-	verb, _ := syscall.UTF16PtrFromString("open")
-	u, _ := syscall.UTF16PtrFromString(url)
-	windows.ShellExecute(0, verb, u, nil, nil, windows.SW_SHOWNORMAL)
-}
-
-func waitEnter() {
-	os.Stdout.WriteString("Нажмите Enter, чтобы закрыть.\n")
-	bufio.NewReader(os.Stdin).ReadString('\n')
 }

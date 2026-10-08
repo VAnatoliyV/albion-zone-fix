@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="aj-token" content="{{TOKEN}}">
+<title>Albion Journal</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header class="head">
+    <img class="rabbit" src="rabbit.gif" alt="" width="38" height="47">
+    <div class="titles">
+      <div class="title">Albion Journal</div>
+      <div class="subtitle" data-t="app.subtitle"></div>
+    </div>
+    <button class="gear" id="gear" data-title="app.settings" aria-label="settings">
+      ⚙
+    </button>
+  </header>
+
+  <section class="panel status">
+    <div class="srow" id="rowReceiver">
+      <i class="dot"></i><span class="sname" data-t="st.receiver"></span><span class="sdetail"></span>
+      <button class="btn ghost small" id="btnReceiver" disabled data-t="btn.start"></button>
+    </div>
+    <div class="dash"></div>
+    <div class="srow" id="rowCollect">
+      <i class="dot"></i><span class="sname" data-t="st.collector"></span><span class="sdetail"></span>
+      <button class="btn small" id="btnCollect"></button>
+    </div>
+    <div class="dash"></div>
+    <div class="srow" id="rowSite">
+      <i class="dot"></i><span class="sname" data-t="st.site"></span><span class="sdetail"></span>
+      <button class="btn ghost small" id="btnSite" data-t="btn.openSite"></button>
+    </div>
+    <div class="dash"></div>
+    <div class="srow" id="rowFame">
+      <i class="dot"></i><span class="sname" data-t="st.fame"></span><span class="sdetail"></span>
+      <button class="btn small" id="btnFame"></button>
+    </div>
+  </section>
+  <div class="alert" id="sniffErr" hidden></div>
+  <div class="alert soft" id="panics" hidden></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="own" data-t="tab.own"></button>
+    <button data-tab="shared" data-t="tab.shared"></button>
+    <button data-tab="session" data-t="tab.session"></button>
+    <button data-tab="zone" data-t="tab.zone"></button>
+    <button data-tab="zonefix" data-t="tab.zonefix"></button>
+  </nav>
+
+  <!-- Мои цены -->
+  <section class="tab" id="tab-own">
+    <div class="stats">
+      <div class="stat"><div class="slabel" data-t="own.positions"></div><div class="sval" id="ownPositions">0</div></div>
+      <div class="stat"><div class="slabel" data-t="own.orders"></div><div class="sval" id="ownOrders">0</div></div>
+      <div class="stat"><div class="slabel" data-t="own.cities"></div><div class="sval" id="ownCities">0</div></div>
+    </div>
+    <div class="note" id="ownLast"></div>
+    <div class="caption" data-t="own.recent"></div>
+    <div class="empty" id="ownEmpty"></div>
+    <div class="panel list" id="ownList" hidden></div>
+  </section>
+
+  <!-- Общие -->
+  <section class="tab" id="tab-shared" hidden>
+    <div class="empty" id="sharedMsg"></div>
+    <div id="sharedBody" hidden>
+      <div class="stats">
+        <div class="stat"><div class="slabel" data-t="sh.items"></div><div class="sval" id="shItems">0</div></div>
+        <div class="stat"><div class="slabel" data-t="sh.bm"></div><div class="sval" id="shBm">0</div></div>
+        <div class="stat"><div class="slabel" data-t="sh.cities"></div><div class="sval" id="shCities">0</div></div>
+      </div>
+      <div class="note" id="shSnapshot"></div>
+      <div class="caption" data-t="sh.what"></div>
+      <div class="panel text">
+        <p data-t="sh.what1"></p>
+        <p id="shWhat2"></p>
+        <p id="shFrom"></p>
+        <p data-t="sh.freq"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Сессия -->
+  <section class="tab" id="tab-session" hidden>
+    <div id="seBody" hidden>
+      <div class="panel lines">
+        <div class="line"><span class="licon">★</span><span class="llabel" data-t="se.fame"></span><span class="lsecond" id="seRespec"></span><span class="lval" id="seFame">0</span></div>
+        <div class="dash"></div>
+        <div class="line"><span class="licon coin"></span><span class="llabel" data-t="se.looted"></span><span class="lsecond"></span><span class="lval" id="seLooted">0</span></div>
+        <div class="dash"></div>
+        <div class="line"><span class="licon">↗</span><span class="llabel" data-t="se.wallet"></span><span class="lsecond" id="seCity"></span><span class="lval" id="seWallet">0</span></div>
+        <div class="dash"></div>
+        <div class="line"><span class="licon">✦</span><span class="llabel" data-t="se.damage"></span><span class="lsecond"></span><span class="lval" id="seDamage">0</span></div>
+      </div>
+      <div class="note small" id="seSummary"></div>
+      <div class="warn small" id="seUnknown" hidden></div>
+    </div>
+    <div class="empty" id="seMsg"></div>
+    <div class="panel list" id="seList" hidden></div>
+    <div class="buttons">
+      <button class="btn" id="btnFame2"></button>
+      <button class="btn ghost" id="btnReset" data-t="btn.reset"></button>
+      <button class="btn ghost" id="btnCopy" data-t="btn.copy"></button>
+    </div>
+  </section>
+
+  <!-- Зона -->
+  <section class="tab" id="tab-zone" hidden>
+    <div class="caption" data-t="zn.soonTitle"></div>
+    <div class="panel text"><p data-t="zn.soon"></p></div>
+  </section>
+
+  <!-- Переходы (Zone Fix) -->
+  <section class="tab wide" id="tab-zonefix" hidden>
+    <div class="row">
+      <div class="panel box">
+        <div class="caption" data-t="zf.game"></div>
+        <div class="big" id="zfGame">—</div>
+        <div class="note" id="zfGameSub"></div>
+      </div>
+      <div class="panel box">
+        <div class="caption" data-t="zf.bypass"></div>
+        <div class="big" id="zfByp"></div>
+        <div id="zfBypControls" class="controls">
+          <button class="btn ghost small" id="zfOff" data-t="zf.off"></button>
+          <select id="zfStrat"></select>
+          <button class="btn ghost small" id="zfApply" data-t="zf.apply"></button>
+          <button class="btn ghost small" id="zfAuto" data-t="zf.auto"></button>
+        </div>
+        <div class="warn small" id="zfBypDisabled" hidden>
+          <span data-t="zf.bypassDisabled"></span>
+          <button class="btn ghost small" id="zfOpenSettings" data-t="app.settings"></button>
+        </div>
+        <div class="note" id="zfAutoNote"></div>
+        <div class="alert" id="zfBypErr" hidden></div>
+      </div>
+    </div>
+
+    <div class="panel box">
+      <div class="caption" data-t="zf.recent"></div>
+      <div class="scrollx"><table>
+        <thead><tr><th data-t="zf.colTime"></th><th data-t="zf.colFrom"></th><th data-t="zf.colTo"></th><th class="num" data-t="zf.colLoad"></th><th class="num" data-t="zf.colAlive"></th><th data-t="zf.colReplied"></th><th data-t="zf.colResult"></th><th data-t="zf.colBypass"></th></tr></thead>
+        <tbody id="zfRecent"></tbody>
+      </table></div>
+      <div class="note" data-t="zf.recentNote"></div>
+    </div>
+
+    <div class="row">
+      <div class="panel box">
+        <div class="caption" data-t="zf.worstOff"></div>
+        <table><thead><tr><th data-t="zf.colZone"></th><th class="num" data-t="zf.colCount"></th><th class="num" data-t="zf.colFails"></th><th class="num" data-t="zf.colAvg"></th><th class="num" data-t="zf.colMax"></th></tr></thead><tbody id="zfWorstOff"></tbody></table>
+      </div>
+      <div class="panel box">
+        <div class="caption" data-t="zf.worstOn"></div>
+        <table><thead><tr><th data-t="zf.colZone"></th><th class="num" data-t="zf.colCount"></th><th class="num" data-t="zf.colFails"></th><th class="num" data-t="zf.colAvg"></th><th class="num" data-t="zf.colMax"></th></tr></thead><tbody id="zfWorstOn"></tbody></table>
+      </div>
+    </div>
+
+    <div class="panel box">
+      <div class="caption" data-t="zf.probeTitle"></div>
+      <div class="controls"><button class="btn ghost small" id="zfProbe" data-t="zf.probe"></button><span class="note" id="zfProbeNote"></span></div>
+      <div class="note" data-t="zf.probeNote"></div>
+      <table><thead><tr><th data-t="zf.colTime"></th><th data-t="zf.colBypass"></th><th class="num" data-t="zf.colAnswered"></th><th data-t="zf.colSilent"></th></tr></thead><tbody id="zfProbes"></tbody></table>
+    </div>
+
+    <div class="panel box">
+      <div class="caption" data-t="zf.traceTitle"></div>
+      <div class="controls"><button class="btn ghost small" id="zfTrace" data-t="zf.trace"></button><span class="note" id="zfTraceNote"></span></div>
+      <div class="note" data-t="zf.traceNote"></div>
+      <div id="zfTraces"></div>
+    </div>
+
+    <div class="panel box">
+      <div class="caption" data-t="zf.recTitle"></div>
+      <div class="controls"><button class="btn ghost small" id="zfRec"></button><span class="note" id="zfRecNote"></span></div>
+      <div class="note" data-t="zf.recHint"></div>
+    </div>
+  </section>
+</main>
+
+<!-- Настройки -->
+<div class="overlay" id="settings" hidden>
+  <div class="panel sheet">
+    <div class="sheethead"><span class="caption gold" data-t="set.title"></span><button class="btn ghost small" id="setClose" data-t="btn.close"></button></div>
+
+    <div class="caption gold" data-t="sec.look"></div>
+    <div class="setlabel" data-t="set.lang"></div>
+    <nav class="tabs small" id="langTabs">
+      <button data-lang="ru">Русский</button>
+      <button data-lang="en">English</button>
+      <button data-lang="es">Español</button>
+    </nav>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.collect"></div>
+    <label class="toggle"><input type="checkbox" data-set="shareADP"><span class="sw"></span><span class="tl" data-t="set.share"></span></label>
+    <div class="hint" id="shareHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="sessionStats"><span class="sw"></span><span class="tl" data-t="set.session"></span></label>
+    <div class="hint" data-t="set.sessionHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.launch"></div>
+    <label class="toggle"><input type="checkbox" data-set="startWithWindows"><span class="sw"></span><span class="tl" data-t="set.autostart"></span></label>
+    <div class="hint" data-t="set.autostartHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="collectOnStart"><span class="sw"></span><span class="tl" data-t="set.start"></span></label>
+    <div class="hint" data-t="set.startHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="stopOnExit"><span class="sw"></span><span class="tl" data-t="set.quit"></span></label>
+    <div class="hint" data-t="set.quitHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.zonefix"></div>
+    <label class="toggle"><input type="checkbox" data-set="builtinBypass"><span class="sw"></span><span class="tl" data-t="set.bypass"></span></label>
+    <div class="hint warn" data-t="set.bypassHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.data"></div>
+    <div class="hint" data-t="set.dataHint"></div>
+    <div class="controls"><code id="dataDir"></code><button class="btn ghost small" id="openData" data-t="btn.openFolder"></button></div>
+    <div class="alert" id="setErr" hidden></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

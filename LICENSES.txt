@@ -22,6 +22,13 @@ mattn/go-colorable и go-isatty (MIT), nu7hatch/gouuid (MIT), pelletier/go-toml 
 sagikazarmark/locafero (MIT), subosito/gotenv (MIT), go.yaml.in/yaml (MIT/Apache 2.0),
 gopkg.in/toast.v1 (MIT), golang.org/x/* (BSD-3).
 
+Окно и трей: jchv/go-webview2 (MIT; внутри — WebView2Loader от Microsoft, BSD-3)
+и jchv/go-winloader (ISC), fyne.io/systray (Apache 2.0, по getlantern/systray).
+Окно показывает Microsoft Edge WebView2 Runtime, который стоит в Windows.
+
+Шрифт Pixelify Sans — Copyright 2021 The Pixelify Sans Project Authors,
+SIL Open Font License 1.1 (текст лицензии зашит в программу рядом со шрифтом).
+
 Таблица предметов (items_by_id.json) — из albibong (MIT).
 
 Названия локаций — из ao-data/ao-bin-dumps.

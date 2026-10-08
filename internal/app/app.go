@@ -179,8 +179,15 @@ func (a *App) findStrategy(name string) (bypass.Strategy, bool) {
 	return bypass.Strategy{}, false
 }
 
-// SetBypass: "off", имя стратегии или AutoMode.
+// ErrBypassDisabled — встроенный обход выключен в настройках.
+var ErrBypassDisabled = errors.New("встроенный обход выключен в настройках")
+
+// SetBypass: "off", имя стратегии или AutoMode. Включить обход можно, только
+// если он разрешён в настройках (BuiltinBypass).
 func (a *App) SetBypass(mode string) error {
+	if mode != "off" && !a.settings.Get().BuiltinBypass {
+		return ErrBypassDisabled
+	}
 	a.mu.Lock()
 	a.picker, a.pickRes = nil, ""
 	a.mu.Unlock()
@@ -246,9 +253,17 @@ func (a *App) applyCollector() error {
 func (a *App) Settings() settings.Settings { return a.settings.Get() }
 
 // SetSettings сохраняет настройки и сразу применяет их к разборщику.
+//
+// Встроенный обход запретили — работающий winws гасится сразу.
 func (a *App) SetSettings(s settings.Settings) error {
 	if err := a.settings.Set(s); err != nil {
 		return err
+	}
+	if !s.BuiltinBypass {
+		a.mu.Lock()
+		a.picker, a.pickRes = nil, ""
+		a.mu.Unlock()
+		a.runner.Stop()
 	}
 	return a.applyCollector()
 }

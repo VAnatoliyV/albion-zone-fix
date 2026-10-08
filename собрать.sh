@@ -12,7 +12,10 @@ echo "тесты..."
 go test ./... >/dev/null
 
 echo "собираю AlbionJournal.exe..."
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$OUT/AlbionJournal.exe" .
+# -H windowsgui: у программы окно и трей, чёрная консоль больше не нужна.
+# Значок exe (кролик) — rsrc_windows_amd64.syso, Go подхватывает его сам. Пересобрать:
+#   go run github.com/akavel/rsrc@v0.10.2 -ico internal/desktop/rabbit.ico -arch amd64 -o rsrc_windows_amd64.syso
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o "$OUT/AlbionJournal.exe" .
 
 echo "беру zapret $ZAPRET_VER с GitHub Flowseal..."
 ZIP=dist/cache/zapret.zip

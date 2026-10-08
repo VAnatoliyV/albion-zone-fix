@@ -4,9 +4,14 @@
 package collector
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	client "github.com/ao-data/albiondata-client/client"
 )
@@ -31,25 +36,33 @@ func (c Config) Running() bool { return c.Prices || c.Session }
 // Stats — для строки состояния.
 type Stats struct {
 	Running bool   `json:"running"`
+	Session bool   `json:"session"` // счётчик фейма считает
 	Fed     int64  `json:"fed"`     // отдано в разборщик
 	Dropped int64  `json:"dropped"` // выброшено при переполнении очереди
 	Error   string `json:"error,omitempty"`
+	// Panics — сколько паник поймано при разборе (пакет пропал, программа
+	// жива); LastPanic — последняя. Подробности со стеком — в журнале.
+	Panics    int64  `json:"panics"`
+	LastPanic string `json:"lastPanic,omitempty"`
 }
 
 type Collector struct {
 	dataDir, resDir string
 	log             io.Writer
 
-	q            chan []byte
-	fed, dropped atomic.Int64
-	mu           sync.Mutex
-	running      bool
-	lastErr      string
+	q                    chan []byte
+	fed, dropped, panics atomic.Int64
+	mu                   sync.Mutex
+	running, session     bool
+	lastErr, lastPanic   string
 }
 
 // New готовит разборщик; запускает его Apply. resDir — где лежит
 // items_by_id.json (пусто — рядом с exe). log — журнал клиента.
 func New(dataDir, resDir string, log io.Writer) *Collector {
+	if log == nil {
+		log = io.Discard
+	}
 	c := &Collector{dataDir: dataDir, resDir: resDir, log: log, q: make(chan []byte, queueSize)}
 	go c.loop()
 	return c
@@ -57,11 +70,32 @@ func New(dataDir, resDir string, log io.Writer) *Collector {
 
 func (c *Collector) loop() {
 	for b := range c.q {
-		if client.FeedRawIPv4(b) == nil {
+		if c.feedOne(b) == nil {
 			c.fed.Add(1)
 		}
 	}
 }
+
+// feedOne отдаёт пакет разборщику. Паника внутри не должна ронять
+// программу: FeedRawIPv4 ловит свои сам, а это последний рубеж на случай,
+// если что-то вылетит снаружи его защиты.
+func (c *Collector) feedOne(b []byte) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			c.panics.Add(1)
+			msg := fmt.Sprintf("паника при разборе пакета: %v", v)
+			c.mu.Lock()
+			c.lastPanic = msg
+			c.mu.Unlock()
+			fmt.Fprintf(c.log, "%s %s\n%s\n", time.Now().Format("2006-01-02 15:04:05"), msg, debug.Stack())
+			err = errors.New(msg)
+		}
+	}()
+	return feed(b)
+}
+
+// feed — вход разборщика; в тестах подменяется.
+var feed = client.FeedRawIPv4
 
 // Feed — сырой IPv4-пакет с IP-заголовка. Не блокирует; срез копируется.
 func (c *Collector) Feed(b []byte) {
@@ -108,6 +142,7 @@ func (c *Collector) Apply(cfg Config) error {
 		err = client.StartEmbedded(EmbedConfig(c.dataDir, c.resDir, c.log, cfg))
 		c.running = err == nil
 	}
+	c.session = c.running && cfg.Session
 	c.lastErr = ""
 	if err != nil {
 		c.lastErr = err.Error()
@@ -119,10 +154,22 @@ func (c *Collector) Apply(cfg Config) error {
 func (c *Collector) ResetSession() { client.ResetSession() }
 
 func (c *Collector) Stats() Stats {
+	n, last := client.PanicStats()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return Stats{Running: c.running, Fed: c.fed.Load(), Dropped: c.dropped.Load(), Error: c.lastErr}
+	st := Stats{Running: c.running, Session: c.session, Fed: c.fed.Load(), Dropped: c.dropped.Load(), Error: c.lastErr,
+		Panics: n + c.panics.Load(), LastPanic: last}
+	if c.lastPanic != "" {
+		st.LastPanic = c.lastPanic
+	}
+	return st
 }
+
+// SessionFile — файл сессии счётчика (фейм, серебро, урон).
+func (c *Collector) SessionFile() string { return filepath.Join(c.dataDir, SessionFileName) }
+
+// SessionFileName — имя файла сессии в каталоге данных (как у мака).
+const SessionFileName = "albion-session.json"
 
 // Close останавливает разборщик (при выходе).
 func (c *Collector) Close() {

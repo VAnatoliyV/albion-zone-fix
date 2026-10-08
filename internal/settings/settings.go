@@ -24,8 +24,13 @@ type Settings struct {
 	CollectOnStart bool `json:"collectOnStart"`
 	// StopOnExit — при выходе останавливать всё (сбор, приёмник, обход).
 	StopOnExit bool `json:"stopOnExit"`
-	// StartWithWindows — запускать программу вместе с Windows.
+	// StartWithWindows — запускать программу вместе с Windows (задача
+	// Планировщика с наивысшими правами, см. internal/autostart).
 	StartWithWindows bool `json:"startWithWindows"`
+	// BuiltinBypass — разрешить встроенный обход Zone Fix (winws). По
+	// умолчанию выключен: у многих игроков в России уже стоит свой zapret,
+	// и два обхода на одном трафике мешают друг другу.
+	BuiltinBypass bool `json:"builtinBypass"`
 }
 
 // Default — настройки первого запуска.
