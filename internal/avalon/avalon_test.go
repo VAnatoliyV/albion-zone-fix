@@ -3,6 +3,7 @@ package avalon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -285,5 +286,25 @@ func TestDefaultClientNoRedirects(t *testing.T) {
 	r := newReporter(ReporterConfig{URL: s.URL})
 	if st := r.Handle(context.Background(), Pass{From: "TNL-001", To: "TNL-002"}); st.Result != ResRefused || st.Why != "307" {
 		t.Fatalf("%+v", st)
+	}
+}
+
+func TestOfferQueueFull(t *testing.T) {
+	var logs []string
+	// Без горутины-отправителя: очередь (8) никто не разбирает.
+	r := newReporter(ReporterConfig{Logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }})
+	for i := 0; i < cap(r.q); i++ {
+		r.Offer(Pass{From: "TNL-001", To: "TNL-002"})
+	}
+	if l := r.Last(); l.Result != ResSending || len(logs) != 0 {
+		t.Fatalf("очередь не полна, а итог %+v, лог %v", l, logs)
+	}
+	r.Offer(Pass{From: "TNL-003", To: "TNL-004"})
+	l := r.Last()
+	if l.Result != ResRefused || l.Why != WhyQueueFull || l.From != "TNL-003" {
+		t.Fatalf("%+v", l)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "очередь") {
+		t.Fatalf("лог: %v", logs)
 	}
 }

@@ -139,13 +139,19 @@ func newReporter(cfg ReporterConfig) *Reporter {
 	return &Reporter{cfg: cfg, q: make(chan Pass, 8)}
 }
 
+// WhyQueueFull — причина в итоге, когда очередь отправки полна.
+const WhyQueueFull = "queue"
+
 // Offer ставит проход в очередь на отправку. Очередь полна — проход
-// пропадает (не страшно: следующий будет со следующим порталом).
+// пропадает (не страшно: следующий будет со следующим порталом), но итог
+// не остаётся «отправляется»: вкладка показывает отказ, в журнале строка.
 func (r *Reporter) Offer(p Pass) {
 	r.set(p, ResSending, "")
 	select {
 	case r.q <- p:
 	default:
+		r.cfg.Logf("карта: проход %s → %s пропущен: очередь отправки полна", p.From, p.To)
+		r.set(p, ResRefused, WhyQueueFull)
 	}
 }
 

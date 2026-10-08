@@ -1,7 +1,8 @@
 #!/bin/bash
 # Собирает dist/AlbionJournal.zip: программа под Windows x64 (Albion Journal: сбор цен,
 # счётчик, Zone Fix) + приёмник своих цен acp-prices.exe + таблица предметов + официальные файлы zapret (Flowseal)
-# и подпись dist/AlbionJournal.zip.sig для автообновления.
+# и подпись dist/AlbionJournal.zip.sig для автообновления, плюс установщик
+# dist/AlbionJournalSetup-<версия>.exe (NSIS, installer.nsi; те же файлы, что в zip).
 #
 #   ./собрать.sh          версия из файла VERSION
 #   ./собрать.sh 1.0.1    версия из аргумента (и записывается в VERSION)
@@ -45,6 +46,7 @@ unzip -q -o "$ZIP" -d dist/cache
 cp dist/cache/zapret-discord-youtube-$ZAPRET_VER/bin/* "$OUT/zapret/bin/"
 
 cp README-RU.txt LICENSES.txt "$OUT/"
+cp TESTER-RU.txt dist/ # памятка тестеру рядом с выпуском (в zip и установщик не входит)
 cp "$ITEMS" "$OUT/items_by_id.json"
 (cd dist && zip -qr AlbionJournal.zip AlbionJournal)
 rm -rf dist/cache
@@ -52,5 +54,8 @@ rm -rf dist/cache
 echo "подписываю..."
 go run ./tools/updatekey sign dist/AlbionJournal.zip "$VERSION"
 go run ./tools/updatekey verify dist/AlbionJournal.zip "$VERSION"
-ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig | awk '{print "готово:", $NF, $5, "байт"}'
-echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip и AlbionJournal.zip.sig"
+echo "собираю установщик (NSIS)..."
+command -v makensis >/dev/null || { echo "нет makensis: brew install makensis"; exit 1; }
+makensis -V2 -DVERSION="$VERSION" installer.nsi
+ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig dist/AlbionJournalSetup-"$VERSION".exe | awk '{print "готово:", $NF, $5, "байт"}'
+echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip, AlbionJournal.zip.sig и AlbionJournalSetup-$VERSION.exe"
