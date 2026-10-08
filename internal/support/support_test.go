@@ -86,3 +86,24 @@ func TestTailReadsOnlyEnd(t *testing.T) {
 		t.Fatalf("первая строка обрезана: %q", lines[0])
 	}
 }
+
+func TestAnonymizeBoundary(t *testing.T) {
+	home := `C:\Users\Bob`
+	cases := map[string]string{
+		`C:\Users\Bob`:                  `~`,
+		`C:\Users\Bob\AppData`:          `~\AppData`,
+		`путь C:\Users\Bob/x`:           `путь ~/x`,
+		`"C:\Users\Bob"`:                `"~"`,
+		"C:\\Users\\Bob\nдальше":        "~\nдальше",
+		`C:\Users\Bobby\AppData`:        `C:\Users\Bobby\AppData`,
+		`C:\Users\Bob Smith\x`:          `C:\Users\Bob Smith\x`,
+		`C:\Users\Bob.old\x`:            `C:\Users\Bob.old\x`,
+		`C:\Users\Bobby C:\Users\Bob\x`: `C:\Users\Bobby ~\x`,
+		`c:\users\bob\x`:                `~\x`,
+	}
+	for in, want := range cases {
+		if got := Anonymize(in, home); got != want {
+			t.Errorf("Anonymize(%q) = %q, ждал %q", in, got, want)
+		}
+	}
+}

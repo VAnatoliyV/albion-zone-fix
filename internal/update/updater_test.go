@@ -24,18 +24,22 @@ type fakeGH struct {
 	noAssets bool
 }
 
-func newGH(t *testing.T, k ed25519.PrivateKey, tag, inner string) *fakeGH {
+// signed — версия, под которой подписан zip (обычно равна тегу).
+func newGH(t *testing.T, k ed25519.PrivateKey, tag, signed string) *fakeGH {
 	t.Helper()
 	g := &fakeGH{tag: tag}
 	dir := t.TempDir()
 	z := filepath.Join(dir, ZipName)
 	makeZip(t, z, map[string]string{
-		"AlbionJournal/AlbionJournal.exe": inner, // «exe» печатает свою версию (см. versionOf)
+		"AlbionJournal/AlbionJournal.exe": "exe",
 		"AlbionJournal/acp-prices.exe":    "приёмник",
 		"AlbionJournal/README-RU.txt":     "читай",
 	})
 	g.zip, _ = os.ReadFile(z)
-	g.sig, _ = Sign(k, z)
+	if signed == "x" {
+		signed = "9.9.9"
+	}
+	g.sig, _ = Sign(k, z, signed)
 	g.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api":
@@ -78,8 +82,7 @@ func newHarness(t *testing.T, g *fakeGH, pub ed25519.PublicKey, current string) 
 	h.u = New(Config{
 		Dir: filepath.Join(h.dir, "обновление"), Current: current, ProgramDir: h.prog, DataDir: h.dir, PID: 99,
 		PublicKey: pub, APIURL: g.srv.URL + "/api", Client: g.srv.Client(),
-		AllowURL:  func(s string) bool { return strings.HasPrefix(s, g.srv.URL+"/") },
-		VersionOf: func(exe string) (string, error) { b, err := os.ReadFile(exe); return string(b), err },
+		AllowURL: func(s string) bool { return strings.HasPrefix(s, g.srv.URL+"/") },
 		Launch: func(exe string, args ...string) error {
 			h.launched = append(h.launched, append([]string{exe}, args...))
 			return nil
@@ -94,7 +97,7 @@ func newHarness(t *testing.T, g *fakeGH, pub ed25519.PublicKey, current string) 
 
 func TestUpdaterDownloadsVerifiesAndInstalls(t *testing.T) {
 	k := testKey(t)
-	g := newGH(t, k, "v1.0.1", "1.0.1\r\n")
+	g := newGH(t, k, "v1.0.1", "1.0.1")
 	h := newHarness(t, g, k.Public().(ed25519.PublicKey), "1.0.0")
 	h.u.CheckSync()
 	s := h.u.Status()
@@ -149,7 +152,7 @@ func TestUpdaterRejectsBadSignature(t *testing.T) {
 
 func TestUpdaterRejectsVersionMismatch(t *testing.T) {
 	k := testKey(t)
-	// Старый подписанный zip выложен под новым тегом.
+	// Старый подписанный zip (подпись над версией 1.0.1) выложен под новым тегом.
 	g := newGH(t, k, "v1.0.2", "1.0.1")
 	h := newHarness(t, g, k.Public().(ed25519.PublicKey), "1.0.0")
 	h.u.CheckSync()

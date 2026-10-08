@@ -2,8 +2,8 @@
 //
 //	go run ./tools/updatekey gen           создать пару (один раз; файл не перезаписывается)
 //	go run ./tools/updatekey pub           открытый ключ из файла ключа (для update.PublicKeyB64)
-//	go run ./tools/updatekey sign FILE     записать FILE.sig
-//	go run ./tools/updatekey verify FILE   проверить FILE.sig вшитым в программу ключом
+//	go run ./tools/updatekey sign FILE VERSION     записать FILE.sig (подпись над «VERSION\nsha256»)
+//	go run ./tools/updatekey verify FILE VERSION   проверить FILE.sig вшитым в программу ключом
 //
 // Закрытый ключ живёт в ~/.config/albion-journal/windows-update.key (права
 // 600) и никогда не печатается. Путь можно сменить переменной AJ_UPDATE_KEY.
@@ -62,7 +62,7 @@ func pubOf(k ed25519.PrivateKey) string {
 
 func main() {
 	if len(os.Args) < 2 {
-		die("команда: gen | pub | sign FILE | verify FILE")
+		die("команда: gen | pub | sign FILE VERSION | verify FILE VERSION")
 	}
 	switch os.Args[1] {
 	case "gen":
@@ -94,33 +94,33 @@ func main() {
 	case "pub":
 		fmt.Println(pubOf(load()))
 	case "sign":
-		if len(os.Args) < 3 {
-			die("sign FILE")
+		if len(os.Args) < 4 {
+			die("sign FILE VERSION")
 		}
 		k := load()
 		if pubOf(k) != update.PublicKeyB64 {
 			die("ключ в %s не совпадает с вшитым в программу (update.PublicKeyB64)", keyPath())
 		}
-		sig, err := update.Sign(k, os.Args[2])
+		sig, err := update.Sign(k, os.Args[2], os.Args[3])
 		if err != nil {
 			die("%v", err)
 		}
 		if err := os.WriteFile(os.Args[2]+".sig", []byte(sig), 0644); err != nil {
 			die("%v", err)
 		}
-		fmt.Println("подпись:", os.Args[2]+".sig")
+		fmt.Println("подпись:", os.Args[2]+".sig", "версия", os.Args[3])
 	case "verify":
-		if len(os.Args) < 3 {
-			die("verify FILE")
+		if len(os.Args) < 4 {
+			die("verify FILE VERSION")
 		}
 		b, err := os.ReadFile(os.Args[2] + ".sig")
 		if err != nil {
 			die("%v", err)
 		}
-		if err := update.Verify(update.PublicKey(), os.Args[2], string(b)); err != nil {
+		if err := update.Verify(update.PublicKey(), os.Args[2], string(b), os.Args[3]); err != nil {
 			die("%s: %v", os.Args[2], err)
 		}
-		fmt.Println("подпись верна:", os.Args[2])
+		fmt.Println("подпись верна:", os.Args[2], "версия", os.Args[3])
 	default:
 		die("неизвестная команда %q", os.Args[1])
 	}

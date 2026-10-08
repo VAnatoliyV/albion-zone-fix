@@ -30,6 +30,9 @@ func Extract(zipPath, dest string) error {
 	if err := os.RemoveAll(dest); err != nil {
 		return err
 	}
+	if IsReparse(filepath.Dir(dest)) {
+		return fmt.Errorf("%s — ссылка, а не папка", filepath.Dir(dest))
+	}
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
@@ -75,7 +78,8 @@ func extractOne(f *zip.File, target string, limit int64) (int64, error) {
 		return 0, err
 	}
 	defer rc.Close()
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	// O_EXCL: два файла с одним именем в архиве или ссылка на месте — ошибка.
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
 	if err != nil {
 		return 0, err
 	}

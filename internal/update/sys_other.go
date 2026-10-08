@@ -23,8 +23,6 @@ func WaitExit(pid int, d time.Duration) bool {
 // Unblock — Mark-of-the-Web есть только в Windows.
 func Unblock(string) {}
 
-func hide(*exec.Cmd) {}
-
 // StartDetached запускает процесс и не ждёт его.
 func StartDetached(exe string, args ...string) error {
 	cmd := exec.Command(exe, args...)

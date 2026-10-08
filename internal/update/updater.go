@@ -9,8 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -54,7 +54,12 @@ type Status struct {
 
 // Config — всё, что нужно обновлятелю. Пустые поля — значения для Windows.
 type Config struct {
-	Dir        string // …\Albion Journal\обновление
+	// Dir — каталог скачивания и распаковки. В Windows — StageDir():
+	// %ProgramData%\Albion Journal\update, доступный на запись только
+	// SYSTEM и администраторам (SecureStage), потому что отсюда файлы с
+	// правами администратора копируются в папку программы и запускается
+	// установщик. Каталог данных пользователя (%AppData%) для этого не годится.
+	Dir        string
 	Current    string // версия этой сборки
 	ProgramDir string // папка, где лежит AlbionJournal.exe
 	DataDir    string // каталог данных (передаётся установщику)
@@ -65,10 +70,10 @@ type Config struct {
 	Client    *http.Client      // nil — свой с таймаутами
 	Auto      func() bool       // «Обновлять автоматически»; nil — всегда да
 	Logf      func(string, ...any)
-	VersionOf func(exe string) (string, error)       // nil — ExeVersion
 	Launch    func(exe string, args ...string) error // nil — StartDetached
 	AllowURL  func(string) bool                      // nil — AllowedURL
 	Writable  func(dir string) bool                  // nil — Writable
+	Secure    func(dir string) error                 // nil — SecureStage
 	TempDir   string                                 // пусто — os.TempDir()
 	Now       func() time.Time                       // nil — time.Now
 }
@@ -116,8 +121,8 @@ func New(c Config) *Updater {
 	if c.Logf == nil {
 		c.Logf = func(string, ...any) {}
 	}
-	if c.VersionOf == nil {
-		c.VersionOf = ExeVersion
+	if c.Secure == nil {
+		c.Secure = SecureStage
 	}
 	if c.Launch == nil {
 		c.Launch = StartDetached
@@ -157,11 +162,26 @@ func NewClient() *http.Client {
 		if len(via) >= 10 {
 			return errors.New("слишком много переадресаций")
 		}
-		if req.URL.Scheme != "https" {
-			return errors.New("переадресация не на https")
+		if !RedirectAllowed(req.URL) {
+			return fmt.Errorf("переадресация на чужой адрес: %s", req.URL.Redacted())
 		}
 		return nil
 	}}
+}
+
+// RedirectAllowed — куда можно уйти по переадресации: только https и только
+// хосты GitHub (github.com, api.github.com, *.githubusercontent.com — туда
+// GitHub отправляет за вложениями выпусков, например
+// release-assets.githubusercontent.com).
+func RedirectAllowed(u *url.URL) bool {
+	if u == nil || u.Scheme != "https" || u.User != nil {
+		return false
+	}
+	if p := u.Port(); p != "" && p != "443" {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "github.com" || h == "api.github.com" || strings.HasSuffix(h, ".githubusercontent.com")
 }
 
 // Status — для страницы.
@@ -289,7 +309,11 @@ func (u *Updater) check() {
 		u.mu.Unlock()
 	}()
 
-	os.MkdirAll(u.c.Dir, 0755)
+	if err := u.c.Secure(u.c.Dir); err != nil {
+		u.c.Logf("папка обновления не готова: %v", err)
+		u.set(StateError, "")
+		return
+	}
 	os.WriteFile(u.path(checkFile), []byte(strconv.FormatInt(u.c.Now().Unix(), 10)), 0644)
 	rel, err := u.fetch()
 	if err != nil {
@@ -392,6 +416,10 @@ func (u *Updater) pickup() {
 	if has {
 		return
 	}
+	if err := u.c.Secure(u.c.Dir); err != nil {
+		u.c.Logf("папка обновления не готова: %v", err)
+		return
+	}
 	m, ok := u.readMeta()
 	if !ok {
 		return
@@ -433,9 +461,6 @@ func (u *Updater) cleanDownloaded() {
 }
 
 func (u *Updater) download(rel Release) error {
-	if err := os.MkdirAll(u.c.Dir, 0755); err != nil {
-		return err
-	}
 	if err := u.get(rel.SigURL, u.path(sigFile), 4096); err != nil {
 		return fmt.Errorf("%s: %w", SigName, err)
 	}
@@ -500,39 +525,29 @@ func (i *idleReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// verifyDownloaded: подпись zip, состав и версия внутри.
+// verifyDownloaded: подпись zip (с версией внутри подписи) и состав.
 func (u *Updater) verifyDownloaded(version string) error {
 	_, err := u.unpack(checkDir, version)
 	os.RemoveAll(u.path(checkDir))
 	return err
 }
 
-// unpack проверяет подпись, распаковывает zip в каталог name и сверяет
-// версию AlbionJournal.exe внутри. Возвращает папку программы.
+// unpack проверяет подпись (версия выпуска входит в подписанное
+// сообщение — скачанные exe не запускаем) и распаковывает zip в каталог
+// name. Возвращает папку программы.
 func (u *Updater) unpack(name, version string) (string, error) {
 	sig, err := os.ReadFile(u.path(sigFile))
 	if err != nil {
 		return "", err
 	}
-	if err := Verify(u.c.PublicKey, u.path(zipFile), string(sig)); err != nil {
+	if err := Verify(u.c.PublicKey, u.path(zipFile), string(sig), version); err != nil {
 		return "", err
 	}
 	dir := u.path(name)
 	if err := Extract(u.path(zipFile), dir); err != nil {
 		return "", err
 	}
-	root, err := FindRoot(dir)
-	if err != nil {
-		return "", err
-	}
-	got, err := u.c.VersionOf(filepath.Join(root, MainExe))
-	if err != nil {
-		return "", fmt.Errorf("версия внутри: %w", err)
-	}
-	if VersionFromTag(got) != version {
-		return "", fmt.Errorf("внутри версия %s, а выпуск %s", got, version)
-	}
-	return root, nil
+	return FindRoot(dir)
 }
 
 // Install запускает процесс установки; он сам дождётся нашего выхода.
@@ -578,8 +593,11 @@ func (u *Updater) Install(restart bool) (err error) {
 		u.mu.Unlock()
 		return fmt.Errorf("нет прав на запись в %s", u.c.ProgramDir)
 	}
-	// Последняя проверка перед заменой: каталог данных доступен на запись
-	// без прав администратора, файлы могли тронуть, пока программа работала.
+	// Папка обновления должна быть по-прежнему только для администраторов,
+	// и подпись — проверена ещё раз прямо перед установкой.
+	if err := u.c.Secure(u.c.Dir); err != nil {
+		return fmt.Errorf("папка обновления: %w", err)
+	}
 	root, err := u.unpack(stageDir, rel.Version)
 	if err != nil {
 		u.cleanDownloaded()
@@ -620,24 +638,4 @@ func Writable(dir string) bool {
 	f.Close()
 	os.Remove(name)
 	return true
-}
-
-// ExeVersion запускает «exe -version» и возвращает напечатанное.
-func ExeVersion(exe string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "-version")
-	hide(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	// Последняя непустая строка: если кто-то из библиотек напишет в stdout
-	// раньше, версия всё равно в конце.
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	v := strings.TrimSpace(lines[len(lines)-1])
-	if v == "" {
-		return "", errors.New("пустой ответ")
-	}
-	return v, nil
 }

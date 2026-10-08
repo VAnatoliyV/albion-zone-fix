@@ -11,10 +11,14 @@
 # останавливается: выпуск без подписи программа не поставит.
 set -e
 cd "$(dirname "$0")"
-if [ -n "$1" ]; then echo "$1" > VERSION; fi
-VERSION="$(tr -d ' \r\n' < VERSION)"
 # Только числа через точку: иначе программа сочтёт себя сборкой разработчика.
-echo "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+$' || { echo "версия «$VERSION» не похожа на 1.2.3"; exit 1; }
+valid() { printf '%s' "$1" | grep -Eq '^[0-9]+(\.[0-9]+)+$'; }
+if [ -n "$1" ]; then
+  valid "$1" || { echo "версия «$1» не похожа на 1.2.3 — VERSION не трогаю"; exit 1; }
+  echo "$1" > VERSION
+fi
+VERSION="$(tr -d ' \r\n' < VERSION)"
+valid "$VERSION" || { echo "в VERSION «$VERSION» — не похоже на 1.2.3"; exit 1; }
 echo "версия $VERSION"
 ZAPRET_VER="1.10.3"
 OUT=dist/AlbionJournal
@@ -46,7 +50,7 @@ cp "$ITEMS" "$OUT/items_by_id.json"
 rm -rf dist/cache
 
 echo "подписываю..."
-go run ./tools/updatekey sign dist/AlbionJournal.zip
-go run ./tools/updatekey verify dist/AlbionJournal.zip
+go run ./tools/updatekey sign dist/AlbionJournal.zip "$VERSION"
+go run ./tools/updatekey verify dist/AlbionJournal.zip "$VERSION"
 ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig | awk '{print "готово:", $NF, $5, "байт"}'
 echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip и AlbionJournal.zip.sig"

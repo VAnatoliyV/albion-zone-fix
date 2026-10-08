@@ -64,16 +64,19 @@ func isGame(l string) bool {
 	return false
 }
 
-// Anonymize заменяет домашний каталог (%USERPROFILE%) на «~». Регистр букв
-// в путях Windows бывает разный — сравниваем без учёта регистра.
+// Anonymize заменяет домашний каталог (%USERPROFILE%) на «~» — только
+// целым компонентом пути: за ним разделитель или конец строки/пути
+// (C:\Users\Bob → ~, а C:\Users\Bobby не трогаем). Регистр букв в путях
+// Windows бывает разный — сравниваем без учёта регистра.
 func Anonymize(text, home string) string {
 	home = strings.TrimRight(home, `\/`)
-	if home == "" || len(home) < 3 {
+	if len(home) < 3 {
 		return text
 	}
 	lt, lh := strings.ToLower(text), strings.ToLower(home)
-	if len(lt) != len(text) { // ToLower поменял длину (редкие буквы) — точное совпадение
-		return strings.ReplaceAll(text, home, "~")
+	if len(lt) != len(text) || len(lh) != len(home) {
+		// ToLower поменял длину (редкие буквы) — сравниваем как есть.
+		lt, lh = text, home
 	}
 	var b strings.Builder
 	for {
@@ -82,10 +85,22 @@ func Anonymize(text, home string) string {
 			b.WriteString(text)
 			return b.String()
 		}
-		b.WriteString(text[:i])
-		b.WriteString("~")
-		text, lt = text[i+len(home):], lt[i+len(home):]
+		end := i + len(home)
+		if end == len(text) || !nameChar(text[end]) {
+			b.WriteString(text[:i])
+			b.WriteString("~")
+		} else {
+			b.WriteString(text[:end])
+		}
+		text, lt = text[end:], lt[end:]
 	}
+}
+
+// nameChar — байт может продолжать имя папки (тогда совпадение — лишь
+// начало другого имени, «Bob» в «Bobby» или «Bob Smith»). Не могут:
+// разделители путей, конец строки и символы, запрещённые в именах Windows.
+func nameChar(c byte) bool {
+	return !strings.ContainsRune("\\/\r\n\t\":*?<>|", rune(c))
 }
 
 // Tail — последние строки файла (всё, что влезло в последние 256 КБ).

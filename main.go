@@ -56,8 +56,8 @@ func main() {
 	applyRestart := flag.Bool("restart", false, "для -apply-update: запустить программу после установки")
 	flag.Parse()
 
-	// Версию спрашивает старая копия у скачанной новой — до всего остального
-	// (без прав администратора, без окна и без проверки второй копии).
+	// Версия — до всего остального (без прав администратора, без окна и без
+	// проверки второй копии): для тестера и поддержки.
 	if *showVersion {
 		fmt.Println(version)
 		return
@@ -137,8 +137,15 @@ func main() {
 	}
 
 	// Автообновление: выпуски GitHub, подпись ed25519 (internal/update).
+	// Скачивание и распаковка — в %ProgramData%\Albion Journal\update (только
+	// SYSTEM и администраторы), не в %AppData%: оттуда файлы с правами
+	// администратора идут в папку программы.
+	stage, err := update.StageDir()
+	if err != nil {
+		logLine("обновление: нет папки ProgramData: %v", err)
+	}
 	upd := update.New(update.Config{
-		Dir: filepath.Join(data, "обновление"), Current: version, ProgramDir: dir, DataDir: data,
+		Dir: stage, Current: version, ProgramDir: dir, DataDir: data,
 		Auto: func() bool { return a.Settings().AutoUpdate },
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(logw, "[обновление] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))

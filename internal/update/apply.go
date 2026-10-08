@@ -99,6 +99,13 @@ func replace(p Plan, cp func(src, dst string) error, unblock func(string), logf 
 	if _, err := FindRoot(p.Src); err != nil {
 		return err
 	}
+	// По ссылкам (junction, symlink) не ходим: иначе файл с правами
+	// администратора можно было бы увести в чужое место.
+	for _, d := range []string{p.Src, p.Dest, p.Prev, filepath.Dir(p.Prev)} {
+		if IsReparse(d) {
+			return fmt.Errorf("%s — ссылка, а не папка", d)
+		}
+	}
 	if err := os.RemoveAll(p.Prev); err != nil {
 		return fmt.Errorf("не очистить %s: %w", p.Prev, err)
 	}
@@ -133,9 +140,15 @@ func replace(p Plan, cp func(src, dst string) error, unblock func(string), logf 
 		if err != nil || rel == "." {
 			return err
 		}
+		if d.Type()&(fs.ModeSymlink|fs.ModeIrregular) != 0 || IsReparse(path) {
+			return fmt.Errorf("в обновлении ссылка вместо файла: %s", rel)
+		}
 		dst := filepath.Join(p.Dest, rel)
+		if IsReparse(dst) {
+			return fmt.Errorf("в папке программы ссылка вместо файла или папки: %s", rel)
+		}
 		if d.IsDir() {
-			if _, err := os.Stat(dst); os.IsNotExist(err) {
+			if _, err := os.Lstat(dst); os.IsNotExist(err) {
 				if err := os.Mkdir(dst, 0755); err != nil {
 					return err
 				}
@@ -159,6 +172,7 @@ func replace(p Plan, cp func(src, dst string) error, unblock func(string), logf 
 		// Сначала во временный файл рядом, потом переименование: оборванное
 		// копирование не оставит полфайла под настоящим именем.
 		tmp := dst + ".new"
+		os.Remove(tmp) // подложенный заранее файл или ссылку — убрать, не писать сквозь
 		if err := cp(path, tmp); err != nil {
 			os.Remove(tmp)
 			return fmt.Errorf("не скопировать %s: %w", rel, err)
@@ -198,7 +212,8 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	// O_EXCL: не открывает существующий файл и не идёт по ссылке.
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
 	if err != nil {
 		return err
 	}

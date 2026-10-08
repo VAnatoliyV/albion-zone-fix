@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -28,10 +29,16 @@ func PublicKey() ed25519.PublicKey {
 // Формат подписи (AlbionJournal.zip.sig):
 //
 //	одна строка base64 (стандартный алфавит, с «=») — 64 байта подписи
-//	ed25519 над SHA-256 всего zip-файла (32 сырых байта дайджеста).
+//	ed25519 над сообщением
 //
-// Подписываем дайджест, а не весь файл: zip читается потоком, в память
-// целиком не грузится. Пробелы и перевод строки вокруг base64 допустимы.
+//	    <версия> "\n" <SHA-256 всего zip-файла, 64 строчные hex-цифры>
+//
+//	например "1.0.1\n3f2a…9c". Версия — без «v», ровно как в теге выпуска.
+//
+// Версия входит в подпись, поэтому старый подписанный zip нельзя выложить
+// под новым тегом, а программе не нужно запускать скачанный exe, чтобы
+// узнать его версию. Zip хешируется потоком, в память целиком не грузится.
+// Пробелы и перевод строки вокруг base64 допустимы.
 
 // Digest — SHA-256 файла.
 func Digest(path string) ([]byte, error) {
@@ -47,20 +54,30 @@ func Digest(path string) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-// Sign — текст .sig для файла (с переводом строки в конце).
-func Sign(priv ed25519.PrivateKey, path string) (string, error) {
+// Message — что подписывается: версия, перевод строки, hex SHA-256 zip.
+func Message(version string, digest []byte) []byte {
+	return []byte(version + "\n" + hex.EncodeToString(digest))
+}
+
+// Sign — текст .sig для файла этой версии (с переводом строки в конце).
+func Sign(priv ed25519.PrivateKey, path, version string) (string, error) {
+	if !ValidVersion(version) {
+		return "", fmt.Errorf("версия %q не похожа на 1.2.3", version)
+	}
 	d, err := Digest(path)
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(ed25519.Sign(priv, d)) + "\n", nil
+	return base64.StdEncoding.EncodeToString(ed25519.Sign(priv, Message(version, d))) + "\n", nil
 }
 
-// ErrBadSignature — подпись не сошлась (файл подменён или подписан не нашим ключом).
+// ErrBadSignature — подпись не сошлась (файл подменён, версия не та или
+// подписано не нашим ключом).
 var ErrBadSignature = errors.New("подпись не сошлась")
 
-// Verify проверяет файл по тексту .sig и открытому ключу.
-func Verify(pub ed25519.PublicKey, path, sigText string) error {
+// Verify проверяет файл по тексту .sig, ожидаемой версии (из тега) и
+// открытому ключу.
+func Verify(pub ed25519.PublicKey, path, sigText, version string) error {
 	if len(pub) != ed25519.PublicKeySize {
 		return errors.New("нет открытого ключа")
 	}
@@ -72,7 +89,7 @@ func Verify(pub ed25519.PublicKey, path, sigText string) error {
 	if err != nil {
 		return err
 	}
-	if !ed25519.Verify(pub, d, sig) {
+	if !ed25519.Verify(pub, Message(version, d), sig) {
 		return ErrBadSignature
 	}
 	return nil

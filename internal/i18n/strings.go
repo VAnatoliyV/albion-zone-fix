@@ -145,7 +145,7 @@ var Table = map[string][3]string{
 	"upd.failed":         {"не удалось проверить — подробности в журнале", "couldn't check — details are in the log", "no se pudo comprobar: detalles en el registro"},
 	"upd.dev":            {"сборка разработчика — обновления выключены", "developer build — updates are off", "compilación de desarrollo: actualizaciones desactivadas"},
 	"upd.version":        {"Версия программы: %s", "App version: %s", "Versión de la app: %s"},
-	"upd.noWrite":        {"Нет прав на запись в папку программы — обновление не поставить. Перенеси папку, например, в C:\\AlbionJournal.", "No write access to the app folder — the update can't be installed. Move the folder, for example to C:\\AlbionJournal.", "No hay permiso de escritura en la carpeta de la app: no se puede instalar la actualización. Mueve la carpeta, por ejemplo, a C:\\AlbionJournal."},
+	"upd.noWrite":        {"Папка программы недоступна на запись — обновление не поставить. Подробности в журнале.", "The app folder is not writable — the update can't be installed. Details are in the log.", "La carpeta de la app no admite escritura: no se puede instalar la actualización. Detalles en el registro."},
 	"upd.installFailed":  {"Не удалось поставить обновление — сбор и счётчик не трогал. Подробности в журнале.", "Couldn't install the update — collection and the tracker were left running. Details are in the log.", "No se pudo instalar la actualización; la recolección y el contador siguen funcionando. Detalles en el registro."},
 	"sup.discord":        {"Написать в поддержку (Discord)", "Contact support (Discord)", "Escribir a soporte (Discord)"},
 	"sup.copy":           {"Скопировать сведения для поддержки", "Copy info for support", "Copiar datos para soporte"},
