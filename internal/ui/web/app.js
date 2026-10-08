@@ -118,7 +118,9 @@ function setBtn(b, label, primary) {
 function renderStatus() {
   const s = S;
   setRow('rowReceiver', s.receiver, t(s.receiver ? 'st.on' : 'st.off'));
-  $('btnReceiver').title = t('st.soon');
+  setBtn($('btnReceiver'), t(s.receiver ? 'btn.stop' : 'btn.start'), !s.receiver);
+  $('rcvErr').hidden = !s.receiverError || s.receiver;
+  $('rcvErr').textContent = s.receiverError ? t('st.rcvError', s.receiverError) : '';
 
   const collecting = s.collecting && s.collector.running;
   setRow('rowCollect', collecting, t(collecting ? 'st.on' : 'st.off'));
@@ -140,6 +142,7 @@ function renderStatus() {
 }
 
 $('btnCollect').onclick = async () => { await post('/api/collect', { on: S && S.collecting ? '0' : '1' }); refresh(); };
+$('btnReceiver').onclick = async () => { await post('/api/receiver', { on: S && S.receiver ? '0' : '1' }); refresh(); };
 $('btnSite').onclick = () => post('/api/open', { what: 'site' });
 const toggleFame = async () => { if (S) { await saveSettings({ sessionStats: !S.settings.sessionStats }); refresh(); } };
 $('btnFame').onclick = toggleFame;

@@ -64,6 +64,17 @@ type App struct {
 	col        Collector // разборщик цен и счётчика; nil — не подключён
 	collecting bool      // сбор цен идёт сейчас (включается кнопкой или при открытии)
 	colMu      sync.Mutex
+	rcv        Receiver // приёмник своих цен; nil — не подключён
+}
+
+// Receiver — запуск и остановка приёмника своих цен (receiver.Manager);
+// в тестах подделка.
+type Receiver interface {
+	Start() error
+	Stop()
+	Up() bool
+	Err() string
+	Keep(bool)
 }
 
 // Collector — разборщик форка сборщика (collector.Collector); в тестах подделка.
@@ -220,6 +231,45 @@ func (a *App) Shutdown() {
 		a.col.Apply(collector.Config{})
 	}
 	a.colMu.Unlock()
+	// Приёмник и сайт: «останавливать всё при выходе» выключено — оставляем
+	// работать (он тогда запущен вне объекта задания, см. receiver.Manager.Keep).
+	if a.rcv != nil && a.settings.Get().StopOnExit {
+		a.rcv.Stop()
+	}
+}
+
+// AttachReceiver подключает приёмник. Сам он стартует вместе со сбором цен
+// (AttachCollector, SetCollecting) или по кнопке (SetReceiver).
+func (a *App) AttachReceiver(r Receiver) {
+	r.Keep(!a.settings.Get().StopOnExit)
+	a.colMu.Lock()
+	a.rcv = r
+	a.colMu.Unlock()
+}
+
+// startReceiverIfCollecting поднимает приёмник, если сбор цен включён.
+func (a *App) startReceiverIfCollecting() {
+	a.colMu.Lock()
+	r := a.rcv
+	a.colMu.Unlock()
+	if r != nil && a.Collecting() {
+		r.Start() // причина неудачи — в r.Err(), её показывает строка состояния
+	}
+}
+
+// SetReceiver — кнопка «Приёмник»: запустить или остановить.
+func (a *App) SetReceiver(on bool) error {
+	a.colMu.Lock()
+	r := a.rcv
+	a.colMu.Unlock()
+	if r == nil {
+		return errors.New("приёмник не подключён")
+	}
+	if on {
+		return r.Start()
+	}
+	r.Stop()
+	return nil
 }
 
 // AttachCollector подключает разборщик и включает его по настройкам.
@@ -227,6 +277,7 @@ func (a *App) AttachCollector(c Collector) error {
 	a.colMu.Lock()
 	a.col = c
 	a.colMu.Unlock()
+	a.startReceiverIfCollecting()
 	return a.applyCollector()
 }
 
@@ -265,6 +316,12 @@ func (a *App) SetSettings(s settings.Settings) error {
 		a.mu.Unlock()
 		a.runner.Stop()
 	}
+	a.colMu.Lock()
+	r := a.rcv
+	a.colMu.Unlock()
+	if r != nil {
+		r.Keep(!s.StopOnExit)
+	}
 	return a.applyCollector()
 }
 
@@ -273,6 +330,9 @@ func (a *App) SetCollecting(on bool) error {
 	a.mu.Lock()
 	a.collecting = on
 	a.mu.Unlock()
+	if on {
+		a.startReceiverIfCollecting()
+	}
 	return a.applyCollector()
 }
 
@@ -514,15 +574,24 @@ type State struct {
 	Collecting bool               `json:"collecting"`
 	Settings   settings.Settings  `json:"settings"`
 	Collector  collector.Stats    `json:"collector"`
+	// ReceiverErr — почему приёмник не работает (порт занят, нет файла, упал).
+	ReceiverErr string `json:"receiverError"`
 }
 
 func (a *App) State() State {
 	cur, berr, _ := a.runner.Status()
 	cs, set := a.collectorStats(), a.settings.Get()
+	a.colMu.Lock()
+	rcv := a.rcv
+	a.colMu.Unlock()
+	rerr := ""
+	if rcv != nil {
+		rerr = rcv.Err()
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr,
-		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs}
+		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs, ReceiverErr: rerr}
 	if !a.lastPkt.IsZero() {
 		st.LastPacket = a.lastPkt.Format("15:04:05")
 	}

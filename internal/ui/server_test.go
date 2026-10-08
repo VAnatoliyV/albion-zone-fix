@@ -294,7 +294,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 		used[m[1]] = true
 	}
 	// ключи, собранные в JS из частей или переданные через переменную
-	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.startCollect",
+	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
 		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
 		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff"} {
 		used[k] = true
@@ -317,5 +317,36 @@ func TestPageKeysInDictionary(t *testing.T) {
 	}
 	if len(unused) > 0 {
 		t.Errorf("в словаре, но страница не берёт: %v", unused)
+	}
+}
+
+type fakeRcv struct {
+	on  bool
+	err string
+}
+
+func (f *fakeRcv) Start() error { f.on = true; return nil }
+func (f *fakeRcv) Stop()        { f.on = false }
+func (f *fakeRcv) Up() bool     { return f.on }
+func (f *fakeRcv) Err() string  { return f.err }
+func (f *fakeRcv) Keep(bool)    {}
+
+func TestReceiverEndpointAndError(t *testing.T) {
+	e := start(t)
+	r := &fakeRcv{err: "порт 7777 занят другой программой"}
+	e.a.AttachReceiver(r)
+	if resp := e.post(t, "/api/receiver", url.Values{"on": {"1"}}, false); resp.StatusCode != 403 {
+		t.Fatalf("без ключа: %d", resp.StatusCode)
+	}
+	if resp := e.post(t, "/api/receiver", url.Values{"on": {"1"}}, true); resp.StatusCode != 200 || !r.on {
+		t.Fatalf("запуск: %d %v", resp.StatusCode, r.on)
+	}
+	if resp := e.post(t, "/api/receiver", url.Values{"on": {"0"}}, true); resp.StatusCode != 200 || r.on {
+		t.Fatalf("остановка: %d %v", resp.StatusCode, r.on)
+	}
+	var st map[string]any
+	e.get(t, "/api/state", &st)
+	if st["receiverError"] != "порт 7777 занят другой программой" {
+		t.Fatalf("причина в состоянии: %v", st["receiverError"])
 	}
 }

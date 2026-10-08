@@ -27,6 +27,7 @@ import (
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/i18n"
 	"albionzonefix/internal/names"
+	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/settings"
 	"albionzonefix/internal/sniff"
@@ -96,6 +97,15 @@ func main() {
 	}
 	a := app.New(data, binDir, names.Zones())
 
+	// Приёмник своих цен (acp-prices.exe рядом с программой): стартует вместе
+	// со сбором, вывод идёт в тот же журнал.
+	var rlog io.Writer = io.Discard
+	if logf != nil {
+		rlog = logf
+	}
+	rcv := receiver.NewManager(filepath.Join(dir, receiver.ExeName), data, rlog)
+	a.AttachReceiver(rcv)
+
 	// Разборщик сборщика цен: журнал — общий, таблица предметов — рядом с exe.
 	col := collector.New(data, dir, logw)
 	if err := a.AttachCollector(col); err != nil {
@@ -108,8 +118,8 @@ func main() {
 	shutdown := func() {
 		stopOnce.Do(func() {
 			logLine("выход: останавливаю сбор, счётчик и обход")
-			// StopOnExit решает судьбу приёмника (следующая задача); всё,
-			// что живёт внутри программы, останавливается всегда.
+			// Всё, что живёт внутри программы, останавливается всегда;
+			// приёмник — только при «останавливать всё при выходе».
 			a.Shutdown()
 			os.Remove(filepath.Join(data, uiFile))
 		})

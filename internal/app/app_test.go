@@ -162,3 +162,104 @@ func TestCollectOnStartOff(t *testing.T) {
 		t.Fatalf("сбор начался сам: %+v", f.applied)
 	}
 }
+
+type fakeReceiver struct {
+	starts, stops int
+	keep          bool
+	up            bool
+	err           string
+}
+
+func (f *fakeReceiver) Start() error { f.starts++; f.up = true; return nil }
+func (f *fakeReceiver) Stop()        { f.stops++; f.up = false }
+func (f *fakeReceiver) Up() bool     { return f.up }
+func (f *fakeReceiver) Err() string  { return f.err }
+func (f *fakeReceiver) Keep(k bool)  { f.keep = k }
+
+func TestReceiverFollowsCollecting(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	r := &fakeReceiver{}
+	a.AttachReceiver(r)
+	if r.keep {
+		t.Fatal("по умолчанию «останавливать всё» включено, значит Keep=false")
+	}
+	if err := a.AttachCollector(&fakeCollector{}); err != nil {
+		t.Fatal(err)
+	}
+	if r.starts != 1 {
+		t.Fatalf("сбор при открытии должен поднять приёмник: %d", r.starts)
+	}
+	a.SetCollecting(false)
+	if r.stops != 0 {
+		t.Fatal("остановка сбора не должна гасить приёмник (сайт ещё нужен)")
+	}
+	a.SetCollecting(true)
+	if r.starts != 2 {
+		t.Fatalf("включение сбора: %d", r.starts)
+	}
+	// Смена другой настройки приёмник не перезапускает.
+	s := a.Settings()
+	s.ShareADP = false
+	a.SetSettings(s)
+	if r.starts != 2 {
+		t.Fatalf("лишний запуск после смены настройки: %d", r.starts)
+	}
+	r.err = "порт 7777 занят"
+	if a.State().ReceiverErr != "порт 7777 занят" {
+		t.Fatal("причина не дошла до состояния")
+	}
+}
+
+func TestReceiverNotStartedWhenNotCollecting(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir, dir, nil).Settings()
+	s.CollectOnStart = false
+	New(dir, dir, nil).SetSettings(s)
+	a := New(dir, dir, nil)
+	r := &fakeReceiver{}
+	a.AttachReceiver(r)
+	a.AttachCollector(&fakeCollector{})
+	if r.starts != 0 {
+		t.Fatal("сбор выключен — приёмник не нужен")
+	}
+	if err := a.SetReceiver(true); err != nil || r.starts != 1 {
+		t.Fatalf("кнопка «Запустить»: %v %d", err, r.starts)
+	}
+	a.SetReceiver(false)
+	if r.stops != 1 {
+		t.Fatal("кнопка «Остановить»")
+	}
+}
+
+func TestShutdownRespectsStopOnExit(t *testing.T) {
+	for _, stop := range []bool{true, false} {
+		dir := t.TempDir()
+		a := New(dir, dir, nil)
+		s := a.Settings()
+		s.StopOnExit = stop
+		a.SetSettings(s)
+		r := &fakeReceiver{}
+		a.AttachReceiver(r)
+		if r.keep == stop {
+			t.Fatalf("stopOnExit=%v: Keep=%v", stop, r.keep)
+		}
+		a.Shutdown()
+		if (r.stops == 1) != stop {
+			t.Fatalf("stopOnExit=%v: остановок %d", stop, r.stops)
+		}
+	}
+}
+
+func TestKeepFollowsSettingChange(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	r := &fakeReceiver{}
+	a.AttachReceiver(r)
+	s := a.Settings()
+	s.StopOnExit = false
+	a.SetSettings(s)
+	if !r.keep {
+		t.Fatal("выключили «останавливать всё» — Keep должен включиться")
+	}
+}

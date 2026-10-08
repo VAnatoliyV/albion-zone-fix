@@ -1,6 +1,8 @@
 //go:build windows
 
-package bypass
+// Пакет procutil — запуск дочерних процессов на Windows: без окна консоли и
+// (по желанию) внутри объекта задания, который гасит их вместе с программой.
+package procutil
 
 import (
 	"os/exec"
@@ -10,12 +12,19 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func hideWindow(cmd *exec.Cmd) {
+// Hide: процесс без окна консоли.
+func Hide(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
+// Detach: без окна и в своей группе процессов, чтобы Ctrl+C программы его не задел.
+func Detach(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true,
+		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP}
+}
+
 // Один объект задания на всю программу: при её закрытии (даже аварийном)
-// Windows сама завершает все процессы в нём, то есть winws.
+// Windows сама завершает все процессы в нём (winws, приёмник).
 var job windows.Handle
 
 func init() {
@@ -33,7 +42,8 @@ func init() {
 	job = h
 }
 
-func bindToJob(cmd *exec.Cmd) {
+// BindToJob кладёт запущенный процесс в объект задания.
+func BindToJob(cmd *exec.Cmd) {
 	if job == 0 || cmd.Process == nil {
 		return
 	}

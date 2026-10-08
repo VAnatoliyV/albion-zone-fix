@@ -157,6 +157,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/collect", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, s.a.SetCollecting(r.FormValue("on") == "1"))
 	})
+	mux.HandleFunc("POST /api/receiver", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, s.a.SetReceiver(r.FormValue("on") == "1"))
+	})
 	mux.HandleFunc("POST /api/open", func(w http.ResponseWriter, r *http.Request) {
 		switch r.FormValue("what") {
 		case "site":

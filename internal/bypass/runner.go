@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"albionzonefix/internal/procutil"
 	"sync"
 )
 
@@ -40,7 +42,7 @@ func (r *Runner) Start(s Strategy) error {
 	r.Stop()
 	cmd := exec.Command(filepath.Join(r.binDir, "winws.exe"), Args(s, r.binDir)...)
 	cmd.Dir = r.binDir
-	hideWindow(cmd)
+	procutil.Hide(cmd)
 	out, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
@@ -49,7 +51,7 @@ func (r *Runner) Start(s Strategy) error {
 		r.mu.Unlock()
 		return errors.New(r.lastErr)
 	}
-	bindToJob(cmd)
+	procutil.BindToJob(cmd)
 	r.mu.Lock()
 	r.cmd, r.cur, r.lastErr, r.tail = cmd, s.Name, "", nil
 	r.mu.Unlock()

@@ -1,10 +1,11 @@
 #!/bin/bash
 # Собирает dist/AlbionJournal.zip: программа под Windows x64 (Albion Journal: сбор цен,
-# счётчик, Zone Fix) + таблица предметов + официальные файлы zapret (Flowseal).
+# счётчик, Zone Fix) + приёмник своих цен acp-prices.exe + таблица предметов + официальные файлы zapret (Flowseal).
 set -e
 cd "$(dirname "$0")"
 ZAPRET_VER="1.10.3"
 OUT=dist/AlbionJournal
+RECV=../acp-prices-src # приёмник своих цен (тот же код, что у мака)
 ITEMS=../items_by_id.json # таблица предметов для счётчика урона (та же, что у мака)
 rm -rf dist && mkdir -p "$OUT/zapret/bin" dist/cache
 
@@ -16,6 +17,9 @@ echo "собираю AlbionJournal.exe..."
 # Значок exe (кролик) — rsrc_windows_amd64.syso, Go подхватывает его сам. Пересобрать:
 #   go run github.com/akavel/rsrc@v0.10.2 -ico internal/desktop/rabbit.ico -arch amd64 -o rsrc_windows_amd64.syso
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o "$OUT/AlbionJournal.exe" .
+
+echo "собираю acp-prices.exe..."
+(cd "$RECV" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$OLDPWD/$OUT/acp-prices.exe" .)
 
 echo "беру zapret $ZAPRET_VER с GitHub Flowseal..."
 ZIP=dist/cache/zapret.zip
