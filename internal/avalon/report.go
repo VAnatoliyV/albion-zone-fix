@@ -95,23 +95,34 @@ type ReporterConfig struct {
 	Logf    func(string, ...any) // журнал
 }
 
-// Reporter отправляет проходы по одному в своей горутине. Offer не
-// блокирует: перехват пакетов ждать сеть не должен.
+// Reporter отправляет проходы и порталы карточки по одному в своей
+// горутине. Offer не блокирует: перехват пакетов ждать сеть не должен.
 type Reporter struct {
 	cfg ReporterConfig
-	q   chan Pass
+	q   chan job
 
-	mu    sync.Mutex
-	pause time.Time
-	last  *Status
+	mu      sync.Mutex
+	pause   time.Time
+	last    *Status
+	lastTip *Status // портал карточки зоны (kind tooltip)
+}
+
+// job — одна отправка: проход или портал карточки (tip != nil).
+type job struct {
+	p   Pass
+	tip *Tip
 }
 
 // NewReporter запускает отправителя.
 func NewReporter(cfg ReporterConfig) *Reporter {
 	r := newReporter(cfg)
 	go func() {
-		for p := range r.q {
-			r.Handle(context.Background(), p)
+		for j := range r.q {
+			if j.tip != nil {
+				r.HandleTip(context.Background(), *j.tip)
+			} else {
+				r.Handle(context.Background(), j.p)
+			}
 		}
 	}()
 	return r
@@ -136,7 +147,7 @@ func newReporter(cfg ReporterConfig) *Reporter {
 	if cfg.Install == nil {
 		cfg.Install = NewInstall
 	}
-	return &Reporter{cfg: cfg, q: make(chan Pass, 8)}
+	return &Reporter{cfg: cfg, q: make(chan job, 8)}
 }
 
 // WhyQueueFull — причина в итоге, когда очередь отправки полна.
@@ -148,23 +159,53 @@ const WhyQueueFull = "queue"
 func (r *Reporter) Offer(p Pass) {
 	r.set(p, ResSending, "")
 	select {
-	case r.q <- p:
+	case r.q <- job{p: p}:
 	default:
 		r.cfg.Logf("карта: проход %s → %s пропущен: очередь отправки полна", p.From, p.To)
 		r.set(p, ResRefused, WhyQueueFull)
 	}
 }
 
+// OfferTip ставит портал карточки зоны в очередь (как Offer).
+func (r *Reporter) OfferTip(t Tip) {
+	r.setTip(t, ResSending, "")
+	select {
+	case r.q <- job{tip: &t}:
+	default:
+		r.cfg.Logf("карта: портал %s → %s пропущен: очередь отправки полна", t.From, t.To)
+		r.setTip(t, ResRefused, WhyQueueFull)
+	}
+}
+
+// NoteTip запоминает портал, который не отправлен по своей причине.
+func (r *Reporter) NoteTip(t Tip, result string) { r.setTip(t, result, "") }
+
 // Note запоминает проход, который не отправлен по своей причине (например,
 // не Европа): вкладка показывает её.
 func (r *Reporter) Note(p Pass, result string) { r.set(p, result, "") }
 
 func (r *Reporter) set(p Pass, result, why string) *Status {
-	st := &Status{From: p.From, To: p.To, At: r.cfg.Now(), Result: result, Why: why}
-	if z, ok := Lookup(p.From); ok {
+	st := r.status(p.From, p.To, result, why)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.last = st
+	return st
+}
+
+func (r *Reporter) setTip(t Tip, result, why string) *Status {
+	st := r.status(t.From, t.To, result, why)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastTip = st
+	return st
+}
+
+func (r *Reporter) status(from, to, result, why string) *Status {
+	st := &Status{From: from, To: to, At: r.cfg.Now(), Result: result, Why: why}
+	if z, ok := Lookup(from); ok {
 		st.FromName = z.Name
 	}
-	if z, ok := Lookup(p.To); ok {
+	if z, ok := Lookup(to); ok {
 		st.ToName = z.Name
 	}
 	r.mu.Lock()
@@ -172,20 +213,48 @@ func (r *Reporter) set(p Pass, result, why string) *Status {
 	if result == ResPaused || result == ResOffline || result == ResLimit {
 		st.RetryAt = r.pause
 	}
-	r.last = st
 	return st
 }
 
 // Handle отправляет проход сейчас (с учётом паузы) и возвращает итог.
 func (r *Reporter) Handle(ctx context.Context, p Pass) Status {
-	now := r.cfg.Now()
-	r.mu.Lock()
-	paused := now.Before(r.pause)
-	r.mu.Unlock()
-	if paused {
+	if r.paused() {
 		return *r.set(p, ResPaused, "")
 	}
-	res, why := Send(ctx, r.cfg.Client, r.cfg.URL, Body(p, r.cfg.Install()))
+	res, why := r.send(ctx, Body(p, r.cfg.Install()))
+	if res == ResOK {
+		r.cfg.Logf("карта: проход %s → %s принят", p.From, p.To)
+	} else {
+		r.cfg.Logf("карта: проход %s → %s не принят: %s %s", p.From, p.To, res, why)
+	}
+	return *r.set(p, res, why)
+}
+
+// HandleTip отправляет портал карточки зоны сейчас (с учётом той же паузы).
+func (r *Reporter) HandleTip(ctx context.Context, t Tip) Status {
+	if r.paused() {
+		return *r.setTip(t, ResPaused, "")
+	}
+	res, why := r.send(ctx, TipBody(t, r.cfg.Install()))
+	if res == ResOK {
+		r.cfg.Logf("карта: портал %s → %s принят", t.From, t.To)
+	} else {
+		r.cfg.Logf("карта: портал %s → %s не принят: %s %s", t.From, t.To, res, why)
+	}
+	return *r.setTip(t, res, why)
+}
+
+func (r *Reporter) paused() bool {
+	now := r.cfg.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return now.Before(r.pause)
+}
+
+// send шлёт отчёт и ставит паузу после недоступности или лимита.
+func (r *Reporter) send(ctx context.Context, body Report) (string, string) {
+	now := r.cfg.Now()
+	res, why := Send(ctx, r.cfg.Client, r.cfg.URL, body)
 	r.mu.Lock()
 	switch res {
 	case ResOffline:
@@ -194,12 +263,7 @@ func (r *Reporter) Handle(ctx context.Context, p Pass) Status {
 		r.pause = now.Add(LimitPause)
 	}
 	r.mu.Unlock()
-	if res == ResOK {
-		r.cfg.Logf("карта: проход %s → %s принят", p.From, p.To)
-	} else {
-		r.cfg.Logf("карта: проход %s → %s не принят: %s %s", p.From, p.To, res, why)
-	}
-	return *r.set(p, res, why)
+	return res, why
 }
 
 // Last — последний проход и итог; nil — проходов не было.
@@ -210,5 +274,16 @@ func (r *Reporter) Last() *Status {
 		return nil
 	}
 	c := *r.last
+	return &c
+}
+
+// LastTip — последний портал карточки и итог; nil — не было.
+func (r *Reporter) LastTip() *Status {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.lastTip == nil {
+		return nil
+	}
+	c := *r.lastTip
 	return &c
 }

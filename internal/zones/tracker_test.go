@@ -154,3 +154,51 @@ func TestFirstConnectAtGameStartIsNotATransition(t *testing.T) {
 		t.Fatalf("вход в игру стал переходом: %+v", done)
 	}
 }
+
+// Новый сервер молчит после CONNECT — предупреждение через StallAfter, один
+// раз на переход; ответил вовремя — молчим.
+func TestStallWarning(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	var warns []string
+	tr.OnStall(2*time.Second, func(server, from string) { warns = append(warns, server+" "+from) })
+	tr.On(game.Ev{T: at(0), Kind: game.Join, Server: "a:5056", Location: "0000"})
+	tr.On(game.Ev{T: at(10), Kind: game.ChangeCluster, Server: "a:5056"})
+	tr.On(game.Ev{T: at(10.5), Kind: game.Connect, Server: "b:5056"})
+	tr.CheckStall(at(12.25))
+	if len(warns) != 0 {
+		t.Fatal("рано: 1.75 с после CONNECT")
+	}
+	tr.CheckStall(at(12.5))
+	tr.CheckStall(at(13))
+	tr.CheckStall(at(20))
+	if len(warns) != 1 || warns[0] != "b:5056 0000" {
+		t.Fatalf("ровно одно предупреждение: %v", warns)
+	}
+	// Клиент переподключился к тому же серверу — переход тот же, второго нет.
+	tr.On(game.Ev{T: at(21), Kind: game.Connect, Server: "b:5056"})
+	tr.CheckStall(at(30))
+	if len(warns) != 1 {
+		t.Fatalf("%v", warns)
+	}
+	// Следующий переход: сервер ответил за секунду — тишина.
+	tr.On(game.Ev{T: at(31), Kind: game.Join, Server: "b:5056", Location: "4002"})
+	tr.On(game.Ev{T: at(40), Kind: game.ChangeCluster, Server: "b:5056"})
+	tr.On(game.Ev{T: at(40.2), Kind: game.Connect, Server: "c:5056"})
+	tr.On(game.Ev{T: at(41.2), Kind: game.Reply, Server: "c:5056"})
+	tr.CheckStall(at(50))
+	if len(warns) != 1 {
+		t.Fatalf("ответил — не предупреждаем: %v", warns)
+	}
+	// И ещё один без ответа — новое предупреждение.
+	tr.On(game.Ev{T: at(42), Kind: game.Join, Server: "c:5056", Location: "0000"})
+	tr.On(game.Ev{T: at(60), Kind: game.ChangeCluster, Server: "c:5056"})
+	tr.On(game.Ev{T: at(60.1), Kind: game.Connect, Server: "d:5056"})
+	tr.CheckStall(at(62.2))
+	if len(warns) != 2 || warns[1] != "d:5056 0000" {
+		t.Fatalf("%v", warns)
+	}
+	// Без подписки CheckStall ничего не делает.
+	var d2 []Transition
+	newT(&d2).CheckStall(at(100))
+}

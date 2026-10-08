@@ -42,6 +42,10 @@ type Zone struct {
 //go:embed zones.json
 var zonesRaw []byte
 
+// ZonesJSON — сам справочник (полный: ресурсы, сундуки, лагеря — для
+// карточки зоны, internal/zonecard).
+func ZonesJSON() []byte { return zonesRaw }
+
 var (
 	dirOnce sync.Once
 	dir     map[string]Zone
@@ -150,18 +154,35 @@ func Decide(prev *Place, cur Place) (Pass, Skip) {
 	return p, OK
 }
 
-// Report — тело отчёта pass для POST /roads/report.
+// Report — тело отчёта для POST /roads/report: pass (прошёл портал) или
+// tooltip (увидел портал по кнопке карточки зоны).
 type Report struct {
-	Kind    string `json:"kind"`
-	Install string `json:"install"`
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Server  string `json:"server,omitempty"`
+	Kind     string `json:"kind"`
+	Install  string `json:"install"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	ClosesAt int64  `json:"closesAt,omitempty"` // tooltip: когда портал закроется (unix, с)
+	Size     int    `json:"size,omitempty"`     // tooltip: размер портала (7 из «7/7»)
+	Server   string `json:"server,omitempty"`
 }
 
 // Body — отчёт о проходе. Пустой сервер не пишем (как мак).
 func Body(p Pass, install string) Report {
 	return Report{Kind: "pass", Install: install, From: p.From, To: p.To, Server: p.Region}
+}
+
+// Tip — портал, снятый карточкой зоны: откуда (где игрок) и куда ведёт.
+type Tip struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	ClosesAt int64  `json:"closesAt"`
+	Size     int    `json:"size,omitempty"` // 0 — не прочитан
+	Region   string `json:"region,omitempty"`
+}
+
+// TipBody — отчёт tooltip, как ТелоОтчёта мак-версии.
+func TipBody(t Tip, install string) Report {
+	return Report{Kind: "tooltip", Install: install, From: t.From, To: t.To, ClosesAt: t.ClosesAt, Size: t.Size, Server: t.Region}
 }
 
 // NewInstall — случайный номер установки (UUID v4). Ничего о человеке не

@@ -205,4 +205,7 @@ Section "Uninstall"
 
   SetRegView 64
   DeleteRegKey HKLM "${UNKEY}"
+  ; Регистрация уведомлений (AppUserModelID), её пишет сама программа
+  ; (internal/notify) в HKCU того, кто её запускал.
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\VAnatoliyV.AlbionJournal"
 SectionEnd

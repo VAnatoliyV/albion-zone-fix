@@ -19,6 +19,7 @@ import (
 	"albionzonefix/internal/bypass"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/hotkey"
 	"albionzonefix/internal/probe"
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/settings"
@@ -73,6 +74,11 @@ type App struct {
 	mapRep    MapReporter
 	onZone    func(code string) // зона сменилась (подсветить на открытой карте)
 	installMu sync.Mutex
+
+	// Карточка зоны: последнее нажатие и куда человек собрался.
+	card     *cardState
+	expect   *expectation
+	cardInfo CardInfo
 }
 
 // MapReporter — отправка проходов на карту (avalon.Reporter); в тестах подделка.
@@ -80,6 +86,8 @@ type MapReporter interface {
 	Offer(avalon.Pass)
 	Note(avalon.Pass, string)
 	Last() *avalon.Status
+	OfferTip(avalon.Tip)
+	LastTip() *avalon.Status
 }
 
 // Receiver — запуск и остановка приёмника своих цен (receiver.Manager);
@@ -214,6 +222,10 @@ func (a *App) MapInstall() string {
 }
 
 func (a *App) onTransition(tr zones.Transition) {
+	if w := a.wantFor(tr); w != "" {
+		tr.Want = w
+	}
+	a.expect = nil // переход случился — прежний снимок портала больше не цель
 	a.trs = append(a.trs, tr)
 	if b, err := json.Marshal(tr); err == nil {
 		if f, err := os.OpenFile(filepath.Join(a.dir, logName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
@@ -383,6 +395,11 @@ func (a *App) Settings() settings.Settings { return a.settings.Get() }
 //
 // Встроенный обход запретили — работающий winws гасится сразу.
 func (a *App) SetSettings(s settings.Settings) error {
+	// Кнопку и порядок строк уведомления — только знакомые.
+	s.ZoneKey = string(hotkey.Normalize(s.ZoneKey))
+	if s.NotifyOrder != "resourcesFirst" {
+		s.NotifyOrder = "chestsFirst"
+	}
 	// Номер установки страница не меняет: берём сохранённый.
 	a.installMu.Lock()
 	s.MapInstall = a.settings.Get().MapInstall
@@ -661,6 +678,8 @@ type State struct {
 	Here *Here `json:"here,omitempty"`
 	// MapLast — последний проход по дорогам и итог отправки на карту.
 	MapLast *avalon.Status `json:"mapLast,omitempty"`
+	// Card — карточка зоны по кнопке (этап 4).
+	Card *CardView `json:"card"`
 }
 
 // Here — где игрок сейчас.
@@ -680,9 +699,9 @@ func (a *App) State() State {
 	a.mu.Lock()
 	mr := a.mapRep
 	a.mu.Unlock()
-	var mapLast *avalon.Status
+	var mapLast, tipLast *avalon.Status
 	if mr != nil {
-		mapLast = mr.Last()
+		mapLast, tipLast = mr.Last(), mr.LastTip()
 	}
 	rerr := ""
 	if rcv != nil {
@@ -692,6 +711,7 @@ func (a *App) State() State {
 	defer a.mu.Unlock()
 	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr,
 		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs, ReceiverErr: rerr, MapLast: mapLast}
+	st.Card = a.cardView(tipLast, set.BlackWarn)
 	if a.here != nil {
 		z, ok := avalon.Lookup(a.here.Zone)
 		if !ok {

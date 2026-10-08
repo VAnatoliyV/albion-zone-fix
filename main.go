@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -26,15 +27,20 @@ import (
 	"albionzonefix/internal/datadir"
 	"albionzonefix/internal/desktop"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/hotkey"
 	"albionzonefix/internal/i18n"
 	"albionzonefix/internal/names"
+	"albionzonefix/internal/notify"
+	"albionzonefix/internal/ocr"
 	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/record"
+	"albionzonefix/internal/screen"
 	"albionzonefix/internal/settings"
 	"albionzonefix/internal/sniff"
 	"albionzonefix/internal/support"
 	"albionzonefix/internal/ui"
 	"albionzonefix/internal/update"
+	"albionzonefix/internal/zonecard"
 )
 
 // version — версия сборки; собрать.sh ставит её через -ldflags "-X main.version=…".
@@ -198,12 +204,93 @@ func main() {
 
 	var ending atomic.Bool // Windows выключается: обновление не ставим
 	curLang := func() string { return i18n.Resolve(a.Settings().Language, i18n.System()) }
+
+	// Карточка зоны по кнопке (этап 4): хук кнопки → снимок у курсора →
+	// OCR Windows → опознание → вкладка «Зона», уведомление и отчёт портала
+	// на карту. Поверх игры ничего не рисуется (запрет SBI).
+	cardLog := func(format string, args ...any) {
+		fmt.Fprintf(logw, "[карточка] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	}
+	notify.Init(data, desktop.Icon, cardLog)
+	dict := zonecard.Default()
+	if dict == nil {
+		cardLog("справочник зон не прочитался")
+	}
+	runner := zonecard.NewRunner(zonecard.RunnerConfig{
+		Path: filepath.Join(data, screen.FileName),
+		Capture: func(path string) (string, error) {
+			info, err := screen.CaptureAroundCursor(path)
+			return fmt.Sprintf("курсор %v, dpi %d, рамка %v, для OCR %v", info.Cursor, info.DPI, info.Rect, info.Out), err
+		},
+		Recognize: ocr.Recognize,
+		Languages: ocr.Languages,
+		Pick:      ocr.Pick,
+		Hint:      ocr.Hint,
+		Dict:      dict,
+		Gap:       400 * time.Millisecond,
+		Logf:      cardLog,
+		Done: func(sh zonecard.Shot) {
+			a.SetCard(sh, dict)
+			set := a.Settings()
+			z := sh.Result.Zone()
+			if sh.Kind != "" || z == nil || !set.ZoneNotify {
+				return
+			}
+			t := zonecard.BuildToast(curLang(), z, sh.Result, zonecard.ToastOptions{
+				Chests: set.NotifyChests, Res: set.NotifyRes, Dungeons: set.NotifyDng, Portal: set.NotifyPortal,
+				ChestsFirst: set.NotifyOrder != "resourcesFirst"}, time.Now())
+			notify.Show(t.Title, t.Subtitle, t.Body)
+		},
+	})
+	a.AttachCard(func() (bool, []string, string, bool) {
+		langs, hint, checked := runner.OCRStatus()
+		return runner.Busy(), langs, hint, checked
+	})
+	go runner.CheckLanguages(context.Background())
+	var (
+		hookMu  sync.Mutex
+		hook    *hotkey.Hook
+		hookKey hotkey.Key
+	)
+	setKey := func(k hotkey.Key) {
+		hookMu.Lock()
+		defer hookMu.Unlock()
+		if k == hookKey && hook != nil {
+			return
+		}
+		hook.Stop()
+		hook, hookKey = nil, k
+		h, err := hotkey.Start(k, func() { runner.Trigger() }, cardLog)
+		if err != nil {
+			cardLog("кнопка %s не поставлена: %v", k, err)
+			return
+		}
+		hook = h
+	}
+	setKey(hotkey.Normalize(a.Settings().ZoneKey))
+	defer func() {
+		hookMu.Lock()
+		hook.Stop()
+		hookMu.Unlock()
+	}()
+
+	// Предупреждение о чёрном экране: новый сервер молчит после CONNECT.
+	a.OnStall(func(server, from string) {
+		lang := curLang()
+		body := i18n.T(lang, "msg.blackBody")
+		if from != "" {
+			body = i18n.Tf(lang, "msg.blackFrom", from)
+		}
+		cardLog("чёрный экран? сервер %s молчит после подключения (из %q)", server, from)
+		notify.Show(i18n.T(lang, "msg.blackTitle"), "", body)
+	})
 	srv, err := ui.Start(a, ui.Options{
 		DataDir: data, LogPath: logPath, SessionFile: col.SessionFile(),
 		OnSettings: func(old, cur settings.Settings) error {
 			if d := dp.Load(); d != nil {
 				d.Relabel()
 			}
+			setKey(hotkey.Normalize(a.Settings().ZoneKey))
 			if old.StartWithWindows == cur.StartWithWindows {
 				return nil
 			}
@@ -290,6 +377,12 @@ func main() {
 				last = c
 				d.Relabel()
 			}
+		}
+	}()
+	go func() {
+		// «Сервер зоны не отвечает» — через ~2 с, а не через 2–3 (Tick раз в секунду).
+		for now := range time.Tick(250 * time.Millisecond) {
+			a.CheckStall(now)
 		}
 	}()
 	go func() {

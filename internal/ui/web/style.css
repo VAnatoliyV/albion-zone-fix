@@ -168,3 +168,30 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
 .updnotes { white-space: pre-wrap; color: var(--text); max-height: 140px; overflow-y: auto; margin-top: 6px; user-select: text; }
 .upd .hint.red, .hint.red { color: var(--red); }
 .hint.flat { margin-left: 0; }
+
+/* карточка зоны (как КарточкаЗоны у мака) */
+.note.flat { margin: 0 0 8px; }
+.cdname { font: 600 17px var(--pix); letter-spacing: .8px; color: var(--gold); }
+.cdsub { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-bottom: 8px; }
+.qsq { width: 9px; height: 9px; flex: none; display: inline-block; }
+.cdpanel { background: var(--bg2); border: 1px solid var(--line); padding: 4px 12px; }
+.cdrow { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; }
+.cdrow + .cdrow { background-image: linear-gradient(to right, var(--line) 50%, transparent 0); background-size: 4px 1px; background-repeat: repeat-x; }
+.cdlabel { width: 78px; flex: none; font: 600 11px var(--pix); color: var(--muted); padding-top: 2px; }
+.cdval { flex: 1; font-size: 11.5px; }
+.cdicons { display: flex; gap: 10px; flex-wrap: wrap; }
+.cdicon { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 9.5px; color: var(--muted); }
+.cdicon .n { color: var(--text); }
+.cdicon .gold { color: var(--gold); }
+.chest { width: 26px; height: 26px; display: grid; place-items: center; font-size: 18px; }
+.camps { font-size: 10px; color: var(--muted); margin-top: 4px; }
+.cdfoot { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 8px; }
+.cddoubt { font-size: 10.5px; color: var(--gold); margin-bottom: 8px; }
+.legend { margin-top: 10px; font-size: 10.5px; color: var(--muted); }
+.legend summary { cursor: pointer; font: 600 11px var(--pix); letter-spacing: .5px; }
+.legend p { margin: 6px 0; }
+.lgrow { margin-top: 8px; }
+.lgcap { font-size: 9.5px; margin-bottom: 4px; }
+.lgitems { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text); font-size: 10px; align-items: center; }
+.lgitems span { display: inline-flex; align-items: center; gap: 4px; }
+#ntBox { margin-left: 40px; }

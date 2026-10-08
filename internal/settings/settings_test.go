@@ -49,3 +49,14 @@ func TestBrokenFileGivesDefaults(t *testing.T) {
 		t.Fatal("битый файл должен давать умолчания")
 	}
 }
+
+func TestZoneCardDefaultsForOldFile(t *testing.T) {
+	dir := t.TempDir()
+	// Файл от этапа 3: полей карточки в нём нет — берутся по умолчанию.
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"language":"ru","mapSend":false}`), 0644)
+	s := Open(dir).Get()
+	if s.MapSend || s.ZoneKey != "xbutton1" || !s.ZoneNotify || !s.NotifyChests || !s.NotifyRes || !s.NotifyDng ||
+		!s.NotifyPortal || s.NotifyOrder != "chestsFirst" || !s.BlackWarn {
+		t.Fatalf("%+v", s)
+	}
+}

@@ -379,6 +379,8 @@ function mapResult(m) {
 function renderZone() {
   const s = S;
   if (!s) return;
+  renderCard();
+  renderLegend();
   const h = s.here;
   if (!h) {
     $('znName').textContent = '—';
@@ -417,6 +419,138 @@ function renderZone() {
 }
 
 $('znOpenMap').onclick = () => post('/api/open', { what: 'map' });
+
+// --- карточка зоны (КарточкаЗоны и Оформление у мака) -------------------------
+
+const QCOLOR = { safe: '#4E77C4', yellow: '#D8B23A', red: '#C24A3E', black: '#6B6F7A', city: '#8A6A3A', island: '#4E8E5A', roads: '#8A5ABF' };
+const CHEST_SQ = { small: '🟩', small_veteran: '🟦', medium_veteran: '🟦', small_elite: '🟪', medium_elite: '🟨', large_elite: '🟨' };
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
+// Ключа нет — пусто (обычные дороги словом не подписываем, как у мака).
+const tOpt = key => (T[key] === undefined ? '' : T[key]);
+const sortedEntries = o => Object.entries(o || {}).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+
+function zoneKind(z) {
+  const name = z.road ? tOpt('type.' + z.type) : t('q.' + z.quality);
+  if (!name) return '';
+  return z.road && z.grade > 0 && z.grade < ROMAN.length ? name + ' ' + ROMAN[z.grade] : name;
+}
+
+function zoneSub(z) {
+  const parts = [];
+  const k = zoneKind(z);
+  if (k) parts.push(k);
+  if (z.tier > 0) parts.push('T' + z.tier);
+  if (!z.road && z.grade > 0) parts.push(t('q.grade', z.grade));
+  return parts.join(' · ');
+}
+
+function clockLeft(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+  if (h > 0) return t('t.hm', h, m);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function keyLabel(k) {
+  if (k === 'xbutton1') return t('key.mouse4');
+  if (k === 'xbutton2') return t('key.mouse5');
+  if (k === 'off') return t('key.off');
+  return String(k || '').toUpperCase();
+}
+
+const cdRow = (label, html) => `<div class="cdrow"><div class="cdlabel">${esc(label)}</div><div class="cdval">${html}</div></div>`;
+
+function cardHTML(c) {
+  const z = c.zone;
+  let h = `<div class="cdname">${esc(z.name)}</div>`;
+  h += `<div class="cdsub"><i class="qsq" style="background:${QCOLOR[z.quality] || 'var(--muted)'}"></i>${esc(zoneSub(z))}</div>`;
+  if (c.doubt && c.alt) h += `<div class="cddoubt">${esc(t('zn.doubt', c.alt))}</div>`;
+  const rows = [];
+  const pts = z.points || [];
+  rows.push(cdRow(t('zn.points'), pts.length ? esc(pts.length + ' · ' + pts.map(p => t('res.' + p)).join(', ')) : esc(t('zn.none'))));
+  if ((z.biome || []).length) {
+    // В открытом мире биом главнее: один основной и два попутных, без чисел.
+    const icons = z.biome.map((r, i) => `<div class="cdicon" title="${esc(i === 0 ? t('zn.mainRes') : t('res.' + r))}">${icon('T' + Math.max(z.tier, 4) + '_' + r)}<span class="${i === 0 ? 'gold' : ''}">${esc(t('res.' + r))}</span></div>`).join('');
+    rows.push(cdRow(t('zn.biome'), `<div class="cdicons">${icons}</div>`));
+  } else if (Object.keys(z.res || {}).length) {
+    const icons = sortedEntries(z.res).map(([r, pairs]) => {
+      const tiers = pairs.map(p => p[0]);
+      const lo = Math.min(...tiers), hi = Math.max(...tiers);
+      const total = pairs.reduce((a, p) => a + p[1], 0);
+      return `<div class="cdicon" title="${esc(t('res.' + r))}">${icon('T' + hi + '_' + r)}<span>${tiers.length > 1 ? 'T' + lo + '–T' + hi : 'T' + hi}</span><span class="n">×${total}</span></div>`;
+    }).join('');
+    rows.push(cdRow(t(z.road ? 'zn.nodes' : 'zn.biome'), `<div class="cdicons">${icons}</div>`));
+  }
+  if (Object.keys(z.chests || {}).length || z.road) {
+    let v = Object.keys(z.chests || {}).length
+      ? `<div class="cdicons">${sortedEntries(z.chests).map(([k, n]) => `<div class="cdicon" title="${esc(t('chest.' + k))}"><span class="chest">${CHEST_SQ[k] || '📦'}</span><span class="n">×${n}</span></div>`).join('')}</div>`
+      : esc(t('zn.none'));
+    const camps = sortedEntries(z.camps).map(([k, n]) => n + ' × ' + t('camp.' + k)).join(', ');
+    if (camps) v += `<div class="camps">${esc(camps)}</div>`;
+    rows.push(cdRow(t('zn.camps'), v));
+  }
+  if (Object.keys(z.dungeons || {}).length || z.mists) {
+    const d = Object.keys(z.dungeons || {}).length ? sortedEntries(z.dungeons).map(([k, n]) => n + ' × ' + t('dng.' + k)).join(', ') : t('zn.none');
+    rows.push(cdRow(t('zn.dungeons'), esc(d) + (z.mists ? '<div class="camps">' + esc(t('zn.mists')) + '</div>' : '')));
+  }
+  h += `<div class="cdpanel">${rows.join('')}</div>`;
+
+  const foot = [];
+  if (c.size) foot.push(`<span>${esc(t('zn.portal', c.size))}</span>`);
+  if (c.closesAt) {
+    const left = (Date.parse(c.closesAt) - Date.now()) / 1000;
+    foot.push(left > 0 ? `<span class="${left < 300 ? 'gold' : ''}">${esc(t('zn.closes', clockLeft(left)))}</span>` : `<span>${esc(t('zn.closed'))}</span>`);
+  }
+  foot.push(`<span>${esc(t('zn.shot', clock(c.at)))}</span>`);
+  h += `<div class="cdfoot">${foot.join('')}</div>`;
+  if (c.portal) {
+    let line = '', cls = 'muted';
+    if (c.map) [line, cls] = mapResult(c.map);
+    else if (c.mapWhy === 'off') { line = t('zn.sendOff'); cls = 'gold'; }
+    else if (c.mapWhy) { line = t('map.why.' + c.mapWhy); cls = 'gold'; }
+    if (line) h += `<div class="note ${cls}" style="margin:6px 0 0">${esc(line)}</div>`;
+  }
+  if (c.risk) {
+    h += `<div class="warn" style="margin-top:6px">${esc(t('zn.risk', c.black, c.total))}</div>`;
+    h += `<div class="hint flat">${esc(t('zn.riskNote'))}</div>`;
+  }
+  return h;
+}
+
+function cardError(c) {
+  switch (c.error) {
+    case 'noTooltip': return t('zn.noTooltip');
+    case 'unknown': return t('zn.unknown', c.arg || '');
+    case 'capture': return t('zn.failed', c.arg || '');
+    case 'ocr': return t('zn.ocrFailed', c.arg || '');
+    case 'noLang': return t('ocr.hint.none');
+    case 'noDict': return t('zn.noRef');
+  }
+  return c.error;
+}
+
+function renderCard() {
+  const c = S.card || {};
+  const key = S.settings.zoneKey || 'xbutton1';
+  $('cdHint').textContent = c.busy ? t('zn.busy') : key === 'off' ? t('zn.keyOff') : t('zn.hint', keyLabel(key));
+  const hint = c.ocrHint;
+  $('cdOcr').hidden = !hint;
+  if (hint) $('cdOcr').textContent = t('ocr.hint.' + hint);
+  let body = '';
+  if (c.error) body = `<div class="note gold flat">${esc(cardError(c))}</div><div class="hint flat">${esc(t('zn.shot', clock(c.at)))}</div>`;
+  else if (c.zone) body = cardHTML(c);
+  setHTML($('cdBody'), body);
+}
+
+function renderLegend() {
+  setHTML($('lgChests'), ['small', 'medium_veteran', 'small_elite', 'medium_elite']
+    .map(k => `<span>${CHEST_SQ[k]} ${esc(t('chest.' + k))}</span>`).join(''));
+  setHTML($('lgZones'), ['safe', 'yellow', 'red', 'black', 'city', 'island', 'roads']
+    .map(q => `<span><i class="qsq" style="background:${QCOLOR[q]}"></i>${esc(t('q.' + q))}</span>`).join(''));
+}
+
+// Подсказка значков свёрнута по умолчанию (zoneLegend у мака).
+try { $('cdLegend').open = localStorage.getItem('zoneLegend') === '1'; } catch (e) {}
+$('cdLegend').addEventListener('toggle', () => { try { localStorage.setItem('zoneLegend', $('cdLegend').open ? '1' : '0'); } catch (e) {} });
 $('znSettings').onclick = () => openSettings();
 
 // --- настройки ----------------------------------------------------------------
@@ -427,6 +561,11 @@ function renderSettings() {
   document.querySelectorAll('[data-set]').forEach(el => { el.checked = !!st[el.dataset.set]; });
   document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
   $('shareHint').textContent = t(st.shareADP ? 'set.shareOn' : 'set.shareOff');
+  const keys = ['xbutton1', 'xbutton2', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'off'];
+  setHTML($('zoneKey'), keys.map(k => `<option value="${k}">${esc(keyLabel(k))}</option>`).join(''));
+  $('zoneKey').value = st.zoneKey || 'xbutton1';
+  $('ntBox').hidden = !st.zoneNotify;
+  document.querySelectorAll('#ntOrder button').forEach(b => b.classList.toggle('on', b.dataset.order === (st.notifyOrder || 'chestsFirst')));
   $('dataDir').textContent = S.dataDir || '';
 }
 
@@ -456,6 +595,11 @@ $('langTabs').addEventListener('click', async e => {
   }
 });
 $('openData').onclick = () => post('/api/open', { what: 'data' });
+$('zoneKey').addEventListener('change', async () => { await saveSettings({ zoneKey: $('zoneKey').value }); refresh(); });
+$('ntOrder').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (b) await saveSettings({ notifyOrder: b.dataset.order });
+});
 
 // --- обновление и поддержка ---------------------------------------------------
 

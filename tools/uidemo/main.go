@@ -6,6 +6,7 @@
 //	go run ./tools/uidemo -fake -receiver — то же и «приёмник работает, сайт готов»
 //	go run ./tools/uidemo запись.azf      — переходы из настоящей записи
 //	go run ./tools/uidemo -fake -map 429  — ответ поддельного сервера карты (200, 429, 422, 0 — недоступен)
+//	go run ./tools/uidemo -fake -card ru  — карточка зоны по строкам тултипа с мака (ru, en, open, err)
 //
 // Проходы по дорогам уходят только на поддельный сервер карты внутри демо,
 // на настоящий — никогда.
@@ -33,6 +34,7 @@ import (
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/settings"
 	"albionzonefix/internal/ui"
+	"albionzonefix/internal/zonecard"
 )
 
 // fakeCollector — разборщик, который только помнит настройки.
@@ -50,6 +52,7 @@ func main() {
 	recv := flag.Bool("receiver", false, "сделать вид, что приёмник работает и сайт готов")
 	lang := flag.String("lang", "", "язык программы (ru, en, es)")
 	mapCode := flag.Int("map", 200, "ответ поддельного сервера карты: 200, 429, 422; 0 — недоступен")
+	card := flag.String("card", "", "карточка зоны: ru, en, open (обычная зона) или err")
 	flag.Parse()
 
 	dir, _ := os.MkdirTemp("", "aj-ui")
@@ -89,6 +92,9 @@ func main() {
 		replay(a, flag.Arg(0))
 	}
 	a.SetSniffError(nil)
+	if *card != "" {
+		fakeCard(a, *card)
+	}
 
 	logPath := filepath.Join(dir, "albion-journal.log")
 	recvAddr := "127.0.0.1:1"
@@ -212,4 +218,27 @@ func replay(a *app.App, path string) {
 		a.Feed(p)
 	})
 	a.Tick(last.Add(time.Minute))
+}
+
+// fakeCard — карточка из настоящих строк тултипа (app/проверка-зоны.swift).
+func fakeCard(a *app.App, kind string) {
+	d := zonecard.Default()
+	a.AttachCard(func() (bool, []string, string, bool) { return false, []string{"en-US"}, "noRu", true })
+	if kind == "err" {
+		a.SetCard(zonecard.Shot{Kind: zonecard.ErrKindNoTooltip, Result: zonecard.Result{At: time.Now()}}, d)
+		return
+	}
+	lines := map[string][]string{
+		"ru":   {"Путь Авалона в", "Cebos-Avemlum", "7/7", "Закроется через 23 м 14 с"},
+		"en":   {"Road of Avalon to", "Qiient-Al-Vynsis", "7/7", "n/a", "Closes in 5 h 53 m"},
+		"open": {"T6", "Flimmerair Steppe"},
+	}[kind]
+	r, err := zonecard.Identify(d, lines, time.Now())
+	if err != nil {
+		fmt.Println("карточка:", err)
+		return
+	}
+	a.SetCard(zonecard.Shot{Result: r}, d)
+	t := zonecard.BuildToast("ru", r.Zone(), r, zonecard.ToastOptions{Chests: true, Res: true, Dungeons: true, Portal: true, ChestsFirst: true}, time.Now())
+	fmt.Printf("уведомление:\n%s\n%s\n%s\n", t.Title, t.Subtitle, t.Body)
 }

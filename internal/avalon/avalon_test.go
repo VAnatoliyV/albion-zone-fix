@@ -308,3 +308,40 @@ func TestOfferQueueFull(t *testing.T) {
 		t.Fatalf("лог: %v", logs)
 	}
 }
+
+func TestTipReport(t *testing.T) {
+	now := time.Unix(10000, 0)
+	f := &fakeMap{code: 200}
+	s := f.start(t)
+	r := newReporter(ReporterConfig{URL: s.URL, Client: s.Client(), Now: func() time.Time { return now },
+		Install: func() string { return "id-1" }})
+	st := r.HandleTip(context.Background(), Tip{From: "TNL-001", To: "TNL-164", ClosesAt: 12345, Size: 7, Region: "europe"})
+	if st.Result != ResOK || st.ToName != "Qiient-Al-Vynsis" {
+		t.Fatalf("%+v", st)
+	}
+	want := `{"kind":"tooltip","install":"id-1","from":"TNL-001","to":"TNL-164","closesAt":12345,"size":7,"server":"europe"}`
+	if len(f.bodies) != 1 || strings.TrimSpace(f.bodies[0]) != want {
+		t.Fatalf("тело: %v", f.bodies)
+	}
+	if r.Last() != nil || r.LastTip() == nil {
+		t.Fatal("портал карточки не должен подменять последний проход")
+	}
+	// Размер не прочитан — поля нет (как у мака: size только если есть).
+	r.HandleTip(context.Background(), Tip{From: "TNL-001", To: "TNL-164", ClosesAt: 1})
+	if strings.Contains(f.bodies[1], "size") || strings.Contains(f.bodies[1], "server") {
+		t.Fatal(f.bodies[1])
+	}
+	// Пауза после недоступности общая с проходами.
+	f.code = 502
+	r.Handle(context.Background(), Pass{From: "TNL-001", To: "TNL-002"})
+	if st := r.HandleTip(context.Background(), Tip{From: "TNL-001", To: "TNL-164", ClosesAt: 1}); st.Result != ResPaused || f.hits != 3 {
+		t.Fatalf("%+v %d", st, f.hits)
+	}
+}
+
+func TestPassBodyUnchanged(t *testing.T) {
+	b, _ := json.Marshal(Body(Pass{From: "A", To: "B"}, "i"))
+	if string(b) != `{"kind":"pass","install":"i","from":"A","to":"B"}` {
+		t.Fatal(string(b))
+	}
+}

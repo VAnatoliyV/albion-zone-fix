@@ -328,8 +328,20 @@ func TestPageKeysInDictionary(t *testing.T) {
 		"kind.roads", "kind.black", "kind.red", "kind.yellow", "kind.safe", "kind.city", "kind.island", "kind.instance", "kind.other",
 		"rg.europe", "rg.americas", "rg.asia",
 		// заголовок окна карты (Go, internal/desktop)
-		"map.window"} {
+		"map.window",
+		// карточка зоны: подпись дороги, собранная из условия
+		"zn.nodes"} {
 		used[k] = true
+	}
+	// Карточка зоны: ключи собираются из кодов справочника и итогов
+	// (q.<качество>, res.<ресурс>, map.why.<причина>…); их же берёт Go для
+	// уведомления (internal/zonecard).
+	for k := range i18n.Table {
+		for _, pre := range []string{"q.", "type.", "res.", "camp.", "chest.", "dng.", "map.why.", "ocr.hint."} {
+			if strings.HasPrefix(k, pre) {
+				used[k] = true
+			}
+		}
 	}
 	var missing, unused []string
 	for k := range used {
@@ -467,5 +479,27 @@ func TestNoUpdater(t *testing.T) {
 	}
 	if e.post(t, "/api/update/check", nil, true).StatusCode != 400 || e.post(t, "/api/update/restart", nil, true).StatusCode != 400 {
 		t.Fatal("без обновлятеля — ошибка")
+	}
+}
+
+func TestZoneCardSettingsAndState(t *testing.T) {
+	e := start(t)
+	if code, out := postJSON(t, e, `{"zoneKey":"F5","notifyOrder":"resourcesFirst","notifyDng":false,"blackWarn":false}`); code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	s := e.a.Settings()
+	if s.ZoneKey != "f5" || s.NotifyOrder != "resourcesFirst" || s.NotifyDng || s.BlackWarn || !s.ZoneNotify {
+		t.Fatalf("%+v", s)
+	}
+	// Незнакомая кнопка и порядок — по умолчанию, а не что прислали.
+	postJSON(t, e, `{"zoneKey":"mouse9","notifyOrder":"???"}`)
+	if s := e.a.Settings(); s.ZoneKey != "xbutton1" || s.NotifyOrder != "chestsFirst" {
+		t.Fatalf("%+v", s)
+	}
+	var st map[string]any
+	e.get(t, "/api/state", &st)
+	c, ok := st["card"].(map[string]any)
+	if !ok || c["busy"] != false {
+		t.Fatalf("карточка в состоянии: %v", st["card"])
 	}
 }

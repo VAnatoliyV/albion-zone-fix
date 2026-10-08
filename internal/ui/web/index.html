@@ -120,6 +120,22 @@
 
   <!-- Зона -->
   <section class="tab" id="tab-zone" hidden>
+    <!-- Карточка зоны по кнопке (как КарточкаЗоны у мака) -->
+    <div class="caption" data-t="zn.cardTitle"></div>
+    <div class="panel box card">
+      <div class="note flat" id="cdHint"></div>
+      <div class="alert soft" id="cdOcr" hidden></div>
+      <div id="cdBody"></div>
+      <details class="legend" id="cdLegend">
+        <summary data-t="lg.title"></summary>
+        <div class="lgrow"><div class="lgcap" data-t="lg.chests"></div><div class="lgitems" id="lgChests"></div></div>
+        <div class="lgrow"><div class="lgcap" data-t="lg.zones"></div><div class="lgitems" id="lgZones"></div></div>
+        <p data-t="lg.biome"></p>
+        <p data-t="lg.res"></p>
+        <p data-t="lg.camps"></p>
+      </details>
+      <div class="hint flat" data-t="zn.privacy"></div>
+    </div>
     <div class="caption" data-t="zn.here"></div>
     <div class="panel box">
       <div class="big" id="znName">—</div>
@@ -239,6 +255,25 @@
     <div class="caption gold" data-t="sec.zonefix"></div>
     <label class="toggle"><input type="checkbox" data-set="builtinBypass"><span class="sw"></span><span class="tl" data-t="set.bypass"></span></label>
     <div class="hint warn" data-t="set.bypassHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.zone"></div>
+    <div class="controls"><span class="setlabel" data-t="set.hotkey"></span><select id="zoneKey"></select></div>
+    <div class="hint flat" data-t="set.hotkeyHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="zoneNotify"><span class="sw"></span><span class="tl" data-t="set.zoneNotify"></span></label>
+    <div class="hint" data-t="set.zoneNotifyHint"></div>
+    <div id="ntBox">
+      <nav class="tabs small" id="ntOrder">
+        <button data-order="chestsFirst" data-t="nt.chestsFirst"></button>
+        <button data-order="resourcesFirst" data-t="nt.resFirst"></button>
+      </nav>
+      <label class="toggle"><input type="checkbox" data-set="notifyChests"><span class="sw"></span><span class="tl" data-t="nt.chests"></span></label>
+      <label class="toggle"><input type="checkbox" data-set="notifyRes"><span class="sw"></span><span class="tl" data-t="nt.res"></span></label>
+      <label class="toggle"><input type="checkbox" data-set="notifyDng"><span class="sw"></span><span class="tl" data-t="nt.dng"></span></label>
+      <label class="toggle"><input type="checkbox" data-set="notifyPortal"><span class="sw"></span><span class="tl" data-t="nt.portal"></span></label>
+    </div>
+    <label class="toggle"><input type="checkbox" data-set="blackWarn"><span class="sw"></span><span class="tl" data-t="set.blackWarn"></span></label>
+    <div class="hint" data-t="set.blackWarnHint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.map"></div>

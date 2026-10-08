@@ -32,6 +32,10 @@ type Transition struct {
 	ReplySec float64   `json:"replySec"` // через сколько ответил (−1 — не видели)
 	Fail     string    `json:"fail,omitempty"`
 	Strategy string    `json:"strategy"`
+	// Want — куда шли, если известно заранее: перед переходом снимали
+	// карточкой портал в эту зону (заполняет программа, не учёт). Нужен для
+	// вылетов: у них To пусто.
+	Want string `json:"want,omitempty"`
 }
 
 type Tracker struct {
@@ -50,6 +54,30 @@ type Tracker struct {
 
 	waiting *Transition // вошли, ждём первого события с нового сервера
 	joinT   time.Time
+
+	// Новый сервер молчит после CONNECT: одно предупреждение на переход.
+	connectT   time.Time
+	warned     bool
+	stallAfter time.Duration
+	stall      func(server, from string)
+}
+
+// OnStall: новый игровой сервер не ответил на CONNECT за after — fn(сервер,
+// откуда шли). Не чаще одного раза на переход. Проверка — в CheckStall.
+func (t *Tracker) OnStall(after time.Duration, fn func(server, from string)) {
+	t.stallAfter, t.stall = after, fn
+}
+
+// CheckStall — звать часто (раз в 250 мс): так предупреждение приходит
+// через ~2 с, а не через 2–3 (Tick раз в секунду).
+func (t *Tracker) CheckStall(now time.Time) {
+	if t.stall == nil || t.warned || t.start.IsZero() || t.target == "" || t.replied || t.connectT.IsZero() {
+		return
+	}
+	if now.Sub(t.connectT) >= t.stallAfter {
+		t.warned = true
+		t.stall(t.target, t.from)
+	}
 }
 
 func NewTracker(name func(string) string, strategy func() string, done func(Transition)) *Tracker {
@@ -62,6 +90,7 @@ func (t *Tracker) inGame() bool { return t.cur != "" || t.curServer != "" }
 
 func (t *Tracker) begin(at time.Time) {
 	t.start, t.from, t.target, t.replied = at, t.cur, "", false
+	t.connectT, t.warned = time.Time{}, false
 }
 
 func (t *Tracker) On(e game.Ev) {
@@ -91,6 +120,7 @@ func (t *Tracker) On(e game.Ev) {
 		}
 		if t.target != e.Server {
 			t.target, t.replied = e.Server, false
+			t.connectT = e.T
 		}
 	case game.Reply:
 		if !t.start.IsZero() && e.Server == t.target && !t.replied {

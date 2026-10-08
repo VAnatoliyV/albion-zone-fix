@@ -269,6 +269,8 @@ type fakeMap struct {
 	offered []avalon.Pass
 	noted   []string
 	last    *avalon.Status
+	tips    []avalon.Tip
+	lastTip *avalon.Status
 }
 
 func (f *fakeMap) Offer(p avalon.Pass) { f.offered = append(f.offered, p) }
@@ -276,6 +278,11 @@ func (f *fakeMap) Note(p avalon.Pass, r string) {
 	f.noted = append(f.noted, p.From+">"+p.To+":"+r)
 }
 func (f *fakeMap) Last() *avalon.Status { return f.last }
+func (f *fakeMap) OfferTip(t avalon.Tip) {
+	f.tips = append(f.tips, t)
+	f.lastTip = &avalon.Status{From: t.From, To: t.To, At: time.Unix(9e9, 0), Result: avalon.ResOK}
+}
+func (f *fakeMap) LastTip() *avalon.Status { return f.lastTip }
 
 const eu, us = "193.169.238.10:5056", "5.188.125.10:5056"
 

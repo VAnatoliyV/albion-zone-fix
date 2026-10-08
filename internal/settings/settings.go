@@ -39,11 +39,29 @@ type Settings struct {
 	// MapInstall — случайный номер установки для сервера карты (лимиты и
 	// бан). Создаётся при первой отправке; страница его не меняет.
 	MapInstall string `json:"mapInstall,omitempty"`
+
+	// ZoneKey — кнопка карточки зоны: xbutton1 (мышь 4), xbutton2, f1…f12
+	// или off (internal/hotkey).
+	ZoneKey string `json:"zoneKey"`
+	// ZoneNotify — показывать карточку ещё и уведомлением Windows.
+	ZoneNotify bool `json:"zoneNotify"`
+	// Что писать в уведомлении (как notifyChests/notifyRes/notifyDng/
+	// notifyPortal/notifyOrder у мака; по умолчанию всё, сундуки сверху).
+	NotifyChests bool   `json:"notifyChests"`
+	NotifyRes    bool   `json:"notifyRes"`
+	NotifyDng    bool   `json:"notifyDng"`
+	NotifyPortal bool   `json:"notifyPortal"`
+	NotifyOrder  string `json:"notifyOrder"` // chestsFirst или resourcesFirst
+	// BlackWarn — предупреждать о чёрном экране: уведомление, когда новый
+	// сервер молчит, и риск по истории в карточке портала.
+	BlackWarn bool `json:"blackWarn"`
 }
 
 // Default — настройки первого запуска.
 func Default() Settings {
-	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true}
+	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true,
+		ZoneKey: "xbutton1", ZoneNotify: true, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
+		NotifyOrder: "chestsFirst", BlackWarn: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.
