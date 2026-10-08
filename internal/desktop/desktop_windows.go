@@ -33,6 +33,7 @@ var (
 	pGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
 	pFindWindowW         = user32.NewProc("FindWindowW")
 	pDestroyWindow       = user32.NewProc("DestroyWindow")
+	pSetWindowPos        = user32.NewProc("SetWindowPos")
 )
 
 const (
@@ -44,6 +45,10 @@ const (
 	wmSetIcon       = 0x0080
 	swHide          = 0
 	swShow          = 5
+	swShowNoActive  = 4 // SW_SHOWNOACTIVATE: показать (и развернуть), не забирая фокус
+	swpNoSize       = 0x0001
+	swpNoMove       = 0x0002
+	swpNoActivate   = 0x0010
 	swRestore       = 9
 	imageIcon       = 1
 	lrLoadFromFile  = 0x10
@@ -379,6 +384,22 @@ func (d *Desktop) Show() {
 			pShowWindow.Call(hwnd, swShow)
 		}
 		pSetForegroundWindow.Call(hwnd)
+	})
+}
+
+// ShowQuiet выводит окно, не отбирая фокус (как показатьОкно у мака):
+// игра только запустилась, и персонаж не должен встать столбом. Окно
+// в браузере (без WebView2) не открываем — браузер забрал бы фокус.
+func (d *Desktop) ShowQuiet() {
+	d.mu.Lock()
+	w, hwnd, fb := d.native.w, d.native.hwnd, d.fallback
+	d.mu.Unlock()
+	if fb || w == nil {
+		return
+	}
+	w.Dispatch(func() {
+		pShowWindow.Call(hwnd, swShowNoActive)
+		pSetWindowPos.Call(hwnd, 0 /* HWND_TOP */, 0, 0, 0, 0, swpNoSize|swpNoMove|swpNoActivate)
 	})
 }
 

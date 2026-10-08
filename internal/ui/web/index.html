@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-skin="{{SKIN}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
 <body>
 <main>
   <header class="head">
-    <img class="rabbit" src="rabbit.gif" alt="" width="38" height="47">
+    <img class="rabbit" id="rabbit" src="{{LOGO}}" alt="" width="38" height="47">
     <div class="titles">
       <div class="title">Albion Journal</div>
       <div class="subtitle" data-t="app.subtitle"></div>
@@ -234,6 +234,13 @@
       <button data-lang="en">English</button>
       <button data-lang="es">Español</button>
     </nav>
+    <div class="setlabel" data-t="set.skin"></div>
+    <nav class="tabs small" id="skinTabs">
+      <button data-skin="pixel" data-t="skin.pixel"></button>
+      <button data-skin="plain" data-t="skin.plain"></button>
+    </nav>
+    <label class="toggle"><input type="checkbox" data-set="logoAnim"><span class="sw"></span><span class="tl" data-t="set.logo"></span></label>
+    <div class="hint" data-t="set.logoHint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.collect"></div>
@@ -241,11 +248,19 @@
     <div class="hint" id="shareHint"></div>
     <label class="toggle"><input type="checkbox" data-set="sessionStats"><span class="sw"></span><span class="tl" data-t="set.session"></span></label>
     <div class="hint" data-t="set.sessionHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="resetOnZone"><span class="sw"></span><span class="tl" data-t="set.resetOnZone"></span></label>
+    <div class="hint" data-t="set.resetOnZoneHint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.launch"></div>
     <label class="toggle"><input type="checkbox" data-set="startWithWindows"><span class="sw"></span><span class="tl" data-t="set.autostart"></span></label>
     <div class="hint" data-t="set.autostartHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="showWithGame"><span class="sw"></span><span class="tl" data-t="set.showGame"></span></label>
+    <div class="hint" data-t="set.showGameHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="startWithGame"><span class="sw"></span><span class="tl" data-t="set.withGame"></span></label>
+    <div class="hint" data-t="set.withGameHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="quitWithGame"><span class="sw"></span><span class="tl" data-t="set.quitGame"></span></label>
+    <div class="hint" data-t="set.quitGameHint"></div>
     <label class="toggle"><input type="checkbox" data-set="collectOnStart"><span class="sw"></span><span class="tl" data-t="set.start"></span></label>
     <div class="hint" data-t="set.startHint"></div>
     <label class="toggle"><input type="checkbox" data-set="stopOnExit"><span class="sw"></span><span class="tl" data-t="set.quit"></span></label>

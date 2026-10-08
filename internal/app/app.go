@@ -114,6 +114,9 @@ func New(dir, binDir string, names map[string]string) *App {
 	a.tracker = zones.NewTracker(a.name, a.strategyNow, a.onTransition)
 	a.dec = game.NewDecoder(a.onEvent)
 	a.load()
+	// Сброс урона при смене зоны делает форк по своему файлу: файл мог
+	// остаться от другой версии или пропасть — пишем по настройкам сразу.
+	collector.WriteOptions(dir, a.settings.Get().ResetOnZone)
 	return a
 }
 
@@ -400,6 +403,7 @@ func (a *App) SetSettings(s settings.Settings) error {
 	if s.NotifyOrder != "resourcesFirst" {
 		s.NotifyOrder = "chestsFirst"
 	}
+	s.Skin = settings.NormalizeSkin(s.Skin)
 	// Номер установки страница не меняет: берём сохранённый.
 	a.installMu.Lock()
 	s.MapInstall = a.settings.Get().MapInstall
@@ -419,6 +423,9 @@ func (a *App) SetSettings(s settings.Settings) error {
 	a.colMu.Unlock()
 	if r != nil {
 		r.Keep(!s.StopOnExit)
+	}
+	if err := collector.WriteOptions(a.dir, s.ResetOnZone); err != nil {
+		return fmt.Errorf("сброс при смене зоны не передан счётчику: %w", err)
 	}
 	return a.applyCollector()
 }

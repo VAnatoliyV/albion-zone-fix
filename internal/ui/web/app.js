@@ -553,11 +553,30 @@ try { $('cdLegend').open = localStorage.getItem('zoneLegend') === '1'; } catch (
 $('cdLegend').addEventListener('toggle', () => { try { localStorage.setItem('zoneLegend', $('cdLegend').open ? '1' : '0'); } catch (e) {} });
 $('znSettings').onclick = () => openSettings();
 
+// --- оформление и кролик ------------------------------------------------------
+
+// Тема меняется сразу, без перезапуска: переменные цветов и шрифтов висят
+// на <html data-skin>. Кролик не крутится, пока окно спрятано в трей.
+function applyLook() {
+  if (!S) return;
+  const st = S.settings;
+  const skin = st.skin === 'plain' ? 'plain' : 'pixel';
+  if (document.documentElement.dataset.skin !== skin) document.documentElement.dataset.skin = skin;
+  const still = !st.logoAnim || document.hidden;
+  const src = still ? 'rabbit.png' : 'rabbit.gif';
+  const r = $('rabbit');
+  if (!r.src.endsWith('/' + src)) r.src = src;
+  r.classList.toggle('still', !st.logoAnim);
+}
+document.addEventListener('visibilitychange', applyLook);
+
 // --- настройки ----------------------------------------------------------------
 
 function renderSettings() {
   if (!S) return;
   const st = S.settings;
+  applyLook();
+  document.querySelectorAll('#skinTabs button').forEach(b => b.classList.toggle('on', b.dataset.skin === (st.skin === 'plain' ? 'plain' : 'pixel')));
   document.querySelectorAll('[data-set]').forEach(el => { el.checked = !!st[el.dataset.set]; });
   document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
   $('shareHint').textContent = t(st.shareADP ? 'set.shareOn' : 'set.shareOff');
@@ -593,6 +612,10 @@ $('langTabs').addEventListener('click', async e => {
     await loadLang(b.dataset.lang);
     renderAll();
   }
+});
+$('skinTabs').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (b) await saveSettings({ skin: b.dataset.skin });
 });
 $('openData').onclick = () => post('/api/open', { what: 'data' });
 $('zoneKey').addEventListener('change', async () => { await saveSettings({ zoneKey: $('zoneKey').value }); refresh(); });

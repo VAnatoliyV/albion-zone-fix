@@ -105,7 +105,7 @@ func TestPageHasTokenAndAssets(t *testing.T) {
 	if !strings.Contains(string(b), `content="`+e.srv.Token+`"`) || strings.Contains(string(b), "{{TOKEN}}") {
 		t.Fatal("ключ страницы не подставлен")
 	}
-	for _, p := range []string{"app.js", "style.css", "rabbit.gif", "fonts/PixelifySans-Regular.ttf", "fonts/PixelifySans-SemiBold.ttf"} {
+	for _, p := range []string{"app.js", "style.css", "rabbit.gif", "rabbit.png", "fonts/PixelifySans-Regular.ttf", "fonts/PixelifySans-SemiBold.ttf"} {
 		if r := e.get(t, p, nil); r.StatusCode != 200 {
 			t.Fatalf("%s: %d", p, r.StatusCode)
 		}
@@ -501,5 +501,35 @@ func TestZoneCardSettingsAndState(t *testing.T) {
 	c, ok := st["card"].(map[string]any)
 	if !ok || c["busy"] != false {
 		t.Fatalf("карточка в состоянии: %v", st["card"])
+	}
+}
+
+// Оформление и кролик — сразу в разметке; переключение — через настройки,
+// без перезапуска (страница перечитывает их раз в две секунды).
+func TestPageSkinAndLogo(t *testing.T) {
+	e := start(t)
+	page := func() string {
+		r, _ := http.Get(e.srv.URL)
+		b, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+		return string(b)
+	}
+	p := page()
+	if !strings.Contains(p, `data-skin="pixel"`) || !strings.Contains(p, `src="rabbit.gif"`) || strings.Contains(p, "{{") {
+		t.Fatal("по умолчанию — пиксельное оформление и живой кролик")
+	}
+	if code, out := postJSON(t, e, `{"skin":"plain","logoAnim":false,"resetOnZone":true,"showWithGame":true,"startWithGame":true,"quitWithGame":true}`); code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	p = page()
+	if !strings.Contains(p, `data-skin="plain"`) || !strings.Contains(p, `src="rabbit.png"`) {
+		t.Fatal("обычное оформление и значок вместо гифки не подставлены")
+	}
+	s := e.a.Settings()
+	if !s.ResetOnZone || !s.ShowWithGame || !s.StartWithGame || !s.QuitWithGame {
+		t.Fatalf("%+v", s)
+	}
+	if code, _ := postJSON(t, e, `{"skin":"<script>"}`); code != 200 || e.a.Settings().Skin != settings.SkinPixel {
+		t.Fatal("незнакомое оформление должно стать пиксельным")
 	}
 }

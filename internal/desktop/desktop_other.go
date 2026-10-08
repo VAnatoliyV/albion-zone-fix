@@ -38,6 +38,9 @@ func (d *Desktop) Run() {
 // Show — открыть страницу ещё раз.
 func (d *Desktop) Show() { OpenURL(d.cfg.URL) }
 
+// ShowQuiet — на маке (разработка) окна нет, браузер не открываем.
+func (d *Desktop) ShowQuiet() {}
+
 // Quit завершает Run.
 func (d *Desktop) Quit() {
 	d.mu.Lock()

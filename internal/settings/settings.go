@@ -55,13 +55,47 @@ type Settings struct {
 	// BlackWarn — предупреждать о чёрном экране: уведомление, когда новый
 	// сервер молчит, и риск по истории в карточке портала.
 	BlackWarn bool `json:"blackWarn"`
+
+	// Skin — оформление страницы: SkinPixel (как сейчас, пиксельный шрифт и
+	// срезанные углы) или SkinPlain (системный шрифт, мягкие скругления),
+	// как Skin у мака.
+	Skin string `json:"skin"`
+	// LogoAnim — живой кролик в шапке (logoAnim у мака); выключен — значок.
+	LogoAnim bool `json:"logoAnim"`
+	// ResetOnZone — обнулять урон при смене зоны (resetOnZone у мака). Сам
+	// сброс делает форк сборщика при входе в зону: он читает файл
+	// albion-session-options.json, который пишет программа.
+	ResetOnZone bool `json:"resetOnZone"`
+	// Вместе с игрой (showWithGame, startWithGame, quitWithGame у мака):
+	// показать окно, начать сбор цен, когда игра запустилась; закрыться,
+	// когда игра закрылась. Следит internal/gamewatch.
+	ShowWithGame  bool `json:"showWithGame"`
+	StartWithGame bool `json:"startWithGame"`
+	QuitWithGame  bool `json:"quitWithGame"`
 }
+
+// Оформления страницы.
+const (
+	SkinPixel = "pixel"
+	SkinPlain = "plain"
+)
+
+// NormalizeSkin — знакомое оформление; всё прочее — пиксельное.
+func NormalizeSkin(s string) string {
+	if s == SkinPlain {
+		return SkinPlain
+	}
+	return SkinPixel
+}
+
+// WatchGame — нужно ли следить за процессом игры.
+func (s Settings) WatchGame() bool { return s.ShowWithGame || s.StartWithGame || s.QuitWithGame }
 
 // Default — настройки первого запуска.
 func Default() Settings {
 	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true,
 		ZoneKey: "xbutton1", ZoneNotify: true, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
-		NotifyOrder: "chestsFirst", BlackWarn: true}
+		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPixel, LogoAnim: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.

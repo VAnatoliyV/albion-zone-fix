@@ -4,9 +4,11 @@
 package collector
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sync"
@@ -170,6 +172,34 @@ func (c *Collector) SessionFile() string { return filepath.Join(c.dataDir, Sessi
 
 // SessionFileName — имя файла сессии в каталоге данных (как у мака).
 const SessionFileName = "albion-session.json"
+
+// OptionsFileName — настройки счётчика для форка (как у мака): форк читает
+// файл при каждом входе в зону (client/session_options.go), поэтому
+// перезапускать разборщик ради переключателя не нужно.
+const OptionsFileName = "albion-session-options.json"
+
+// WriteOptions пишет настройки счётчика в каталог данных: resetOnZone —
+// обнулять урон при смене зоны. Через временный файл, чтобы форк не
+// прочитал полфайла.
+func WriteOptions(dataDir string, resetOnZone bool) error {
+	b, err := json.Marshal(map[string]bool{"resetOnZone": resetOnZone})
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dataDir, OptionsFileName)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
 
 // Close останавливает разборщик (при выходе).
 func (c *Collector) Close() {

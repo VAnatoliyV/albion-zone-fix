@@ -13,6 +13,7 @@ import (
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/photon"
 	"albionzonefix/internal/record"
+	"albionzonefix/internal/settings"
 )
 
 func pkt(msgType, opCode byte, payload []byte) []byte {
@@ -366,5 +367,47 @@ func TestMapInstallKeptAcrossSettings(t *testing.T) {
 	a.SetSettings(s)
 	if a.Settings().MapInstall != id || New(dir, dir, nil).MapInstall() != id {
 		t.Fatal("номер установки сменился")
+	}
+}
+
+// resetOnZone читает форк из файла в каталоге данных (как у мака):
+// программа пишет его при запуске и при каждом сохранении настроек.
+func TestResetOnZoneReachesForkFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, collector.OptionsFileName)
+	read := func() string { b, _ := os.ReadFile(path); return string(b) }
+	a := New(dir, dir, nil)
+	if read() != `{"resetOnZone":false}` {
+		t.Fatalf("при запуске: %q", read())
+	}
+	s := a.Settings()
+	s.ResetOnZone = true
+	if err := a.SetSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	if read() != `{"resetOnZone":true}` {
+		t.Fatalf("после включения: %q", read())
+	}
+	// Файл пропал (чистка папки) — новый запуск пишет его по настройкам.
+	os.Remove(path)
+	New(dir, dir, nil)
+	if read() != `{"resetOnZone":true}` {
+		t.Fatalf("после перезапуска: %q", read())
+	}
+}
+
+func TestSkinNormalizedOnSave(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	s := a.Settings()
+	s.Skin = "neon"
+	a.SetSettings(s)
+	if a.Settings().Skin != settings.SkinPixel {
+		t.Fatalf("незнакомое оформление: %q", a.Settings().Skin)
+	}
+	s.Skin = settings.SkinPlain
+	a.SetSettings(s)
+	if New(dir, dir, nil).Settings().Skin != settings.SkinPlain {
+		t.Fatal("обычное оформление не сохранилось")
 	}
 }

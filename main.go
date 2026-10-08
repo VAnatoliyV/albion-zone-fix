@@ -27,6 +27,7 @@ import (
 	"albionzonefix/internal/datadir"
 	"albionzonefix/internal/desktop"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/gamewatch"
 	"albionzonefix/internal/hotkey"
 	"albionzonefix/internal/i18n"
 	"albionzonefix/internal/names"
@@ -360,6 +361,33 @@ func main() {
 		Logf: logLine,
 	})
 	dp.Store(d)
+
+	// Вместе с игрой (как СторожИгры у мака): снимок процессов раз в 3 с,
+	// пока включена хоть одна из трёх настроек. Программа может подняться
+	// с Windows раньше игры — сторож ждёт её появления.
+	gameOpts := func(s settings.Settings) gamewatch.Options {
+		return gamewatch.Options{Show: s.ShowWithGame, Collect: s.StartWithGame, Quit: s.QuitWithGame}
+	}
+	watchCtx, stopWatch := context.WithCancel(context.Background())
+	defer stopWatch()
+	go gamewatch.Run(watchCtx, gamewatch.Config{
+		Options: func() gamewatch.Options { return gameOpts(a.Settings()) },
+		On: func(e gamewatch.Event) {
+			act := gamewatch.Decide(e, gameOpts(a.Settings()), a.Collecting())
+			logLine("сторож игры: %v (показать %v, сбор %v, выход %v)", e, act.Show, act.Collect, act.Quit)
+			if act.Show {
+				d.ShowQuiet()
+			}
+			if act.Collect {
+				if err := a.SetCollecting(true); err != nil {
+					logLine("сбор вместе с игрой не запустился: %v", err)
+				}
+			}
+			if act.Quit {
+				d.Quit()
+			}
+		},
+	})
 
 	packets := make(chan game.Packet, 4096)
 	go sniffLoop(a, binDir, packets, col.Feed)

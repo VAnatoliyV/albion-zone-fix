@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,5 +108,28 @@ func TestFeedPanicIsCaught(t *testing.T) {
 	st := c.Stats()
 	if st.Panics < 1 || !strings.Contains(st.LastPanic, "проверка") || !strings.Contains(log.String(), "проверка") {
 		t.Fatalf("паника не учтена: %+v, журнал %q", st, log.String())
+	}
+}
+
+func TestWriteOptionsForFork(t *testing.T) {
+	dir := t.TempDir()
+	for _, on := range []bool{true, false} {
+		if err := WriteOptions(dir, on); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, OptionsFileName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Тот же ключ, что читает форк (client/session_options.go) и пишет мак.
+		var o struct {
+			ResetOnZone bool `json:"resetOnZone"`
+		}
+		if json.Unmarshal(b, &o) != nil || o.ResetOnZone != on {
+			t.Fatalf("%s", b)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, OptionsFileName+".tmp")); !os.IsNotExist(err) {
+		t.Fatal("временный файл остался")
 	}
 }

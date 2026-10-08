@@ -195,3 +195,46 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
 .lgitems { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text); font-size: 10px; align-items: center; }
 .lgitems span { display: inline-flex; align-items: center; gap: 4px; }
 #ntBox { margin-left: 40px; }
+
+/* живой кролик выключен — значок программы (как у мака) */
+.rabbit.still { height: 38px; image-rendering: auto; }
+
+/* ---------------------------------------------------------------------------
+   Обычное оформление (Skin.plain у мака): системный шрифт, мягкие скругления,
+   без срезанных углов и пунктира, обычные кнопки и переключатели. */
+:root[data-skin="plain"] {
+  --bg: #0F1218; --bg2: #0F1218; --glow: #0F1218;
+  --card: #161A21; --card2: #161A21; --card3: #222A36;
+  --line: #222A36; --line2: #222A36;
+  --text: #E8ECF3; --muted: #8B93A3;
+  --green: #4EC97A; --red: #E66666; --ongold: #0F1218;
+  --pix: var(--sys);
+}
+[data-skin="plain"] body { background: var(--bg); }
+[data-skin="plain"] * { letter-spacing: 0 !important; }
+[data-skin="plain"] .title { color: var(--text); font-size: 17px; }
+[data-skin="plain"] .caption.gold { color: var(--muted); }
+[data-skin="plain"] .sname, [data-skin="plain"] .sdetail { font-size: 12.5px; }
+[data-skin="plain"] .srow:not(.up) .sdetail { font-weight: 400; }
+[data-skin="plain"] .panel { border-radius: 10px; }
+[data-skin="plain"] .panel::before, [data-skin="plain"] .panel::after { display: none; }
+[data-skin="plain"] .dash { background: var(--line); }
+[data-skin="plain"] .item + .item, [data-skin="plain"] .cdrow + .cdrow { background-image: linear-gradient(var(--line), var(--line)); background-size: 100% 1px; }
+[data-skin="plain"] .btn { border-radius: 8px; background: var(--gold); border-color: transparent; color: var(--ongold); font-weight: 600; font-size: 12.5px; }
+[data-skin="plain"] .btn.small { font-size: 12px; }
+[data-skin="plain"] .btn:hover { background: var(--gold); filter: brightness(1.08); }
+[data-skin="plain"] .btn.ghost { background: var(--card); border-color: var(--line); color: var(--text); }
+[data-skin="plain"] .btn.ghost:hover { background: var(--card3); color: var(--text); border-color: var(--line); filter: none; }
+[data-skin="plain"] .btn:disabled, [data-skin="plain"] .btn:disabled:hover { background: var(--card); border-color: var(--line); color: var(--text); filter: none; }
+[data-skin="plain"] .tabs { border-color: var(--line); background: var(--card); border-radius: 8px; padding: 2px; gap: 2px; }
+[data-skin="plain"] .tabs button { background: transparent; border-right: 0; border-radius: 6px; font-weight: 500; }
+[data-skin="plain"] .tabs button.on { background: #2E3644; color: var(--text); }
+[data-skin="plain"] select { border-radius: 6px; }
+[data-skin="plain"] .alert { border-radius: 8px; }
+[data-skin="plain"] .ico { border-radius: 5px; }
+[data-skin="plain"] .cdpanel { border-radius: 5px; }
+[data-skin="plain"] .bar, [data-skin="plain"] .bar i { border-radius: 2px; }
+[data-skin="plain"] .sw { border-radius: 9px; border-color: var(--line); }
+[data-skin="plain"] .sw::after { border-radius: 50%; }
+[data-skin="plain"] .toggle input:checked + .sw { background: var(--gold); border-color: var(--gold); }
+[data-skin="plain"] .toggle input:checked + .sw::after { background: #fff; }

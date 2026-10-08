@@ -279,6 +279,15 @@ func (s *Server) page(w http.ResponseWriter) {
 		return
 	}
 	b = bytes.Replace(b, []byte("{{TOKEN}}"), []byte(s.Token), 1)
+	// Оформление и кролик — сразу в разметке, чтобы при открытии окно не
+	// мигало пиксельным видом до первого ответа /api/state.
+	set := s.a.Settings()
+	b = bytes.Replace(b, []byte("{{SKIN}}"), []byte(settings.NormalizeSkin(set.Skin)), 1)
+	logo := "rabbit.png"
+	if set.LogoAnim {
+		logo = "rabbit.gif"
+	}
+	b = bytes.Replace(b, []byte("{{LOGO}}"), []byte(logo), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Write(b)

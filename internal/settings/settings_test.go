@@ -60,3 +60,35 @@ func TestZoneCardDefaultsForOldFile(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestStage5DefaultsLikeMac(t *testing.T) {
+	dir := t.TempDir()
+	// Файл версии 1.0.1: полей этапа 5 нет — как у мака по умолчанию.
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"language":"ru"}`), 0644)
+	s := Open(dir).Get()
+	if s.Skin != SkinPixel || !s.LogoAnim {
+		t.Fatalf("оформление: %+v", s)
+	}
+	if s.ResetOnZone || s.ShowWithGame || s.StartWithGame || s.QuitWithGame || s.WatchGame() {
+		t.Fatalf("сброс при смене зоны и «вместе с игрой» по умолчанию выключены: %+v", s)
+	}
+}
+
+func TestSkinSavedAndNormalized(t *testing.T) {
+	dir := t.TempDir()
+	st := Open(dir)
+	v := st.Get()
+	v.Skin, v.LogoAnim, v.QuitWithGame = SkinPlain, false, true
+	if err := st.Set(v); err != nil {
+		t.Fatal(err)
+	}
+	got := Open(dir).Get()
+	if got.Skin != SkinPlain || got.LogoAnim || !got.WatchGame() {
+		t.Fatalf("%+v", got)
+	}
+	for in, want := range map[string]string{"plain": SkinPlain, "pixel": SkinPixel, "": SkinPixel, "neon": SkinPixel} {
+		if NormalizeSkin(in) != want {
+			t.Errorf("NormalizeSkin(%q)=%q", in, NormalizeSkin(in))
+		}
+	}
+}
