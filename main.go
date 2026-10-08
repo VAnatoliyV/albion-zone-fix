@@ -242,6 +242,7 @@ func main() {
 	if dict == nil {
 		cardLog("справочник зон не прочитался")
 	}
+	var mapHint zonecard.HintGate
 	runner := zonecard.NewRunner(zonecard.RunnerConfig{
 		Path: filepath.Join(data, screen.FileName),
 		Capture: func(path string) (zonecard.Snap, error) {
@@ -250,7 +251,10 @@ func main() {
 			if info.Tries > 1 {
 				text += fmt.Sprintf(", пиксели со %d-го раза", info.Tries)
 			}
-			return zonecard.Snap{Info: text, Empty: info.Empty}, err
+			if !info.Crop.Empty() {
+				text += fmt.Sprintf(", обрезано по тултипу %dx%d", info.Crop.Dx(), info.Crop.Dy())
+			}
+			return zonecard.Snap{Info: text, Empty: info.Empty, Cropped: !info.Crop.Empty()}, err
 		},
 		// Повторы и варианты картинки (серый, инверсия) — тултип мог не
 		// дорисоваться, текст мог прочитаться плохо.
@@ -291,11 +295,14 @@ func main() {
 					notify.Show(t.Title, t.Subtitle, t.Body)
 				}
 			}
+			// Сомнительно или не узнано — подсказка «точнее на карте мира (M)»,
+			// не чаще раза в zonecard.MapHintEvery.
+			hint := zonecard.WantsMapHint(sh) && mapHint.Allow(now)
 			// Панель упала в этом запуске — сразу уведомлением.
-			pr := zonecard.Present(lang, sh, set, now, panel.OK())
+			pr := zonecard.PresentWith(lang, sh, set, now, panel.OK(), hint)
 			toast(pr.Toast)
 			if pr.Panel != nil {
-				fallback := func() { toast(zonecard.Present(lang, sh, set, now, false).Toast) }
+				fallback := func() { toast(zonecard.PresentWith(lang, sh, set, now, false, hint).Toast) }
 				if !panel.Show(*pr.Panel, set.ZoneOverlayCorner, set.ZoneOverlaySec, fallback) {
 					fallback()
 				}

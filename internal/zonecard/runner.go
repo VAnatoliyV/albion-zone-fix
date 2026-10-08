@@ -32,22 +32,28 @@ const (
 type Snap struct {
 	Info  string
 	Empty string // EmptyBlack, EmptySame или ""
+	// Cropped — снимок обрезан по найденному тултипу (screen.FindTooltip):
+	// если на обрезке тултипа нет, стоит прочитать и всю рамку (VarFull).
+	Cropped bool
 }
 
 // Повторы (Retry в RunnerConfig): тултип мог ещё не дорисоваться или
 // мигнуть, текст мог прочитаться плохо — ещё снимки и варианты картинки,
 // пока не выйдет уверенно или не кончится время.
 const (
-	RetryBudget = 600 * time.Millisecond // новый шаг после этого не начинаем
+	RetryBudget = 800 * time.Millisecond // новый шаг после этого не начинаем
 	RetryGap    = 120 * time.Millisecond // между снимками
 	RetryShots  = 3                      // снимков на нажатие, не больше
 )
 
-// Варианты картинки для OCR (как screen.VarGray/VarInvert); "" — цветная.
+// Варианты картинки для OCR (как screen.VarGray/VarBin/VarInvert/VarFull);
+// "" — цветная.
 const (
 	VarColor  = ""
 	VarGray   = "gray"
+	VarBin    = "bin" // порог: светлый текст тултипа — чёрным на белом
 	VarInvert = "inv"
+	VarFull   = "full" // вся рамка без обрезки по тултипу
 )
 
 // Shot — итог одного нажатия.
@@ -71,6 +77,9 @@ type Shot struct {
 	Tries  []string
 	// Read — что OCR прочитал по языкам (для журнала при неудаче).
 	Read map[string][]string
+	// Weak — в прочитанном есть обрывок признака тултипа (WeakMarker):
+	// тултип, похоже, был, только прочитан плохо.
+	Weak bool
 }
 
 // RunnerConfig — что нужно снимающему (на Windows — снимок GDI и OCR через
@@ -276,10 +285,7 @@ func (r *Runner) run(ctx context.Context, at time.Time) Shot {
 	if r.cfg.Retry && live {
 		shots = RetryShots
 	}
-	variants := []string{VarColor}
-	if shots > 1 && r.cfg.Prepare != nil && (r.cfg.Variants == nil || r.cfg.Variants()) {
-		variants = append(variants, VarGray, VarInvert)
-	}
+	withVariants := shots > 1 && r.cfg.Prepare != nil && (r.cfg.Variants == nil || r.cfg.Variants())
 
 	t0 := time.Now()
 	over := func() bool { return time.Since(t0) >= RetryBudget }
@@ -336,15 +342,11 @@ loop:
 				continue
 			}
 		}
-		colorPartly := false
-		for _, v := range variants {
+		variants := []string{VarColor}
+		for i := 0; i < len(variants); i++ {
+			v := variants[i]
 			if v != VarColor && over() {
 				break loop
-			}
-			if v != VarColor && !colorPartly {
-				// Тултипа на цветном нет — скорее не дорисовался или мигнул:
-				// нужнее новый снимок, чем варианты этой картинки.
-				break
 			}
 			img := path
 			if v != VarColor {
@@ -361,11 +363,11 @@ loop:
 				usedLangs = used
 			}
 			s.Capture, s.Image, s.Source = snap.Info, img, path
-			if v == VarColor {
-				colorPartly = partly(s)
-			}
 			if keep(s, fmt.Sprintf("%d/%d %s", n, shots, varWord(v))) {
 				break loop
+			}
+			if v == VarColor && withVariants {
+				variants = append(variants, nextVariants(s, snap.Cropped)...)
 			}
 		}
 	}
@@ -404,6 +406,11 @@ func (r *Runner) recognize(ctx context.Context, img string, first, rest []string
 		}
 	}
 	s := Shot{Read: byLang}
+	for _, lines := range byLang {
+		if WeakMarker(lines) {
+			s.Weak = true
+		}
+	}
 	if err != nil && len(byLang) == 0 {
 		s.Kind, s.Arg = ErrKindOCR, err.Error()
 		return s, used
@@ -469,6 +476,21 @@ func Quality(s Shot) float64 {
 	return 0
 }
 
+// nextVariants — что ещё прочитать с этого снимка после цветного итога s.
+// Тултип найден отчасти или есть обрывок признака — варианты картинки
+// (серый с контрастом, порог, инверсия). Снимок обрезан по тултипу, а на
+// обрезке ничего — вся рамка (рамка тултипа могла найтись не та). Иначе
+// тултип скорее не дорисовался или мигнул: нужнее новый снимок.
+func nextVariants(s Shot, cropped bool) []string {
+	switch {
+	case partly(s) || (s.Kind == ErrKindNoTooltip && s.Weak):
+		return []string{VarGray, VarBin, VarInvert}
+	case cropped && s.Kind == ErrKindNoTooltip:
+		return []string{VarFull}
+	}
+	return nil
+}
+
 // partly — на цветной картинке тултип найден хотя бы отчасти: имя без
 // признака портала, без времени, сомнительно или зона не узнана. Тогда
 // варианты картинки могут дочитать текст; без тултипа нужнее новый снимок.
@@ -501,6 +523,10 @@ func varWord(v string) string {
 		return "серый"
 	case VarInvert:
 		return "инверсия"
+	case VarBin:
+		return "порог"
+	case VarFull:
+		return "вся рамка"
 	}
 	return "цвет"
 }

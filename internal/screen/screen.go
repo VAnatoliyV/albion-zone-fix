@@ -254,6 +254,8 @@ func (s *Stale) Check(pix []byte, w, h int) string {
 const (
 	VarGray   = "gray" // оттенки серого с растянутым контрастом
 	VarInvert = "inv"  // то же, наоборот: тёмный текст на светлом
+	VarBin    = "bin"  // порог: светлый текст — чёрным на белом
+	VarFull   = "full" // вся рамка, когда снимок обрезан по тултипу
 )
 
 // Gray — оттенки серого, контраст растянут так, что 2 % самых тёмных
@@ -304,36 +306,58 @@ func Gray(src *image.RGBA, invert bool) *image.Gray {
 	return dst
 }
 
-// Последний снимок в памяти — исходная рамка без увеличения: варианты
-// делаются из неё без чтения PNG (серый считается на малой картинке и
-// потом увеличивается ×VariantFactor).
+// Последний снимок в памяти — исходная рамка без увеличения и где в ней
+// тултип: варианты делаются из неё без чтения PNG (серый считается на малой
+// картинке и потом увеличивается).
 var (
 	lastMu   sync.Mutex
 	lastPath string
 	lastImg  *image.RGBA
+	lastCrop image.Rectangle // пусто — снимок не обрезан
+	lastK    int             // увеличение обрезки
 )
 
 // Remember — снимок рамки raw (без увеличения) записан в path (для Variant).
-func Remember(path string, img *image.RGBA) {
+func Remember(path string, img *image.RGBA) { RememberCrop(path, img, image.Rectangle{}, 0) }
+
+// RememberCrop — то же, но в path записана обрезка crop рамки raw,
+// увеличенная в k раз: варианты делаются из той же обрезки, VarFull — из
+// всей рамки.
+func RememberCrop(path string, img *image.RGBA, crop image.Rectangle, k int) {
 	lastMu.Lock()
-	lastPath, lastImg = path, img
+	lastPath, lastImg, lastCrop, lastK = path, img, crop, k
 	lastMu.Unlock()
 }
 
-// Variant пишет в dst вариант kind (VarGray, VarInvert) снимка src.
+// Variant пишет в dst вариант kind (VarGray, VarBin, VarInvert, VarFull)
+// снимка src.
 func Variant(src, dst, kind string) error {
-	if kind != VarGray && kind != VarInvert {
+	switch kind {
+	case VarGray, VarInvert, VarBin, VarFull:
+	default:
 		return errors.New("неизвестный вариант снимка: " + kind)
 	}
 	lastMu.Lock()
-	img := lastImg
+	img, crop, k := lastImg, lastCrop, lastK
 	if lastPath != src {
 		img = nil
 	}
 	lastMu.Unlock()
-	if img != nil {
+	if kind == VarFull {
+		if img == nil || crop.Empty() {
+			return errors.New("нет всей рамки: снимок не обрезан")
+		}
 		b := img.Bounds()
-		return SavePNG(dst, UpscaleGray(Gray(img, kind == VarInvert), VariantFactor(b.Dx(), b.Dy())))
+		return SavePNG(dst, Upscale(img, Factor(b.Dx(), b.Dy())))
+	}
+	if img != nil {
+		if !crop.Empty() {
+			img = Crop(img, crop)
+		} else {
+			b := img.Bounds()
+			k = VariantFactor(b.Dx(), b.Dy())
+		}
+		return SavePNG(dst, UpscaleGray(grayKind(img, kind), k))
 	}
 	// В памяти нет — из файла (он уже увеличен).
 	f, err := os.Open(src)
@@ -345,7 +369,55 @@ func Variant(src, dst, kind string) error {
 	if err != nil {
 		return err
 	}
-	return SavePNG(dst, Gray(toRGBA(m), kind == VarInvert))
+	return SavePNG(dst, grayKind(toRGBA(m), kind))
+}
+
+func grayKind(img *image.RGBA, kind string) *image.Gray {
+	if kind == VarBin {
+		return Bin(img)
+	}
+	return Gray(img, kind == VarInvert)
+}
+
+// Bin — порог по Оцу: светлый текст тултипа — чёрным, остальное — белым
+// (OCR увереннее всего читает чёрное на белом без полутонов).
+func Bin(src *image.RGBA) *image.Gray {
+	g := Gray(src, false)
+	var hist [256]int
+	for _, v := range g.Pix {
+		hist[v]++
+	}
+	n := len(g.Pix)
+	sum := 0
+	for i, c := range hist {
+		sum += i * c
+	}
+	var sumB, wB int
+	best, thr := -1.0, 128
+	for t := 0; t < 256; t++ {
+		wB += hist[t]
+		if wB == 0 {
+			continue
+		}
+		wF := n - wB
+		if wF == 0 {
+			break
+		}
+		sumB += t * hist[t]
+		mB := float64(sumB) / float64(wB)
+		mF := float64(sum-sumB) / float64(wF)
+		if v := float64(wB) * float64(wF) * (mB - mF) * (mB - mF); v > best {
+			best, thr = v, t
+		}
+	}
+	for i, v := range g.Pix {
+		if int(v) > thr {
+			g.Pix[i] = 0
+		} else {
+			g.Pix[i] = 255
+		}
+	}
+	return g
 }
 
 func toRGBA(m image.Image) *image.RGBA {

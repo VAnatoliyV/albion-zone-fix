@@ -495,7 +495,7 @@ const cdRow = (label, html) => `<div class="cdrow"><div class="cdlabel">${esc(la
 
 function cardHTML(c) {
   const z = c.zone;
-  let h = `<div class="cdname">${esc(z.name)}</div>`;
+  let h = `<div class="cdname">${esc(z.name)}${c.doubt ? ' ?' : ''}</div>`;
   h += `<div class="cdsub"><i class="qsq" style="background:${QCOLOR[z.quality] || 'var(--muted)'}"></i>${esc(zoneSub(z))}</div>`;
   if (c.doubt && c.alt) h += `<div class="cddoubt">${esc(t('zn.doubt', c.alt))}</div>`;
   const rows = [];
@@ -573,6 +573,7 @@ function renderCard() {
   let body = '';
   if (c.error) body = `<div class="note gold flat">${esc(cardError(c))}</div><div class="hint flat">${esc(t('zn.shot', clock(c.at)))}</div>`;
   else if (c.zone) body = cardHTML(c);
+  if (c.mapHint) body += `<div class="hint flat">${esc(t('zn.mapHint'))}</div>`;
   setHTML($('cdBody'), body);
 }
 

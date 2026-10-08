@@ -29,7 +29,18 @@ var markers = []string{"road of avalon", "путь авалона", "дорог�
 // OCR читает с ошибками в буквах («Авапона», «Пvть», «Rood»), поэтому
 // сравнение нестрогое: до 1 ошибки на короткий признак, до 2 — на длинный.
 // Строку «Биом: Пути Авалона» из тултипа нестабильного пути не берём.
-func markerAt(line string) bool {
+func markerAt(line string) bool { return markerIn(line, false) }
+
+// markerIn — markerAt, а если строгий не нашёлся — по искажённому тексту
+// (garbledMarker). withTime — в снимке есть время.
+func markerIn(line string, withTime bool) bool {
+	if biome(strings.Join(cyrTokens(line), "")) {
+		return false
+	}
+	return markerStrict(line) || garbledMarker(line, withTime)
+}
+
+func markerStrict(line string) bool {
 	ll := strings.ToLower(line)
 	if strings.Contains(ll, "биом") || strings.Contains(ll, "biome") {
 		return false
@@ -87,8 +98,9 @@ var prepositions = []string{" to ", " в "}
 // HasMarker — в строках есть признак тултипа портала (по нему выбирается
 // язык OCR, на котором тултип прочитан).
 func HasMarker(lines []string) bool {
+	withTime := anyTime(lines)
 	for _, l := range lines {
-		if markerAt(l) {
+		if markerIn(l, withTime) {
 			return true
 		}
 	}
@@ -104,8 +116,9 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 		}
 	}
 	idx := -1
+	withTime := anyTime(clean)
 	for i, l := range clean {
-		if markerAt(l) {
+		if markerIn(l, withTime) {
 			idx = i
 			break
 		}
@@ -135,8 +148,27 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 	if len([]rune(name)) < 4 {
 		return Tooltip{}, false
 	}
-	return Tooltip{Read: name, Size: portalSize(clean), Left: timeLeft(clean)}, true
+	left := timeLeft(clean)
+	if left == 0 {
+		// В тултипе — и время искажённое («6 q 17 N»).
+		left = tolerantLeft(clean)
+	}
+	return Tooltip{Read: name, Size: portalSize(clean), Left: left}, true
 }
+
+// tolerantLeft — время по искажённым строкам (tolerantTime); только для
+// строк тултипа, где признак уже найден.
+func tolerantLeft(lines []string) time.Duration {
+	for _, l := range lines {
+		if d := tolerantTime(l); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+// anyTime — в строках есть время (строгое или искажённое).
+func anyTime(lines []string) bool { return timeLeft(lines) > 0 || tolerantLeft(lines) > 0 }
 
 // Clean убирает мусор распознавания: значок черепа, вопросительные знаки,
 // кавычки — всё, что не буква, не цифра, не дефис, не апостроф и не пробел.

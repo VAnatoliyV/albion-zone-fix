@@ -25,8 +25,11 @@ type CardView struct {
 	Zone   *zonecard.Zone `json:"zone,omitempty"`
 	Read   string         `json:"read,omitempty"` // как прочитано с экрана
 	Doubt  bool           `json:"doubt"`
-	Alt    string         `json:"alt,omitempty"` // второй кандидат при сомнении
-	Size   int            `json:"size,omitempty"`
+	// MapHint — подсказать карту мира (M): итог сомнительный, зона не
+	// узнана или тултип прочитан обрывками (zonecard.WantsMapHint).
+	MapHint bool   `json:"mapHint,omitempty"`
+	Alt     string `json:"alt,omitempty"` // второй кандидат при сомнении
+	Size    int    `json:"size,omitempty"`
 	// ClosesAt — когда портал закроется (снимок + сколько оставалось).
 	ClosesAt time.Time `json:"closesAt,omitzero"`
 	// Map — итог отправки портала на карту; MapWhy — почему не отправлен
@@ -161,6 +164,7 @@ func (a *App) cardView(tip *avalon.Status, blackWarn bool) *CardView {
 	}
 	s := c.shot
 	v.At, v.Error, v.Arg = c.at, s.Kind, s.Arg
+	v.MapHint = zonecard.WantsMapHint(s)
 	if s.Kind != "" {
 		return v
 	}

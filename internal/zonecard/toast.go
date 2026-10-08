@@ -212,5 +212,9 @@ func BuildToast(lang string, z *Zone, r Result, o ToastOptions, now time.Time) T
 	lines = append(lines, first...)
 	lines = append(lines, second...)
 	lines = append(lines, other...)
-	return Toast{Title: z.Name, Subtitle: Subtitle(lang, z, true), Body: strings.Join(lines, "\n")}
+	title := z.Name
+	if len(r.Matches) > 0 && r.Doubtful() {
+		title += " ?" // сомнительно — с вопросом, как на панели
+	}
+	return Toast{Title: title, Subtitle: Subtitle(lang, z, true), Body: strings.Join(lines, "\n")}
 }

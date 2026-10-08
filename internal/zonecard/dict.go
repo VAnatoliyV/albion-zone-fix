@@ -132,13 +132,18 @@ func (d *Dict) Similar(text string, n int) []Match {
 		dist := Levenshtein(needle, hay)
 		out = append(out, Match{Zone: z, Closeness: 1 - float64(dist)/float64(max(len(needle), len(hay)))})
 	}
-	// Устойчиво: при равной близости — порядок справочника (как sorted у Swift
-	// на практике для наших данных; важен только первый и второй).
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Closeness > out[j].Closeness })
+	sortMatches(out)
 	if len(out) > n {
 		out = out[:n]
 	}
 	return out
+}
+
+// sortMatches — по убыванию сходства. Устойчиво: при равной близости —
+// порядок справочника (как sorted у Swift на практике для наших данных;
+// важен только первый и второй).
+func sortMatches(out []Match) {
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Closeness > out[j].Closeness })
 }
 
 // Levenshtein — сколько букв надо поправить.

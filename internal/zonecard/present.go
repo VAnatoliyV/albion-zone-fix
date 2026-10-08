@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"albionzonefix/internal/i18n"
@@ -32,6 +33,14 @@ func Options(s settings.Settings) ToastOptions {
 // вкладке). panelOK=false — панель в этом запуске сломалась или не
 // создалась: вместо неё уведомление Windows.
 func Present(lang string, sh Shot, s settings.Settings, now time.Time, panelOK bool) Presentation {
+	return PresentWith(lang, sh, s, now, panelOK, false)
+}
+
+// PresentWith — Present с подсказкой «точнее всего на карте мира (M)»
+// (hint: WantsMapHint и HintGate.Allow). Сомнительная карточка — со
+// строкой подсказки; тултип не узнан или прочитан обрывками — одна
+// подсказка тем же способом, что и карточка.
+func PresentWith(lang string, sh Shot, s settings.Settings, now time.Time, panelOK, hint bool) Presentation {
 	z := sh.Result.Zone()
 	if sh.Kind == ErrKindBlank {
 		// Пустой снимок — подсказка тем же способом, что и карточка: во
@@ -48,6 +57,18 @@ func Present(lang string, sh Shot, s settings.Settings, now time.Time, panelOK b
 		return Presentation{}
 	}
 	if sh.Kind != "" || z == nil {
+		if !hint {
+			return Presentation{}
+		}
+		switch settings.NormalizeShow(s.ZoneShow) {
+		case settings.ShowPanel:
+			if panelOK {
+				return Presentation{Panel: &Panel{Title: i18n.T(lang, "zn.mapHintTitle"), Footer: i18n.T(lang, "zn.mapHint"), Warn: true}}
+			}
+			fallthrough
+		case settings.ShowNotify:
+			return Presentation{Toast: &Toast{Title: i18n.T(lang, "zn.mapHintTitle"), Body: i18n.T(lang, "zn.mapHint")}}
+		}
 		return Presentation{}
 	}
 	o := Options(s)
@@ -55,14 +76,46 @@ func Present(lang string, sh Shot, s settings.Settings, now time.Time, panelOK b
 	case settings.ShowPanel:
 		if panelOK {
 			p := BuildPanel(lang, z, sh.Result, o, now)
+			if hint {
+				p.Doubt = strings.TrimPrefix(p.Doubt+" · "+i18n.T(lang, "zn.mapHint"), " · ")
+			}
 			return Presentation{Panel: &p}
 		}
 		fallthrough
 	case settings.ShowNotify:
 		t := BuildToast(lang, z, sh.Result, o, now)
+		if hint {
+			t.Body = strings.TrimPrefix(t.Body+"\n"+i18n.T(lang, "zn.mapHint"), "\n")
+		}
 		return Presentation{Toast: &t}
 	}
 	return Presentation{}
+}
+
+// MapHintEvery — подсказку «точнее на карте мира» показываем не чаще.
+const MapHintEvery = 10 * time.Minute
+
+// WantsMapHint — итог, при котором стоит подсказать карту мира: зона
+// узнана сомнительно или не узнана, или тултип прочитан обрывками.
+func WantsMapHint(s Shot) bool {
+	return Doubtful(s) || (s.Kind == "" && s.Result.Loose) || (s.Kind == ErrKindNoTooltip && s.Weak)
+}
+
+// HintGate — не чаще раза в MapHintEvery (без спама при каждом нажатии).
+type HintGate struct {
+	mu   sync.Mutex
+	last time.Time
+}
+
+// Allow — можно показать подсказку сейчас (и запоминает показ).
+func (g *HintGate) Allow(now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.last.IsZero() && now.Sub(g.last) < MapHintEvery {
+		return false
+	}
+	g.last = now
+	return true
 }
 
 // Panel — сжатая карточка для панели поверх игры (КарточкаЗоны(сжато:) у
@@ -117,6 +170,9 @@ const warnLeft = 5 * time.Minute
 // BuildPanel — сжатая карточка зоны z по снимку r с частями o на момент now.
 func BuildPanel(lang string, z *Zone, r Result, o ToastOptions, now time.Time) Panel {
 	p := Panel{Title: z.Name, Color: QualityColor[z.Quality], Subtitle: Subtitle(lang, z, false)}
+	if len(r.Matches) > 0 && r.Doubtful() {
+		p.Title += " ?"
+	}
 	if p.Color == 0 {
 		p.Color = mutedColor
 	}

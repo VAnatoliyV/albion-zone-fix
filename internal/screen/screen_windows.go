@@ -147,15 +147,23 @@ func CaptureAroundCursor(path string) (Info, error) {
 	info.Empty = stale.Check(pix, r.Dx(), r.Dy())
 	info.Scale = Factor(r.Dx(), r.Dy())
 	raw := FromBGRA(pix, r.Dx(), r.Dy())
-	img := Upscale(raw, info.Scale)
-	if img.Bounds().Dx() == r.Dx() {
+	// Тултип нашёлся — распознаём только его и крупнее (×3–×4): на сцене
+	// игры мелкий текст OCR читает плохо.
+	src := raw
+	if box, ok := FindTooltip(raw); ok {
+		info.Crop = box
+		info.Scale = CropFactorFor(box.Dx(), box.Dy())
+		src = Crop(raw, box)
+	}
+	img := Upscale(src, info.Scale)
+	if img.Bounds().Dx() == src.Bounds().Dx() {
 		info.Scale = 1
 	}
 	info.Out = img.Bounds().Size()
 	if err := SavePNG(path, img); err != nil {
 		return info, err
 	}
-	Remember(path, raw)
+	RememberCrop(path, raw, info.Crop, info.Scale)
 	return info, nil
 }
 

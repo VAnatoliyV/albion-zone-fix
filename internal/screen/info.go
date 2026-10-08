@@ -12,4 +12,7 @@ type Info struct {
 	Scale  int             // во сколько раз увеличено для OCR
 	Empty  string          // EmptyBlack, EmptySame или "" — снимок похож на настоящий
 	Tries  int             // сколько раз брали пиксели (GetDIBits/BitBlt с повтором)
+	// Crop — где в рамке нашёлся тултип (FindTooltip, координаты рамки);
+	// пусто — распознаётся вся рамка.
+	Crop image.Rectangle
 }

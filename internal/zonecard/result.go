@@ -2,6 +2,7 @@ package zonecard
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,9 @@ type Result struct {
 	Portal bool
 	// Lang — язык OCR, на котором прочитано ("ru", "en").
 	Lang string
+	// Loose — название взято нестрого (SimilarLoose, тултип в игре прочитан
+	// сильно искажённым): итог всегда сомнительный.
+	Loose bool
 }
 
 // Zone — лучшее совпадение; nil — нет.
@@ -28,11 +32,11 @@ func (r Result) Zone() *Zone {
 // Doubtful — названия зон похожи как близнецы: мало похоже или второй
 // кандидат дышит в затылок.
 func (r Result) Doubtful() bool {
-	if len(r.Matches) == 0 {
+	if len(r.Matches) == 0 || r.Loose {
 		return true
 	}
 	first := r.Matches[0].Closeness
-	if first < 0.82 {
+	if first < doubtBelow {
 		return true
 	}
 	// Соперник — только зона с другим названием: у города несколько кодов
@@ -86,12 +90,23 @@ func (e UnknownError) Error() string { return "не узнал зону: " + e.R
 func Identify(d *Dict, lines []string, at time.Time) (Result, error) {
 	if t, ok := ParseTooltip(lines); ok {
 		m := d.Similar(t.Read, 3)
-		if len(m) == 0 {
+		loose := false
+		if len(m) == 0 || m[0].Closeness < doubtBelow {
+			// Строго не опозналось — лучшее нестрогое среди строк тултипа
+			// (название могло попасть не в ту строку или прочитаться
+			// искажённым: «HW.tme Grasskmd» — Highstone Grassland).
+			if lm, read := looseAmong(d, lines); looseOK(lm) &&
+				(len(m) == 0 || lm[0].Closeness > m[0].Closeness) {
+				m, loose, t.Read = lm, true, read
+			}
+		}
+		if len(m) == 0 || m[0].Closeness < NameFloor {
 			return Result{}, UnknownError{t.Read}
 		}
-		return Result{Tooltip: t, Matches: m, At: at, Portal: true}, nil
+		return Result{Tooltip: t, Matches: m, At: at, Portal: true, Loose: loose}, nil
 	}
 	var best []Match
+	marker := HasMarker(lines)
 	for _, l := range lines {
 		c := Clean(l)
 		if len([]rune(c)) < 5 {
@@ -103,6 +118,11 @@ func Identify(d *Dict, lines []string, at time.Time) (Result, error) {
 		}
 	}
 	if len(best) == 0 {
+		if marker {
+			// Признак тултипа есть, а названия нет вовсе («1bAeanoHa e», «17»):
+			// тултип был — не узнан, а не «не портал».
+			return Result{}, UnknownError{strings.Join(cleanLines(lines), " | ")}
+		}
 		return Result{}, ErrNoTooltip
 	}
 	// Заголовок не прочитан, а название — дорога и рядом «Закроется через …»:
@@ -114,6 +134,34 @@ func Identify(d *Dict, lines []string, at time.Time) (Result, error) {
 		}
 	}
 	return Result{Tooltip: Tooltip{Read: best[0].Zone.Name}, Matches: best, At: at}, nil
+}
+
+// cleanLines — непустые строки без мусора распознавания.
+func cleanLines(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if c := Clean(l); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// doubtBelow — ниже этого сходства итог сомнительный (как в Doubtful).
+const doubtBelow = 0.82
+
+// looseAmong — лучшее нестрогое совпадение среди строк и сама строка.
+func looseAmong(d *Dict, lines []string) ([]Match, string) {
+	var best []Match
+	read := ""
+	for _, l := range lines {
+		c := Clean(l)
+		m := d.SimilarLoose(c, 3)
+		if len(m) > 0 && (len(best) == 0 || m[0].Closeness > best[0].Closeness) {
+			best, read = m, c
+		}
+	}
+	return best, read
 }
 
 // Choose — OCR прочитал снимок на нескольких языках (язык клиента игры мы
