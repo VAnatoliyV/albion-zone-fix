@@ -4,9 +4,22 @@
 #
 # имя в ocr\   адрес   SHA256 скачанного   файл в архиве (- — не архив)   SHA256 файла
 #
+# Тексты лицензий ocr/*-LICENSE.txt лежат в git и кладутся рядом.
+#
 # ONNX Runtime 1.30.0, официальный выпуск Microsoft (MIT), Windows x64, CPU.
 onnxruntime.dll  https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949  onnxruntime-win-x64-1.30.0/lib/onnxruntime.dll  7e39e2bdbba836d98071ef28620735ba36a47c554cf794585269aecc50fab0da
 onnxruntime-LICENSE.txt  https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949  onnxruntime-win-x64-1.30.0/LICENSE  c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674
+onnxruntime-ThirdPartyNotices.txt  https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949  onnxruntime-win-x64-1.30.0/ThirdPartyNotices.txt  c53a76501ef60db6f865f20599f220761201ac4057683acefdab37d861b86622
+# Visual C++ 2015–2022 runtime x64 14.44.35211 (её требует onnxruntime.dll) —
+# рядом с ней, app-local: без установленного VC++ Redistributable своё
+# распознавание иначе не загрузится. Официальный установщик Microsoft
+# (aka.ms/vs/17/release/vc_redist.x64.exe ведёт сюда; SHA256 — и в адресе).
+# «vcredist:имя» — файл из кабинета vcRuntimeMinimum внутри установщика
+# (собрать.sh: прикреплённый контейнер WiX → кабинет → файл, cabextract).
+msvcp140.dll  https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe  cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b  vcredist:msvcp140.dll_amd64  0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9
+msvcp140_1.dll  https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe  cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b  vcredist:msvcp140_1.dll_amd64  bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d
+vcruntime140.dll  https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe  cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b  vcredist:vcruntime140.dll_amd64  d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066
+vcruntime140_1.dll  https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe  cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b  vcredist:vcruntime140_1.dll_amd64  1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f
 # PaddleOCR PP-OCRv5, распознавание строк, восточнославянская (кириллица и
 # латиница), в ONNX от RapidOCR 3.10.0 (Apache-2.0); адрес и SHA256 — из
 # rapidocr/default_models.yaml.

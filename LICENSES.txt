@@ -29,7 +29,11 @@ gopkg.in/toast.v1 (MIT), golang.org/x/* (BSD-3).
 Своё распознавание текста (папка ocr):
 ONNX Runtime 1.30.0 (onnxruntime.dll) — Microsoft (https://github.com/microsoft/onnxruntime),
 MIT, Copyright (c) Microsoft Corporation; официальный выпуск без изменений, текст лицензии —
-ocr\onnxruntime-LICENSE.txt. Модель распознавания строк eslav_PP-OCRv5_rec_mobile.onnx —
+ocr\onnxruntime-LICENSE.txt, лицензии встроенных в неё библиотек (protobuf, abseil, re2,
+flatbuffers, onnx, Eigen и др.) — ocr\onnxruntime-ThirdPartyNotices.txt. Телеметрия ONNX
+Runtime программой выключена. Библиотеки Microsoft Visual C++ 2015–2022 runtime
+(msvcp140.dll, msvcp140_1.dll, vcruntime140.dll, vcruntime140_1.dll) — без изменений из
+официального VC_redist.x64.exe, рядом с onnxruntime.dll (app-local), условия — ocr\vcredist-LICENSE.txt. Модель распознавания строк eslav_PP-OCRv5_rec_mobile.onnx —
 PaddleOCR PP-OCRv5 (https://github.com/PaddlePaddle/PaddleOCR, Apache 2.0) в ONNX от RapidOCR
 (https://github.com/RapidAI/RapidOCR, Apache 2.0), без изменений; текст лицензии —
 ocr\models-LICENSE.txt. Вызов ONNX Runtime из Go на маке (только для проверок, в программу

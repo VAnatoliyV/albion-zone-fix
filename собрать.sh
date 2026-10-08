@@ -57,6 +57,30 @@ echo "беру своё распознавание текста (ocr/files.txt).
 DL="$HOME/.cache/albion-journal/dl"
 mkdir -p "$OUT/ocr" "$DL"
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+# vcredist FILE — файл из VC_redist.x64.exe (WiX): прикреплённый контейнер —
+# второй кабинет MSCF в exe, в нём кабинет vcRuntimeMinimum (a12), в нём файл.
+VCX=""
+vcredist() {
+  if [ -z "$VCX" ]; then
+    command -v cabextract >/dev/null || { echo "нет cabextract: brew install cabextract"; exit 1; }
+    VCX="$(mktemp -d)"
+    python3 - "$1" "$VCX/att.cab" <<'PY'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+offs = []
+i = d.find(b'MSCF\0\0\0\0')
+while i >= 0:
+    offs.append(i)
+    i = d.find(b'MSCF\0\0\0\0', i + 1)
+o = offs[1]  # первый — интерфейс установщика, второй — пакеты
+n = struct.unpack('<I', d[o + 8:o + 12])[0]
+open(sys.argv[2], 'wb').write(d[o:o + n])
+PY
+    cabextract -q -d "$VCX/att" "$VCX/att.cab"
+    cabextract -q -d "$VCX/min" "$VCX/att/a12" 2>/dev/null
+  fi
+  cat "$VCX/min/$2"
+}
 while read -r name url dsha member msha; do
   case "$name" in ''|'#'*) continue ;; esac
   f="$DL/$(basename "$url")"
@@ -67,12 +91,18 @@ while read -r name url dsha member msha; do
   [ "$(sha "$f")" = "$dsha" ] || { echo "$url: SHA256 не тот — файл удалён"; rm -f "$f"; exit 1; }
   if [ "$member" = "-" ]; then
     cp "$f" "$OUT/ocr/$name"
+  elif [ "${member#vcredist:}" != "$member" ]; then
+    vcredist "$f" "${member#vcredist:}" > "$OUT/ocr/$name"
   else
     unzip -p "$f" "$member" > "$OUT/ocr/$name"
   fi
   [ "$(sha "$OUT/ocr/$name")" = "$msha" ] || { echo "$name: SHA256 не тот"; exit 1; }
 done < ocr/files.txt
-cp ocr/models-LICENSE.txt "$OUT/ocr/"
+[ -n "$VCX" ] && rm -rf "$VCX"
+cp ocr/*-LICENSE.txt "$OUT/ocr/"
+# Список ocr для удаления установщиком (только свои файлы, как у zapret).
+OLIST="$PWD/dist/ocr-delete.nsh"
+(cd "$OUT" && find ocr -type f | sed 's|/|\\|g; s|.*|  Delete "$INSTDIR\\&"|') > "$OLIST"
 
 cp README-RU.txt LICENSES.txt "$OUT/"
 cp TESTER-RU.txt dist/ # памятка тестеру рядом с выпуском (в zip и установщик не входит)
@@ -90,6 +120,6 @@ ZLIST="$PWD/dist/zapret-delete.nsh"
 (cd "$OUT" && find zapret -type f | sed 's|/|\\|g; s|.*|  Delete "$INSTDIR\\&"|') > "$ZLIST"
 # Версия из четырёх чисел для свойств файла: 1.2 -> 1.2.0.0
 V4="$(printf '%s' "$VERSION" | awk -F. '{for(i=NF+1;i<=4;i++)$i=0; print $1"."$2"."$3"."$4}' OFS=.)"
-makensis -V2 -DVERSION="$VERSION" -DVERSION4="$V4" -DZLIST="$ZLIST" installer.nsi
+makensis -V2 -DVERSION="$VERSION" -DVERSION4="$V4" -DZLIST="$ZLIST" -DOLIST="$OLIST" installer.nsi
 ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig dist/AlbionJournalSetup-"$VERSION".exe | awk '{print "готово:", $NF, $5, "байт"}'
 echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip, AlbionJournal.zip.sig и AlbionJournalSetup-$VERSION.exe"

@@ -556,13 +556,18 @@ func TestOCRDir(t *testing.T) {
 }
 
 // Список ocrFiles совпадает с тем, что кладёт собрать.sh (ocr/files.txt и
-// models-LICENSE.txt).
+// тексты лицензий ocr/*-LICENSE.txt).
 func TestOCRFilesMatchBuild(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "ocr", "files.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"models-LICENSE.txt"}
+	// Тексты лицензий из git (ocr/*-LICENSE.txt) собрать.sh кладёт тоже.
+	var want []string
+	lic, _ := filepath.Glob(filepath.Join("..", "..", "ocr", "*-LICENSE.txt"))
+	for _, f := range lic {
+		want = append(want, filepath.Base(f))
+	}
 	for _, l := range strings.Split(string(b), "\n") {
 		if f := strings.Fields(l); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
 			want = append(want, f[0])

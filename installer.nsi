@@ -11,6 +11,9 @@ SetCompressor /SOLID lzma
 !ifndef ZLIST
   !error "нужен -DZLIST=файл со списком Delete для zapret (его делает собрать.sh)"
 !endif
+!ifndef OLIST
+  !error "нужен -DOLIST=файл со списком Delete для ocr (его делает собрать.sh)"
+!endif
 !ifndef SRC
   !define SRC "dist\AlbionJournal"
 !endif
@@ -226,10 +229,11 @@ Section "Uninstall"
   Delete "$INSTDIR\README-RU.txt"
   Delete "$INSTDIR\LICENSES.txt"
   !include "${ZLIST}"
-  Delete "$INSTDIR\ocr\onnxruntime.dll"
-  Delete "$INSTDIR\ocr\onnxruntime-LICENSE.txt"
-  Delete "$INSTDIR\ocr\eslav_PP-OCRv5_rec_mobile.onnx"
-  Delete "$INSTDIR\ocr\models-LICENSE.txt"
+  ; ocr: файлы выпуска (список из ocr/files.txt, делает собрать.sh) и следы
+  ; недоставленного обновления.
+  !include "${OLIST}"
+  Delete "$INSTDIR\ocr\*.old"
+  Delete "$INSTDIR\ocr\*.new"
   RMDir "$INSTDIR\ocr"
   RMDir "$INSTDIR\zapret\bin"
   RMDir "$INSTDIR\zapret"
