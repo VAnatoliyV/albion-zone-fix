@@ -247,3 +247,50 @@ func downscale(t *testing.T, path string, k int) *image.RGBA {
 	}
 	return out
 }
+
+type panicReader struct{ reads int }
+
+func (p *panicReader) Load(string) error { return nil }
+func (p *panicReader) Version() string   { return "panic" }
+func (p *panicReader) Read(*image.RGBA, string) ([]paddle.Text, error) {
+	p.reads++
+	var a []int
+	_ = a[3] // паника: индекс за границей
+	return nil, nil
+}
+
+// Паника своего распознавания — запасной Windows OCR и запись в журнал;
+// дальше своё распознавание не зовётся.
+func TestCombinedPanic(t *testing.T) {
+	img := darkImg()
+	pr := &panicReader{}
+	var log []string
+	win := 0
+	cb := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return pr, nil },
+		Native: func(string) (*image.RGBA, bool, error) { return img, true, nil },
+		Windows: func(context.Context, string, []string) (map[string][]string, error) {
+			win++
+			return map[string][]string{"ru-RU": {"w"}}, nil
+		},
+		Logf: func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }}
+	cb.Warm()
+	for i := 0; i < 2; i++ {
+		got, err := cb.Recognize(context.Background(), "p", []string{"ru-RU"})
+		if err != nil || len(got["ru-RU"]) != 1 || got["ru-RU"][0] != "w" {
+			t.Fatalf("ответ %v %v", got, err)
+		}
+	}
+	if win != 2 || pr.reads != 1 {
+		t.Errorf("Windows %d раз, своё %d раз", win, pr.reads)
+	}
+	if all := strings.Join(log, "\n"); !strings.Contains(all, "сбой своего распознавания") {
+		t.Errorf("журнал: %s", all)
+	}
+	// Паника при загрузке — тоже запасной путь.
+	cb2 := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { panic("загрузка") },
+		Native: cb.Native, Windows: cb.Windows}
+	cb2.Warm()
+	if got, err := cb2.Recognize(context.Background(), "p", []string{"ru-RU"}); err != nil || got["ru-RU"][0] != "w" {
+		t.Errorf("паника загрузки: %v %v", got, err)
+	}
+}

@@ -173,3 +173,11 @@ func BenchmarkReadTooltip(b *testing.B) {
 		}
 	}
 }
+
+// После Close — ошибка, а не паника.
+func TestClosedEngine(t *testing.T) {
+	en := &Engine{s: map[string]*session{}}
+	if err := en.Load(ModelEslav); err == nil {
+		t.Error("закрытый движок загрузил модель")
+	}
+}

@@ -192,6 +192,9 @@ func (en *Engine) Load(model string) error {
 }
 
 func (en *Engine) load(model string) (*session, error) {
+	if en.e == nil {
+		return nil, errors.New("своё распознавание закрыто")
+	}
 	if s := en.s[model]; s != nil {
 		return s, nil
 	}

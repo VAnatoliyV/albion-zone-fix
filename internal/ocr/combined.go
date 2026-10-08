@@ -7,6 +7,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type Combined struct {
 	once    sync.Once
 	eng     Reader
 	loadErr error
+	broken  string // своё распознавание сломалось (паника) — больше не зовём
 
 	mu        sync.Mutex
 	lastImg   *image.RGBA // последняя распознанная картинка и её строки:
@@ -69,6 +71,12 @@ func (c *Combined) Warm() { c.engine() }
 
 func (c *Combined) engine() (Reader, error) {
 	c.once.Do(func() {
+		defer func() {
+			if v := recover(); v != nil {
+				c.eng, c.loadErr = nil, fmt.Errorf("сбой своего распознавания при загрузке: %v", v)
+				c.logf("OCR: %v\n%s", c.loadErr, debug.Stack())
+			}
+		}()
 		if !c.Files() {
 			c.loadErr = fmt.Errorf("нет %s или модели в %s", paddle.LibName, c.Dir)
 			c.logf("OCR: своё распознавание не загружено: %v", c.loadErr)
@@ -151,7 +159,25 @@ func (c *Combined) Recognize(ctx context.Context, path string, langs []string) (
 }
 
 // read — строки своим распознаванием; took < 0 — взяты из прошлого раза.
-func (c *Combined) read(path string) ([]string, time.Duration, error) {
+// Паника внутри (деление на строки, декод, размеры от модели) — запасной
+// Windows OCR, а своё распознавание до перезапуска не зовётся.
+func (c *Combined) read(path string) (lines []string, took time.Duration, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			why := fmt.Sprintf("сбой своего распознавания: %v", v)
+			c.logf("OCR: %s\n%s", why, debug.Stack())
+			c.mu.Lock()
+			c.broken = why
+			c.mu.Unlock()
+			lines, took, err = nil, 0, errFallback{why}
+		}
+	}()
+	c.mu.Lock()
+	broken := c.broken
+	c.mu.Unlock()
+	if broken != "" {
+		return nil, 0, errFallback{broken}
+	}
 	eng, err := c.engine()
 	if err != nil {
 		return nil, 0, errFallback{"нет своего распознавания: " + err.Error()}
@@ -168,12 +194,15 @@ func (c *Combined) read(path string) ([]string, time.Duration, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.broken != "" {
+		return nil, 0, errFallback{c.broken}
+	}
 	if img == c.lastImg && c.lastLines != nil {
 		return c.lastLines, -1, nil
 	}
 	t0 := time.Now()
 	ts, err := eng.Read(img, Model)
-	took := time.Since(t0)
+	took = time.Since(t0)
 	if err != nil {
 		return nil, 0, errFallback{"ошибка onnxruntime: " + err.Error()}
 	}

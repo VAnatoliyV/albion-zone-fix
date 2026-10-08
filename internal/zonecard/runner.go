@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -194,13 +195,25 @@ func (r *Runner) Trigger() bool {
 	r.busy = true
 	r.mu.Unlock()
 	go func() {
-		s := r.Run(context.Background())
+		s := r.safeRun(context.Background())
 		r.mu.Lock()
 		r.busy, r.lastEnd = false, r.cfg.Now()
 		r.mu.Unlock()
 		r.cfg.Done(s)
 	}()
 	return true
+}
+
+// safeRun — Run, но паника (сбой в распознавании или опознании) не роняет
+// программу: нажатие кончается ошибкой OCR, причина — в журнал.
+func (r *Runner) safeRun(ctx context.Context) (s Shot) {
+	defer func() {
+		if v := recover(); v != nil {
+			r.cfg.Logf("карточка зоны: сбой: %v\n%s", v, debug.Stack())
+			s = Shot{Kind: ErrKindOCR, Arg: fmt.Sprintf("сбой: %v", v)}
+		}
+	}()
+	return r.Run(ctx)
 }
 
 // Run — одно снятие сейчас (без проверки «занят»).

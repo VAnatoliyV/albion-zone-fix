@@ -573,3 +573,39 @@ func TestRunnerLooseTimeNotConfirmedByVariantOfSameShot(t *testing.T) {
 		t.Fatalf("подтверждено вариантом той же картинки: %v", s.Tries)
 	}
 }
+
+// Паника в распознавании не роняет программу: нажатие кончается ошибкой
+// OCR, кнопка снова свободна.
+func TestRunnerPanicRecovered(t *testing.T) {
+	done := make(chan Shot, 1)
+	var log []string
+	r := NewRunner(RunnerConfig{
+		Path:    "/tmp/x.png",
+		Capture: func(string) (Snap, error) { return Snap{Info: "600x400"}, nil },
+		Recognize: func(context.Context, string, []string) (map[string][]string, error) {
+			var m map[string][]string
+			m["x"] = nil // паника: запись в nil map
+			return m, nil
+		},
+		Dict: dict(t),
+		Done: func(s Shot) { done <- s },
+		Logf: func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) },
+	})
+	if !r.Trigger() {
+		t.Fatal("нажатие")
+	}
+	select {
+	case s := <-done:
+		if s.Kind != ErrKindOCR || !strings.Contains(s.Arg, "сбой") {
+			t.Errorf("итог %+v", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Done не позвали")
+	}
+	for i := 0; r.Busy() && i < 100; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if r.Busy() {
+		t.Error("кнопка осталась занятой")
+	}
+}
