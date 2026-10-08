@@ -30,6 +30,9 @@ func release(t *testing.T, dir string) {
 	}
 	touch(t, filepath.Join(dir, ZapretDir, "bin", BypassName))
 	touch(t, filepath.Join(dir, ZapretDir, "bin", "WinDivert64.sys"))
+	for _, f := range ocrFiles {
+		touch(t, filepath.Join(dir, OCRDir, f))
+	}
 }
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
@@ -525,5 +528,50 @@ func TestFindByOrphanReceiver(t *testing.T) {
 	e := procEnv(Proc{PID: 7, Name: RecvName, Exe: filepath.Join(old, RecvName)})
 	if got := Find(inst, e); len(got) != 1 {
 		t.Fatalf("приёмник без программы: %+v", got)
+	}
+}
+
+// Папка ocr из выпуска — наша; чужой файл в ней — папка не целиком наша.
+func TestOCRDir(t *testing.T) {
+	r := root(t)
+	old := filepath.Join(r, "AlbionJournal")
+	release(t, old)
+	if !onlyOurs(old) {
+		t.Fatal("выпуск с ocr не наш")
+	}
+	files, dirs := Plan(Copy{Dir: old, Full: true})
+	n := 0
+	for _, f := range files {
+		if filepath.Base(filepath.Dir(f)) == OCRDir {
+			n++
+		}
+	}
+	if n != len(ocrFiles) || len(dirs) == 0 {
+		t.Errorf("в плане %d файлов ocr, папки %v", n, dirs)
+	}
+	touch(t, filepath.Join(old, OCRDir, "моё.onnx"))
+	if onlyOurs(old) {
+		t.Error("чужой файл в ocr — а папка наша")
+	}
+}
+
+// Список ocrFiles совпадает с тем, что кладёт собрать.sh (ocr/files.txt и
+// models-LICENSE.txt).
+func TestOCRFilesMatchBuild(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "ocr", "files.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"models-LICENSE.txt"}
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(l); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
+			want = append(want, f[0])
+		}
+	}
+	got := append([]string(nil), ocrFiles...)
+	sort.Strings(want)
+	sort.Strings(got)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("ocrFiles %v, в выпуске %v", got, want)
 	}
 }

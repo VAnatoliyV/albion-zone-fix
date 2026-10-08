@@ -1,0 +1,13 @@
+# Своё распознавание текста — папка ocr\ выпуска. Файлы не в git: собрать.sh
+# скачивает их по этим адресам в кэш ~/.cache/albion-journal/dl и проверяет
+# SHA256 скачанного, а для файла из архива — ещё и SHA256 самого файла.
+#
+# имя в ocr\   адрес   SHA256 скачанного   файл в архиве (- — не архив)   SHA256 файла
+#
+# ONNX Runtime 1.30.0, официальный выпуск Microsoft (MIT), Windows x64, CPU.
+onnxruntime.dll  https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949  onnxruntime-win-x64-1.30.0/lib/onnxruntime.dll  7e39e2bdbba836d98071ef28620735ba36a47c554cf794585269aecc50fab0da
+onnxruntime-LICENSE.txt  https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949  onnxruntime-win-x64-1.30.0/LICENSE  c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674
+# PaddleOCR PP-OCRv5, распознавание строк, восточнославянская (кириллица и
+# латиница), в ONNX от RapidOCR 3.10.0 (Apache-2.0); адрес и SHA256 — из
+# rapidocr/default_models.yaml.
+eslav_PP-OCRv5_rec_mobile.onnx  https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec/eslav_PP-OCRv5_rec_mobile.onnx  08705d6721849b1347d26187f15a5e362c431963a2a62bfff4feac578c489aab  -  08705d6721849b1347d26187f15a5e362c431963a2a62bfff4feac578c489aab

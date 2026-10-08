@@ -26,6 +26,15 @@ gopkg.in/toast.v1 (MIT), golang.org/x/* (BSD-3).
 и jchv/go-winloader (ISC), fyne.io/systray (Apache 2.0, по getlantern/systray).
 Окно показывает Microsoft Edge WebView2 Runtime, который стоит в Windows.
 
+Своё распознавание текста (папка ocr):
+ONNX Runtime 1.30.0 (onnxruntime.dll) — Microsoft (https://github.com/microsoft/onnxruntime),
+MIT, Copyright (c) Microsoft Corporation; официальный выпуск без изменений, текст лицензии —
+ocr\onnxruntime-LICENSE.txt. Модель распознавания строк eslav_PP-OCRv5_rec_mobile.onnx —
+PaddleOCR PP-OCRv5 (https://github.com/PaddlePaddle/PaddleOCR, Apache 2.0) в ONNX от RapidOCR
+(https://github.com/RapidAI/RapidOCR, Apache 2.0), без изменений; текст лицензии —
+ocr\models-LICENSE.txt. Вызов ONNX Runtime из Go на маке (только для проверок, в программу
+под Windows не входит) — ebitengine/purego (Apache 2.0).
+
 Шрифт Pixelify Sans — Copyright 2021 The Pixelify Sans Project Authors,
 SIL Open Font License 1.1 (текст лицензии зашит в программу рядом со шрифтом).
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Собирает dist/AlbionJournal.zip: программа под Windows x64 (Albion Journal: сбор цен,
 # счётчик, Zone Fix) + приёмник своих цен acp-prices.exe + таблица предметов + официальные файлы zapret (Flowseal)
+# + своё распознавание текста в ocr\ (ONNX Runtime и модель PaddleOCR, ocr/files.txt)
 # и подпись dist/AlbionJournal.zip.sig для автообновления, плюс установщик
 # dist/AlbionJournalSetup-<версия>.exe (NSIS, installer.nsi; те же файлы, что в zip).
 #
@@ -49,6 +50,29 @@ cp dist/cache/zapret-discord-youtube-$ZAPRET_VER/bin/* "$OUT/zapret/bin/"
 if ! diff <(ls "$OUT/zapret/bin" | LC_ALL=C sort) <(LC_ALL=C sort internal/oldcopy/zapret_bin.txt) >/dev/null; then
   echo "состав zapret\bin изменился: ls $OUT/zapret/bin > internal/oldcopy/zapret_bin.txt и собрать заново"; exit 1
 fi
+
+echo "беру своё распознавание текста (ocr/files.txt)..."
+# Файлы не в git: скачиваются по зафиксированным адресам в кэш, SHA256
+# скачанного и самого файла проверяются (иначе сборка останавливается).
+DL="$HOME/.cache/albion-journal/dl"
+mkdir -p "$OUT/ocr" "$DL"
+sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+while read -r name url dsha member msha; do
+  case "$name" in ''|'#'*) continue ;; esac
+  f="$DL/$(basename "$url")"
+  if [ ! -f "$f" ] || [ "$(sha "$f")" != "$dsha" ]; then
+    curl -sfL -o "$f.part" "$url"
+    mv "$f.part" "$f"
+  fi
+  [ "$(sha "$f")" = "$dsha" ] || { echo "$url: SHA256 не тот — файл удалён"; rm -f "$f"; exit 1; }
+  if [ "$member" = "-" ]; then
+    cp "$f" "$OUT/ocr/$name"
+  else
+    unzip -p "$f" "$member" > "$OUT/ocr/$name"
+  fi
+  [ "$(sha "$OUT/ocr/$name")" = "$msha" ] || { echo "$name: SHA256 не тот"; exit 1; }
+done < ocr/files.txt
+cp ocr/models-LICENSE.txt "$OUT/ocr/"
 
 cp README-RU.txt LICENSES.txt "$OUT/"
 cp TESTER-RU.txt dist/ # памятка тестеру рядом с выпуском (в zip и установщик не входит)
