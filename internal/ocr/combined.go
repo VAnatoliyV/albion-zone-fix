@@ -54,12 +54,21 @@ type Combined struct {
 	eng     Reader
 	loadErr error
 	unavail sync.Once
+	needVC  atomic.Bool // не загрузилось: нет VC++ runtime
 
 	mu        sync.Mutex
 	broken    string      // своё распознавание сломалось (паника, зависание) — больше не зовём
 	lastImg   *image.RGBA // последняя распознанная картинка и её строки:
 	lastLines []string    // второй язык не распознаёт её заново
 }
+
+// VCRuntimeText — подсказка в журнал (на странице — ocr.hint.vcRuntime).
+const VCRuntimeText = "Для точного распознавания установите Microsoft Visual C++ Redistributable (x64) с сайта Microsoft: " +
+	paddle.VCRedistURL + " — пока работает распознавание Windows"
+
+// NeedVCRuntime — своё распознавание не загрузилось из-за отсутствия
+// Microsoft Visual C++ Redistributable (x64).
+func (c *Combined) NeedVCRuntime() bool { return c.needVC.Load() }
 
 // Сроки по умолчанию: загрузка обычно ~50 мс, распознавание тултипа ~0.1–0.3 с.
 const (
@@ -134,6 +143,10 @@ func (c *Combined) load() {
 	if err != nil {
 		c.loadErr = err
 		c.logf("OCR: своё распознавание не загружено: %v", err)
+		if errors.Is(err, paddle.ErrNoVCRuntime) {
+			c.needVC.Store(true)
+			c.logf("OCR: %s", VCRuntimeText)
+		}
 		return
 	}
 	c.eng = eng

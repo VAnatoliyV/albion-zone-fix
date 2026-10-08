@@ -352,7 +352,9 @@ func main() {
 	})
 	a.AttachCard(func() (bool, []string, string, bool) {
 		langs, hint, checked := runner.OCRStatus()
-		return runner.Busy(), langs, hint, checked
+		// Своё распознавание не загрузилось из-за VC++ runtime — подсказка,
+		// что поставить (в журнале — один раз, при загрузке).
+		return runner.Busy(), langs, ocr.CardHint(hint, textOCR.NeedVCRuntime()), checked
 	})
 	go runner.CheckLanguages(context.Background())
 	// Своё распознавание не загрузилось или сломалось — языки Windows OCR

@@ -377,3 +377,44 @@ func TestCombinedHintAfterLoadFailure(t *testing.T) {
 		t.Error("после удачной загрузки")
 	}
 }
+
+// Нет VC++ runtime — подсказка про Visual C++ Redistributable (кроме
+// случая, когда в Windows нет и языков OCR: тогда важнее та).
+func TestVCRuntimeHint(t *testing.T) {
+	var log []string
+	cb := &Combined{Dir: fakeDir(t), Logf: func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) },
+		Open: func(string, int) (Reader, error) {
+			return nil, fmt.Errorf("не загрузилась onnxruntime.dll: %w", paddle.ErrNoVCRuntime)
+		}}
+	if cb.NeedVCRuntime() {
+		t.Error("до загрузки — не нужно")
+	}
+	cb.Warm()
+	if !cb.NeedVCRuntime() {
+		t.Fatal("после неудачи из-за runtime — нужно")
+	}
+	if n := strings.Count(strings.Join(log, "\n"), "aka.ms/vs/17/release/vc_redist.x64.exe"); n != 1 {
+		t.Errorf("подсказка в журнале %d раз: %q", n, log)
+	}
+	for _, c := range []struct {
+		win  string
+		need bool
+		want string
+	}{
+		{"", true, HintVCRuntime},
+		{HintNoRu, true, HintVCRuntime},
+		{HintCheck, true, HintVCRuntime},
+		{HintNone, true, HintNone},
+		{HintNoEn, false, HintNoEn},
+		{"", false, ""},
+	} {
+		if got := CardHint(c.win, c.need); got != c.want {
+			t.Errorf("CardHint(%q, %v) = %q, ждали %q", c.win, c.need, got, c.want)
+		}
+	}
+	other := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return nil, errors.New("битая модель") }}
+	other.Warm()
+	if other.NeedVCRuntime() {
+		t.Error("другая ошибка — не про runtime")
+	}
+}

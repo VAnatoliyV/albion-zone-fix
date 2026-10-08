@@ -57,30 +57,6 @@ echo "беру своё распознавание текста (ocr/files.txt).
 DL="$HOME/.cache/albion-journal/dl"
 mkdir -p "$OUT/ocr" "$DL"
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
-# vcredist FILE — файл из VC_redist.x64.exe (WiX): прикреплённый контейнер —
-# второй кабинет MSCF в exe, в нём кабинет vcRuntimeMinimum (a12), в нём файл.
-VCX=""
-vcredist() {
-  if [ -z "$VCX" ]; then
-    command -v cabextract >/dev/null || { echo "нет cabextract: brew install cabextract"; exit 1; }
-    VCX="$(mktemp -d)"
-    python3 - "$1" "$VCX/att.cab" <<'PY'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-offs = []
-i = d.find(b'MSCF\0\0\0\0')
-while i >= 0:
-    offs.append(i)
-    i = d.find(b'MSCF\0\0\0\0', i + 1)
-o = offs[1]  # первый — интерфейс установщика, второй — пакеты
-n = struct.unpack('<I', d[o + 8:o + 12])[0]
-open(sys.argv[2], 'wb').write(d[o:o + n])
-PY
-    cabextract -q -d "$VCX/att" "$VCX/att.cab"
-    cabextract -q -d "$VCX/min" "$VCX/att/a12" 2>/dev/null
-  fi
-  cat "$VCX/min/$2"
-}
 while read -r name url dsha member msha; do
   case "$name" in ''|'#'*) continue ;; esac
   f="$DL/$(basename "$url")"
@@ -91,14 +67,11 @@ while read -r name url dsha member msha; do
   [ "$(sha "$f")" = "$dsha" ] || { echo "$url: SHA256 не тот — файл удалён"; rm -f "$f"; exit 1; }
   if [ "$member" = "-" ]; then
     cp "$f" "$OUT/ocr/$name"
-  elif [ "${member#vcredist:}" != "$member" ]; then
-    vcredist "$f" "${member#vcredist:}" > "$OUT/ocr/$name"
   else
     unzip -p "$f" "$member" > "$OUT/ocr/$name"
   fi
   [ "$(sha "$OUT/ocr/$name")" = "$msha" ] || { echo "$name: SHA256 не тот"; exit 1; }
 done < ocr/files.txt
-[ -n "$VCX" ] && rm -rf "$VCX"
 cp ocr/*-LICENSE.txt "$OUT/ocr/"
 # Список ocr для удаления установщиком (только свои файлы, как у zapret).
 OLIST="$PWD/dist/ocr-delete.nsh"

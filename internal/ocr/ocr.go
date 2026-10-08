@@ -159,7 +159,21 @@ const (
 	HintNoRu  = "noRu"  // нет русского: русский клиент игры не прочитается
 	HintNoEn  = "noEn"  // нет английского: английский клиент не прочитается
 	HintCheck = "check" // проверить не удалось
+	// HintVCRuntime — своё распознавание не загрузилось: нет Microsoft
+	// Visual C++ Redistributable (x64); пока работает Windows OCR.
+	HintVCRuntime = "vcRuntime"
 )
+
+// CardHint — подсказка для вкладки «Зона»: win — о языках Windows OCR,
+// needVC — своему распознаванию не хватает VC++ runtime. Установка
+// runtime лучше доустановки языков (своё читает оба), но если в Windows
+// нет ни одного языка OCR — сейчас не работает ничего, важнее та.
+func CardHint(win string, needVC bool) string {
+	if needVC && win != HintNone {
+		return HintVCRuntime
+	}
+	return win
+}
 
 // Hint — чего не хватает среди установленных языков OCR; "" — всё есть.
 func Hint(installed []string) string {

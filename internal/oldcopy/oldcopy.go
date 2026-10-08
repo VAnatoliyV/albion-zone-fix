@@ -42,8 +42,7 @@ const (
 // ocrFiles — файлы своего распознавания в ocr (как в ocr/files.txt и
 // собрать.sh): только при них папка ocr считается нашей.
 var ocrFiles = []string{"onnxruntime.dll", "onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt",
-	"eslav_PP-OCRv5_rec_mobile.onnx", "models-LICENSE.txt",
-	"msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcredist-LICENSE.txt"}
+	"eslav_PP-OCRv5_rec_mobile.onnx", "models-LICENSE.txt"}
 
 func ocrOurs(name string) bool {
 	for _, f := range ocrFiles {
