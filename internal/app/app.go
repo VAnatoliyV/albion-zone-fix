@@ -406,6 +406,7 @@ func (a *App) SetSettings(s settings.Settings) error {
 		s.NotifyOrder = "chestsFirst"
 	}
 	s.Skin = settings.NormalizeSkin(s.Skin)
+	s = s.Normalize() // способ показа карточки, угол и секунды панели
 	// Номер установки страница не меняет: берём сохранённый.
 	a.installMu.Lock()
 	s.MapInstall = a.settings.Get().MapInstall

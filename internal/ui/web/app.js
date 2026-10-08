@@ -123,17 +123,26 @@ function renderStatus() {
   $('rcvErr').hidden = !s.receiverError || s.receiver;
   $('rcvErr').textContent = s.receiverError ? t('st.rcvError', s.receiverError) : '';
 
+  // Авалон (зона, проходы, карта) следит всегда, пока работает перехват, —
+  // отдельно от сбора цен и счётчика: они включаются сами по себе.
+  const watching = !s.sniffError;
+  setRow('rowAvalon', watching, !watching ? t('st.avalonNoCapture')
+    : t(s.settings.mapSend ? 'st.watching' : 'st.watchingNoMap'));
+
+  // Сбор цен выключен — «выключен» и кнопка «Включить»; включён, но
+  // разборщик не поднялся — «остановлен».
   const collecting = s.collecting && s.collector.running;
-  setRow('rowCollect', collecting, t(collecting ? 'st.on' : 'st.off'));
-  setBtn($('btnCollect'), t(s.collecting ? 'btn.stop' : 'btn.startCollect'), !s.collecting);
+  setRow('rowCollect', collecting, t(collecting ? 'st.on' : s.collecting ? 'st.off' : 'st.disabled'));
+  setBtn($('btnCollect'), t(s.collecting ? 'btn.stop' : 'btn.enable'), !s.collecting);
 
   setRow('rowSite', s.siteReady, !s.receiver ? t('st.off') : t(s.siteReady ? 'st.ready' : 'st.loading'));
   $('btnSite').disabled = !s.receiver;
   $('btnSite').title = s.receiver ? '' : t('st.needRecv');
 
   const fame = s.collector.running && s.collector.session;
-  setRow('rowFame', fame, t(fame ? 'st.on' : 'st.off'));
-  for (const b of [$('btnFame'), $('btnFame2')]) setBtn(b, t(s.settings.sessionStats ? 'btn.stop' : 'btn.startFame'), !s.settings.sessionStats);
+  setRow('rowFame', fame, t(fame ? 'st.on' : s.settings.sessionStats ? 'st.off' : 'st.disabled'));
+  setBtn($('btnFame'), t(s.settings.sessionStats ? 'btn.stop' : 'btn.enable'), !s.settings.sessionStats);
+  setBtn($('btnFame2'), t(s.settings.sessionStats ? 'btn.stop' : 'btn.startFame'), !s.settings.sessionStats);
 
   $('sniffErr').hidden = !s.sniffError;
   $('sniffErr').textContent = s.sniffError ? t('st.sniffError', s.sniffError) : '';
@@ -145,6 +154,7 @@ function renderStatus() {
 $('btnCollect').onclick = async () => { await post('/api/collect', { on: S && S.collecting ? '0' : '1' }); refresh(); };
 $('btnReceiver').onclick = async () => { await post('/api/receiver', { on: S && S.receiver ? '0' : '1' }); refresh(); };
 $('btnSite').onclick = () => post('/api/open', { what: 'site' });
+$('btnAvalonMap').onclick = () => post('/api/open', { what: 'map' });
 const toggleFame = async () => { if (S) { await saveSettings({ sessionStats: !S.settings.sessionStats }); refresh(); } };
 $('btnFame').onclick = toggleFame;
 $('btnFame2').onclick = toggleFame;
@@ -599,7 +609,16 @@ function renderSettings() {
   document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
   $('shareHint').textContent = t(st.shareADP ? 'set.shareOn' : 'set.shareOff');
   renderKeyRec();
-  $('ntBox').hidden = !st.zoneNotify;
+  const show = ['notify', 'panel', 'off'].includes(st.zoneShow) ? st.zoneShow : 'notify';
+  document.querySelectorAll('#showTabs button').forEach(b => b.classList.toggle('on', b.dataset.show === show));
+  $('showHint').textContent = t('show.' + show + 'Hint');
+  $('panelBox').hidden = show !== 'panel';
+  document.querySelectorAll('#cornerTabs button').forEach(b => b.classList.toggle('on', b.dataset.corner === (st.zoneOverlayCorner || 'topRight')));
+  const sec = String(st.zoneOverlaySec || 5), sel = $('overlaySec');
+  if (![...sel.options].some(o => o.value === sec)) sel.add(new Option(sec, sec));
+  sel.value = sec;
+  // Части карточки — и для уведомления, и для панели.
+  $('ntBox').hidden = show === 'off';
   document.querySelectorAll('#ntOrder button').forEach(b => b.classList.toggle('on', b.dataset.order === (st.notifyOrder || 'chestsFirst')));
   $('dataDir').textContent = S.dataDir || '';
 }
@@ -639,6 +658,15 @@ $('skinTabs').addEventListener('click', async e => {
   if (b) await saveSettings({ skin: b.dataset.skin });
 });
 $('openData').onclick = () => post('/api/open', { what: 'data' });
+$('showTabs').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (b) await saveSettings({ zoneShow: b.dataset.show });
+});
+$('cornerTabs').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (b) await saveSettings({ zoneOverlayCorner: b.dataset.corner });
+});
+$('overlaySec').addEventListener('change', e => saveSettings({ zoneOverlaySec: Number(e.target.value) || 5 }));
 
 // Кнопка карточки — как на маке: «Назначить» и следующее нажатие. Ловит
 // программа своими хуками (WebView2 съел бы боковые кнопки как «назад»),

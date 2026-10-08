@@ -47,6 +47,9 @@ func start(t *testing.T, opts ...func(*Options)) *env {
 	t.Helper()
 	dir := t.TempDir()
 	e := &env{dir: dir, col: &fakeCol{}}
+	// Установка прошлой версии: сбор цен, ADP и счётчик включены (новая
+	// установка начинает только с Авалона — TestNewInstallOnlyAvalon).
+	os.WriteFile(filepath.Join(dir, settings.FileName), []byte(`{"shareADP":true,"sessionStats":true,"collectOnStart":true}`), 0644)
 	e.a = app.New(dir, dir, nil)
 	e.a.AttachCollector(e.col)
 	o := Options{
@@ -328,6 +331,9 @@ func TestPageKeysInDictionary(t *testing.T) {
 	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
 		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
 		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied",
+		// строки состояния «Авалон», «выключен» и способ показа карточки
+		"st.watching", "st.watchingNoMap", "st.avalonNoCapture", "st.disabled", "btn.enable",
+		"show.notifyHint", "show.panelHint", "show.offHint",
 		// вкладка «Зона»: типы зон и серверы — через таблицы KIND и REGION
 		"kind.roads", "kind.black", "kind.red", "kind.yellow", "kind.safe", "kind.city", "kind.island", "kind.instance", "kind.other",
 		"rg.europe", "rg.americas", "rg.asia",
@@ -492,7 +498,7 @@ func TestZoneCardSettingsAndState(t *testing.T) {
 		t.Fatalf("%d %v", code, out)
 	}
 	s := e.a.Settings()
-	if s.ZoneKey != "f5" || s.NotifyOrder != "resourcesFirst" || s.NotifyDng || s.BlackWarn || !s.ZoneNotify {
+	if s.ZoneKey != "f5" || s.NotifyOrder != "resourcesFirst" || s.NotifyDng || s.BlackWarn || s.ZoneShow != settings.ShowNotify || !s.ZoneNotify {
 		t.Fatalf("%+v", s)
 	}
 	// Незнакомая кнопка и порядок — по умолчанию, а не что прислали.
@@ -576,5 +582,25 @@ func TestWindowHiddenInState(t *testing.T) {
 	js, _ := webFS.ReadFile("web/app.js")
 	if !strings.Contains(string(js), "window.ajVisible") {
 		t.Fatal("страница не принимает сигнал видимости окна")
+	}
+}
+
+// Способ показа карточки, угол и секунды панели — с проверкой значений.
+func TestZoneShowSettings(t *testing.T) {
+	e := start(t)
+	if code, out := postJSON(t, e, `{"zoneShow":"panel","zoneOverlayCorner":"bottomLeft","zoneOverlaySec":99}`); code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	s := e.a.Settings()
+	if s.ZoneShow != settings.ShowPanel || s.ZoneNotify || s.ZoneOverlayCorner != settings.CornerBottomLeft || s.ZoneOverlaySec != settings.OverlaySecMax {
+		t.Fatalf("%+v", s)
+	}
+	postJSON(t, e, `{"zoneShow":"popup","zoneOverlayCorner":"center","zoneOverlaySec":8}`)
+	if s := e.a.Settings(); s.ZoneShow != settings.ShowNotify || !s.ZoneNotify || s.ZoneOverlayCorner != settings.CornerTopRight || s.ZoneOverlaySec != 8 {
+		t.Fatalf("%+v", s)
+	}
+	postJSON(t, e, `{"zoneShow":"off"}`)
+	if s := settings.Open(e.dir).Get(); s.ZoneShow != settings.ShowOff || s.ZoneNotify {
+		t.Fatalf("не сохранено: %+v", s)
 	}
 }

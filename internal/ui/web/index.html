@@ -21,6 +21,11 @@
   </header>
 
   <section class="panel status">
+    <div class="srow" id="rowAvalon">
+      <i class="dot"></i><span class="sname" data-t="st.avalon"></span><span class="sdetail"></span>
+      <button class="btn ghost small" id="btnAvalonMap" data-t="btn.map"></button>
+    </div>
+    <div class="dash"></div>
     <div class="srow" id="rowReceiver">
       <i class="dot"></i><span class="sname" data-t="st.receiver"></span><span class="sdetail"></span>
       <button class="btn ghost small" id="btnReceiver"></button>
@@ -277,9 +282,29 @@
       <button class="btn ghost small" id="zoneKeyRec"></button><button class="btn ghost small" id="zoneKeyOff" data-t="key.turnOff"></button></div>
     <div class="hint flat" id="zoneKeyMsg" hidden></div>
     <div class="hint flat" data-t="set.hotkeyHint"></div>
-    <label class="toggle"><input type="checkbox" data-set="zoneNotify"><span class="sw"></span><span class="tl" data-t="set.zoneNotify"></span></label>
-    <div class="hint" data-t="set.zoneNotifyHint"></div>
+    <div class="setlabel" data-t="set.zoneShow"></div>
+    <nav class="tabs small" id="showTabs">
+      <button data-show="notify" data-t="show.notify"></button>
+      <button data-show="panel" data-t="show.panel"></button>
+      <button data-show="off" data-t="show.off"></button>
+    </nav>
+    <div class="hint" id="showHint"></div>
+    <div id="panelBox">
+      <div class="setlabel" data-t="set.corner"></div>
+      <nav class="tabs small" id="cornerTabs">
+        <button data-corner="topLeft" data-t="corner.topLeft"></button>
+        <button data-corner="topRight" data-t="corner.topRight"></button>
+        <button data-corner="bottomLeft" data-t="corner.bottomLeft"></button>
+        <button data-corner="bottomRight" data-t="corner.bottomRight"></button>
+      </nav>
+      <div class="controls"><span class="setlabel" data-t="set.overlaySec"></span>
+        <select id="overlaySec">
+          <option value="3">3</option><option value="5">5</option><option value="8">8</option>
+          <option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option>
+        </select></div>
+    </div>
     <div id="ntBox">
+      <div class="setlabel" data-t="nt.what"></div>
       <nav class="tabs small" id="ntOrder">
         <button data-order="chestsFirst" data-t="nt.chestsFirst"></button>
         <button data-order="resourcesFirst" data-t="nt.resFirst"></button>

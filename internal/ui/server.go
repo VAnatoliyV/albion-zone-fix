@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"albionzonefix/internal/app"
@@ -89,6 +90,9 @@ type Server struct {
 	srv *http.Server
 	ln  net.Listener
 	rec keyRec
+	// setMu — два сохранения настроек подряд (угол и секунды панели одним
+	// движением) не затирают друг друга: каждое — поверх предыдущего.
+	setMu sync.Mutex
 }
 
 // PageState — всё, что страница берёт раз в две секунды.
@@ -343,6 +347,8 @@ func (s *Server) session() SessionReply {
 }
 
 func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
+	s.setMu.Lock()
+	defer s.setMu.Unlock()
 	old := s.a.Settings()
 	cur := old
 	// Поверх текущих: поля, которых нет в запросе, не трогаем.

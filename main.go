@@ -34,6 +34,7 @@ import (
 	"albionzonefix/internal/notify"
 	"albionzonefix/internal/ocr"
 	"albionzonefix/internal/oldcopy"
+	"albionzonefix/internal/overlay"
 	"albionzonefix/internal/pwsh"
 	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/record"
@@ -220,8 +221,9 @@ func main() {
 	curLang := func() string { return i18n.Resolve(a.Settings().Language, i18n.System()) }
 
 	// Карточка зоны по кнопке (этап 4): хук кнопки → снимок у курсора →
-	// OCR Windows → опознание → вкладка «Зона», уведомление и отчёт портала
-	// на карту. Поверх игры ничего не рисуется (запрет SBI).
+	// OCR Windows → опознание → вкладка «Зона», уведомление или панель
+	// поверх игры и отчёт портала на карту. Панель — только если человек
+	// сам выбрал её в настройках (по умолчанию уведомление).
 	cardLog := func(format string, args ...any) {
 		fmt.Fprintf(logw, "[карточка] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
 	}
@@ -229,10 +231,13 @@ func main() {
 	// Рабочий PowerShell для OCR и уведомлений — заранее, чтобы первое
 	// нажатие не ждало запуска (карточка или уведомления включены).
 	pwsh.SetLog(cardLog)
-	if set := a.Settings(); hotkey.Normalize(set.ZoneKey) != hotkey.Off || set.ZoneNotify || set.BlackWarn {
+	if set := a.Settings(); hotkey.Normalize(set.ZoneKey) != hotkey.Off || set.ZoneShow == settings.ShowNotify || set.BlackWarn {
 		pwsh.Warm(cardLog)
 	}
 	defer pwsh.Stop()
+	// Панель поверх игры: своё окно на своём потоке, создаётся при первом показе.
+	panel := overlay.New(cardLog)
+	defer panel.Close()
 	dict := zonecard.Default()
 	if dict == nil {
 		cardLog("справочник зон не прочитался")
@@ -264,15 +269,16 @@ func main() {
 					}
 				}
 			}
+			// Кроме вкладки — уведомлением или панелью поверх игры, по
+			// настройке «Способ показа», и только включённые части.
 			set := a.Settings()
-			z := sh.Result.Zone()
-			if sh.Kind != "" || z == nil || !set.ZoneNotify {
-				return
+			pr := zonecard.Present(curLang(), sh, set, time.Now())
+			if pr.Toast != nil {
+				notify.Show(pr.Toast.Title, pr.Toast.Subtitle, pr.Toast.Body)
 			}
-			t := zonecard.BuildToast(curLang(), z, sh.Result, zonecard.ToastOptions{
-				Chests: set.NotifyChests, Res: set.NotifyRes, Dungeons: set.NotifyDng, Portal: set.NotifyPortal,
-				ChestsFirst: set.NotifyOrder != "resourcesFirst"}, time.Now())
-			notify.Show(t.Title, t.Subtitle, t.Body)
+			if pr.Panel != nil {
+				panel.Show(*pr.Panel, set.ZoneOverlayCorner, set.ZoneOverlaySec)
+			}
 		},
 	})
 	a.AttachCard(func() (bool, []string, string, bool) {

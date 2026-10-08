@@ -3,6 +3,8 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -43,8 +45,18 @@ type Settings struct {
 	// ZoneKey — кнопка карточки зоны: xbutton1 (мышь 4), xbutton2, mbutton,
 	// клавиша вида f7 или ctrl+q, или off (internal/hotkey).
 	ZoneKey string `json:"zoneKey"`
-	// ZoneNotify — показывать карточку ещё и уведомлением Windows.
+	// ZoneNotify — прежний переключатель «показывать уведомлением Windows»
+	// (до ZoneShow). Читается только для перехода старого файла на
+	// ZoneShow; при сохранении равен ZoneShow == ShowNotify.
 	ZoneNotify bool `json:"zoneNotify"`
+	// ZoneShow — как показывать карточку зоны кроме вкладки (zoneShow у
+	// мака): ShowNotify — уведомлением Windows, ShowPanel — панелью поверх
+	// игры, ShowOff — никак.
+	ZoneShow string `json:"zoneShow"`
+	// ZoneOverlaySec — сколько секунд видна панель; ZoneOverlayCorner — в
+	// каком углу экрана с игрой (Corner*), как zoneOverlaySec/Corner у мака.
+	ZoneOverlaySec    int    `json:"zoneOverlaySec"`
+	ZoneOverlayCorner string `json:"zoneOverlayCorner"`
 	// Что писать в уведомлении (как notifyChests/notifyRes/notifyDng/
 	// notifyPortal/notifyOrder у мака; по умолчанию всё, сундуки сверху).
 	NotifyChests bool   `json:"notifyChests"`
@@ -79,6 +91,69 @@ type Settings struct {
 	QuitWithGame  bool `json:"quitWithGame"`
 }
 
+// Способы показа карточки зоны.
+const (
+	ShowNotify = "notify"
+	ShowPanel  = "panel"
+	ShowOff    = "off"
+)
+
+// Углы экрана для панели.
+const (
+	CornerTopRight    = "topRight"
+	CornerBottomRight = "bottomRight"
+	CornerTopLeft     = "topLeft"
+	CornerBottomLeft  = "bottomLeft"
+)
+
+// Сколько секунд может висеть панель.
+const (
+	OverlaySecDefault = 5
+	OverlaySecMin     = 2
+	OverlaySecMax     = 30
+)
+
+// NormalizeShow — знакомый способ показа; всё прочее — уведомление.
+func NormalizeShow(s string) string {
+	switch s {
+	case ShowPanel, ShowOff:
+		return s
+	}
+	return ShowNotify
+}
+
+// NormalizeCorner — знакомый угол; всё прочее — правый верхний.
+func NormalizeCorner(s string) string {
+	switch s {
+	case CornerBottomRight, CornerTopLeft, CornerBottomLeft:
+		return s
+	}
+	return CornerTopRight
+}
+
+// ClampOverlaySec — секунды панели в разумных пределах (0 — по умолчанию).
+func ClampOverlaySec(n int) int {
+	switch {
+	case n <= 0:
+		return OverlaySecDefault
+	case n < OverlaySecMin:
+		return OverlaySecMin
+	case n > OverlaySecMax:
+		return OverlaySecMax
+	}
+	return n
+}
+
+// Normalize приводит поля карточки к знакомым значениям, а ZoneNotify — в
+// согласие с ZoneShow (его читает прежняя версия, если откатиться).
+func (s Settings) Normalize() Settings {
+	s.ZoneShow = NormalizeShow(s.ZoneShow)
+	s.ZoneNotify = s.ZoneShow == ShowNotify
+	s.ZoneOverlaySec = ClampOverlaySec(s.ZoneOverlaySec)
+	s.ZoneOverlayCorner = NormalizeCorner(s.ZoneOverlayCorner)
+	return s
+}
+
 // Оформления страницы.
 const (
 	SkinPixel = "pixel"
@@ -96,11 +171,24 @@ func NormalizeSkin(s string) string {
 // WatchGame — нужно ли следить за процессом игры.
 func (s Settings) WatchGame() bool { return s.ShowWithGame || s.StartWithGame || s.QuitWithGame }
 
-// Default — настройки первого запуска.
+// Default — настройки первого запуска (файла настроек ещё нет): работает
+// только Авалон — слежка за зоной и отправка дорог на карту. Сбор цен (и с
+// ним приёмник), отправка цен в ADP и счётчик фейма выключены, пока
+// человек сам их не включит.
 func Default() Settings {
-	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true,
-		ZoneKey: "xbutton1", ZoneNotify: true, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
+	return Settings{StopOnExit: true, AutoUpdate: true, MapSend: true,
+		ZoneKey: "xbutton1", ZoneNotify: true, ZoneShow: ShowNotify, ZoneOverlaySec: OverlaySecDefault,
+		ZoneOverlayCorner: CornerTopRight, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
 		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPlain, ThemeV2: true, LogoAnim: true}
+}
+
+// legacy — основа для уже существующего файла: в прошлых версиях сбор цен,
+// ADP и счётчик были включены по умолчанию, и файл прошлой версии без
+// этих ключей должен остаться при прежнем выборе.
+func legacy() Settings {
+	v := Default()
+	v.ShareADP, v.SessionStats, v.CollectOnStart = true, true, true
+	return v
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.
@@ -111,14 +199,30 @@ type Store struct {
 }
 
 // Open читает файл из dir; нет файла или он битый — настройки по умолчанию.
+// Файла нет (первый запуск) — умолчания сразу записываются: следующая
+// версия с другими умолчаниями уже не поменяет выбор этой установки.
 func Open(dir string) *Store {
 	s := &Store{path: filepath.Join(dir, FileName), cur: Default()}
-	if b, err := os.ReadFile(s.path); err == nil {
-		v := Default()
+	b, err := os.ReadFile(s.path)
+	if errors.Is(err, fs.ErrNotExist) {
+		s.Set(Default()) // не записалось — умолчания живут до выхода
+		return s
+	}
+	if err == nil {
+		v := legacy()
 		if json.Unmarshal(b, &v) == nil {
-			s.cur = v
 			var keys map[string]json.RawMessage
-			if json.Unmarshal(b, &keys) == nil {
+			json.Unmarshal(b, &keys)
+			// Файл до способа показа: был переключатель «уведомлением».
+			if _, ok := keys["zoneShow"]; !ok {
+				v.ZoneShow = ShowOff
+				if v.ZoneNotify {
+					v.ZoneShow = ShowNotify
+				}
+			}
+			v = v.Normalize()
+			s.cur = v
+			if keys != nil {
 				if _, ok := keys["themeV2"]; !ok {
 					v.Skin, v.ThemeV2 = SkinPlain, true
 					if s.Set(v) != nil {

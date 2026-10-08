@@ -14,6 +14,7 @@ import (
 	"albionzonefix/internal/photon"
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/settings"
+	client "github.com/ao-data/albiondata-client/client"
 )
 
 func pkt(msgType, opCode byte, payload []byte) []byte {
@@ -95,6 +96,17 @@ func TestBypassWithoutWinwsReportsError(t *testing.T) {
 	}
 }
 
+// oldInstall — каталог с файлом настроек прошлой версии, где сбор цен,
+// ADP и счётчик включены.
+func oldInstall(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, settings.FileName), []byte(`{"shareADP":true,"sessionStats":true,"collectOnStart":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 type fakeCollector struct {
 	applied []collector.Config
 	resets  int
@@ -107,7 +119,7 @@ func (f *fakeCollector) Stats() collector.Stats {
 }
 
 func TestCollectorFollowsSettings(t *testing.T) {
-	dir := t.TempDir()
+	dir := oldInstall(t)
 	a := New(dir, dir, nil)
 	if err := a.ResetSession(); err == nil {
 		t.Fatal("сброс без счётчика должен вернуть ошибку")
@@ -152,7 +164,7 @@ func TestCollectorFollowsSettings(t *testing.T) {
 }
 
 func TestCollectOnStartOff(t *testing.T) {
-	dir := t.TempDir()
+	dir := oldInstall(t)
 	a := New(dir, dir, nil)
 	s := a.Settings()
 	s.CollectOnStart = false
@@ -179,7 +191,7 @@ func (f *fakeReceiver) Err() string  { return f.err }
 func (f *fakeReceiver) Keep(k bool)  { f.keep = k }
 
 func TestReceiverFollowsCollecting(t *testing.T) {
-	dir := t.TempDir()
+	dir := oldInstall(t)
 	a := New(dir, dir, nil)
 	r := &fakeReceiver{}
 	a.AttachReceiver(r)
@@ -437,5 +449,48 @@ func TestOptionsWriteFailureDoesNotAbortSettings(t *testing.T) {
 	}
 	if len(logged) == 0 {
 		t.Fatal("причина не записана в журнал")
+	}
+}
+
+// Новая установка — режим «только Авалон»: зона и проходы по дорогам
+// работают и уходят на карту, а разборщик цен и счётчика не запущен,
+// приёмник не поднят, в ADP ничего не уходит.
+func TestNewInstallOnlyAvalon(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	r := &fakeReceiver{}
+	a.AttachReceiver(r)
+	f := &fakeCollector{}
+	if err := a.AttachCollector(f); err != nil {
+		t.Fatal(err)
+	}
+	m := &fakeMap{}
+	a.AttachMap(m, nil)
+	if r.starts != 0 {
+		t.Fatal("приёмник поднят без сбора цен")
+	}
+	if len(f.applied) != 1 || f.applied[0].Running() || f.applied[0].ShareADP {
+		t.Fatalf("разборщик запущен: %+v", f.applied)
+	}
+	if ec := collector.EmbedConfig(dir, dir, nil, f.applied[0]); ec.SharePublic || ec.PrivateURLs != client.DeadUploader || ec.Session {
+		t.Fatalf("выгрузка цен: %+v", ec)
+	}
+	t0 := time.Unix(9000, 0)
+	joinAt(a, t0, eu, "TNL-001")
+	joinAt(a, t0.Add(time.Minute), eu, "TNL-002")
+	if a.HereCode() != "TNL-002" || len(m.offered) != 1 {
+		t.Fatalf("Авалон не следит: %q %+v", a.HereCode(), m.offered)
+	}
+	st := a.State()
+	if st.Collecting || st.Collector.Running || st.Settings.SessionStats || !st.Settings.MapSend {
+		t.Fatalf("состояние: %+v", st)
+	}
+	// Включил сбор сам — поднялись приёмник и разборщик; ADP — только если
+	// включён отдельно.
+	if err := a.SetCollecting(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.applied[len(f.applied)-1]; r.starts != 1 || !got.Prices || got.ShareADP || got.Session {
+		t.Fatalf("после включения сбора: %+v, приёмник %d", got, r.starts)
 	}
 }
