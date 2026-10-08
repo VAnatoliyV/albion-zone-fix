@@ -16,11 +16,13 @@ type fakeGuard struct {
 	held     *bool
 	stop     func() bool
 	waits    int
+	lastD    time.Duration
 	released bool
 }
 
-func (g *fakeGuard) Wait(time.Duration) bool {
+func (g *fakeGuard) Wait(d time.Duration) bool {
 	g.waits++
+	g.lastD = d
 	return g.stop != nil && g.stop()
 }
 
@@ -60,12 +62,11 @@ func TestServeLaunchesOnce(t *testing.T) {
 		Acquire: acquirer(&held, g),
 		Wanted:  func() bool { return true },
 		Running: run,
-		Launch: func(fromMarker bool) error {
-			if held {
-				t.Fatal("знак сторожа не снят до запуска программы")
-			}
-			if fromMarker {
-				t.Fatal("метки не было")
+		Launch: func() error {
+			// Знак держится до выхода процесса: пока сторож поднимает
+			// программу, StopRunning его видит.
+			if !held {
+				t.Fatal("знак сторожа снят до запуска программы")
 			}
 			launches++
 			return nil
@@ -90,7 +91,7 @@ func TestServeGameAlreadyRunning(t *testing.T) {
 		Acquire: acquirer(&held, g),
 		Wanted:  func() bool { return true },
 		Running: run,
-		Launch:  func(bool) error { launches++; return nil },
+		Launch:  func() error { launches++; return nil },
 	})
 	if launches != 1 || *polls != 5 {
 		t.Fatalf("запусков %d, снимков %d", launches, *polls)
@@ -115,7 +116,7 @@ func TestServeSnapshotErrors(t *testing.T) {
 			}
 			return true, nil
 		},
-		Launch: func(bool) error { return nil },
+		Launch: func() error { return nil },
 	})
 	if r != Launched {
 		t.Fatalf("итог %v", r)
@@ -133,7 +134,7 @@ func TestServeSingleCopy(t *testing.T) {
 			t.Fatal("второй сторож снимает процессы")
 			return false, nil
 		},
-		Launch: func(bool) error { launches++; return nil },
+		Launch: func() error { launches++; return nil },
 	})
 	if r != Busy || launches != 0 || !held {
 		t.Fatalf("итог %v, запусков %d, знак %v", r, launches, held)
@@ -149,7 +150,7 @@ func TestServeStopped(t *testing.T) {
 		Acquire: acquirer(&held, g),
 		Wanted:  func() bool { return true },
 		Running: func() (bool, error) { return false, nil },
-		Launch:  func(bool) error { t.Fatal("запуск после просьбы закрыться"); return nil },
+		Launch:  func() error { t.Fatal("запуск после просьбы закрыться"); return nil },
 	})
 	if r != Stopped || held || !g.released {
 		t.Fatalf("итог %v, знак %v", r, held)
@@ -163,52 +164,30 @@ func TestServeNotWanted(t *testing.T) {
 		Acquire: acquirer(&held, &fakeGuard{}),
 		Wanted:  func() bool { return false },
 		Running: func() (bool, error) { t.Fatal("снимки без нужды"); return false, nil },
-		Launch:  func(bool) error { t.Fatal("запуск без нужды"); return nil },
+		Launch:  func() error { t.Fatal("запуск без нужды"); return nil },
 	})
 	if r != NotWanted || held {
 		t.Fatalf("итог %v, знак %v", r, held)
 	}
 }
 
-// Подняла задача по метке — программа сразу, без снимков.
-func TestServeMarker(t *testing.T) {
-	held := false
-	var from bool
-	r := Serve(Env{
-		Acquire: acquirer(&held, &fakeGuard{}),
-		Wanted:  func() bool { return false },
-		Marker:  func() bool { return true },
-		Running: func() (bool, error) { t.Fatal("снимки при метке"); return false, nil },
-		Launch:  func(m bool) error { from = m; return nil },
-	})
-	if r != Launched || !from {
-		t.Fatalf("итог %v, метка %v", r, from)
-	}
-	r = Serve(Env{
-		Acquire: acquirer(&held, &fakeGuard{}),
-		Marker:  func() bool { return true },
-		Launch:  func(bool) error { return errors.New("нет") },
-	})
-	if r != Failed {
-		t.Fatalf("итог %v", r)
-	}
-}
-
 func TestHowToLaunch(t *testing.T) {
 	cases := []struct {
-		admin, marker, task bool
-		want                Way
+		admin bool
+		task  autostart.Mode
+		want  Way
 	}{
-		{true, false, true, Direct},
-		{true, true, true, Direct},
-		{true, false, false, Direct},
-		{false, false, true, ViaTask},
-		{false, true, true, Ask}, // задача уже не дала прав — по кругу не зовём
-		{false, false, false, Ask},
+		{true, autostart.App, Direct},
+		{true, autostart.Watch, Direct},
+		{true, autostart.Off, Direct},
+		{false, autostart.App, ViaTask},
+		// Задача — сам этот сторож: /Run при IgnoreNew пропадёт молча.
+		{false, autostart.Watch, Ask},
+		{false, autostart.Off, Ask},
 	}
 	for _, c := range cases {
-		if got := HowToLaunch(c.admin, c.marker, c.task); got != c.want {
-			t.Errorf("HowToLaunch(%v, %v, %v) = %v, ждал %v", c.admin, c.marker, c.task, got, c.want)
+		if got := HowToLaunch(c.admin, c.task); got != c.want {
+			t.Errorf("HowToLaunch(%v, %v) = %v, ждал %v", c.admin, c.task, got, c.want)
 		}
 	}
 	if a := LaunchArgs(); len(a) != 2 || a[0] != "-autostart" || a[1] != "-from-watch" {
@@ -235,11 +214,14 @@ func TestDecisions(t *testing.T) {
 		if Wanted(c.s) != c.wanted || TaskMode(c.s) != c.mode {
 			t.Errorf("%d: Wanted %v, TaskMode %v", i, Wanted(c.s), TaskMode(c.s))
 		}
-		if OnExit(c.s, false, false) != c.exitPlain || OnExit(c.s, false, true) != c.exitUpdate {
+		if OnExit(c.s, false, false, false) != c.exitPlain || OnExit(c.s, false, true, false) != c.exitUpdate {
 			t.Errorf("%d: OnExit", i)
 		}
-		if OnExit(c.s, true, false) {
+		if OnExit(c.s, true, false, false) {
 			t.Errorf("%d: сторож при выключении Windows", i)
+		}
+		if OnExit(c.s, false, false, true) {
+			t.Errorf("%d: сторож после «Выйти совсем»", i)
 		}
 	}
 }
@@ -269,5 +251,152 @@ func TestMarker(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, MarkerFile), []byte("мусор"), 0644)
 	if TakeMarker(dir, now) {
 		t.Fatal("мусор")
+	}
+}
+
+// Пока сторож ждал, программа запустилась (просьба закрыться пришла перед
+// самым запуском) — программу не поднимаем.
+func TestServeStopJustBeforeLaunch(t *testing.T) {
+	held := false
+	g := &fakeGuard{}
+	g.stop = func() bool { return g.lastD == 0 } // просьба видна только проверке перед запуском
+	run, _ := snapshots(false, true)
+	r := Serve(Env{
+		Acquire: acquirer(&held, g),
+		Wanted:  func() bool { return true },
+		Running: run,
+		Launch:  func() error { t.Fatal("запуск после просьбы закрыться"); return nil },
+	})
+	if r != Stopped {
+		t.Fatalf("итог %v", r)
+	}
+}
+
+// Программа ещё закрывается (знак одной копии держит) — подождать её
+// выхода и поднять; не закрылась — не поднимать (вторая копия показала бы
+// сообщение поверх игры).
+func TestServeWaitsForDyingApp(t *testing.T) {
+	for _, gone := range []bool{true, false} {
+		held := false
+		g := &fakeGuard{}
+		run, _ := snapshots(false, true)
+		checks, launches := 0, 0
+		r := Serve(Env{
+			Acquire: acquirer(&held, g),
+			Wanted:  func() bool { return true },
+			Running: run,
+			AppRunning: func() bool {
+				checks++
+				return !gone || checks < 3
+			},
+			AppWait: 10 * time.Millisecond,
+			Launch:  func() error { launches++; return nil },
+		})
+		if gone && (r != Launched || launches != 1) {
+			t.Fatalf("программа вышла: итог %v, запусков %d", r, launches)
+		}
+		if !gone && (r != AppAlive || launches != 0) {
+			t.Fatalf("программа жива: итог %v, запусков %d", r, launches)
+		}
+	}
+}
+
+// Через задачу: метка пишется до /Run и убирается, если /Run не вышел.
+func TestLaunchViaTask(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1_800_000_000, 0)
+	err := LaunchViaTask(dir, now, func() error {
+		if _, err := os.Stat(filepath.Join(dir, MarkerFile)); err != nil {
+			t.Fatal("метки нет к /Run")
+		}
+		return errors.New("отказано")
+	})
+	if err == nil {
+		t.Fatal("ошибка /Run потерялась")
+	}
+	if _, err := os.Stat(filepath.Join(dir, MarkerFile)); !os.IsNotExist(err) {
+		t.Fatal("метка осталась после неудачного /Run")
+	}
+	if err := LaunchViaTask(dir, now, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !TakeMarker(dir, now.Add(5*time.Second)) {
+		t.Fatal("метка после удачного /Run")
+	}
+	if MarkerTTL > 30*time.Second {
+		t.Fatalf("метка живёт %v: ручной запуск позже примет её за запуск игры", MarkerTTL)
+	}
+}
+
+// Задача при входе: сбой сторожа «вместе с игрой» не откатывает настройку,
+// но и не теряется — ошибка уходит на страницу.
+func TestSyncTask(t *testing.T) {
+	type S = settings.Settings
+	fail := errors.New("schtasks: отказано")
+	var got []autostart.Mode
+	sync := func(m autostart.Mode) error { got = append(got, m); return fail }
+	if rb, err := SyncTask(S{}, S{ShowWithGame: true}, sync); rb || !errors.Is(err, fail) {
+		t.Fatalf("сторож: откат %v, ошибка %v", rb, err)
+	}
+	if rb, err := SyncTask(S{}, S{StartWithWindows: true}, sync); !rb || !errors.Is(err, fail) {
+		t.Fatalf("запуск с Windows: откат %v, ошибка %v", rb, err)
+	}
+	got = nil
+	if rb, err := SyncTask(S{ShowWithGame: true}, S{ShowWithGame: true, QuitWithGame: true}, sync); rb || err != nil || got != nil {
+		t.Fatalf("режим не менялся: откат %v, ошибка %v, вызовы %v", rb, err, got)
+	}
+	ok := func(m autostart.Mode) error { got = append(got, m); return nil }
+	if rb, err := SyncTask(S{ShowWithGame: true}, S{}, ok); rb || err != nil || got[len(got)-1] != autostart.Off {
+		t.Fatalf("снять задачу: %v %v %v", rb, err, got)
+	}
+}
+
+// StopRunning: событие ещё не создано — просьба повторяется; ждём выхода
+// процесса, а не только снятия знака.
+func TestStopWaitsForProcess(t *testing.T) {
+	signals, opens, waited := 0, 0, time.Duration(0)
+	now := time.Unix(0, 0)
+	was, ok := stop(stopOps{
+		running: func() bool { return true },
+		signal: func() bool {
+			signals++
+			return signals >= 3 // событие появилось с третьей попытки
+		},
+		open: func() (func(time.Duration) bool, bool) {
+			opens++
+			return func(d time.Duration) bool { waited = d; return true }, true
+		},
+		sleep: func(d time.Duration) { now = now.Add(d) },
+		now:   func() time.Time { return now },
+	}, 3*time.Second)
+	if !was || !ok || signals != 3 || waited <= 0 {
+		t.Fatalf("was %v ok %v, просьб %d, ждали процесс %v", was, ok, signals, waited)
+	}
+	// Процесс не вышел за отведённое — не «закрыт».
+	was, ok = stop(stopOps{
+		running: func() bool { return true },
+		signal:  func() bool { return true },
+		open:    func() (func(time.Duration) bool, bool) { return func(time.Duration) bool { return false }, true },
+		sleep:   func(d time.Duration) { now = now.Add(d) },
+		now:     func() time.Time { return now },
+	}, time.Second)
+	if !was || ok {
+		t.Fatalf("не вышел: was %v ok %v", was, ok)
+	}
+	// Сторожа нет.
+	if was, ok := stop(stopOps{running: func() bool { return false }}, time.Second); was || !ok {
+		t.Fatal("сторожа нет")
+	}
+	// Знак пропал, а процесс так и не открылся — вышел сам.
+	n := 0
+	was, ok = stop(stopOps{
+		running: func() bool { n++; return n < 3 },
+		signal:  func() bool { return false },
+		open:    func() (func(time.Duration) bool, bool) { return nil, false },
+		sleep:   func(d time.Duration) { now = now.Add(d) },
+		now:     func() time.Time { return now },
+	}, time.Second)
+	if !was || !ok {
+		t.Fatalf("вышел сам: was %v ok %v", was, ok)
 	}
 }

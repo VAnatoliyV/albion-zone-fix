@@ -117,6 +117,11 @@ func main() {
 	// первой и выходит. Без прав администратора знак только проверяем:
 	// создаст его копия, перезапущенная с правами.
 	if desktop.OtherRunning() {
+		// Поднял сторож, а программа уже есть (успела запуститься сама) —
+		// она и следит за игрой; окно поверх игры не выталкиваем.
+		if *fromWatch {
+			return
+		}
 		showOther(data, lang)
 		return
 	}
@@ -385,23 +390,24 @@ func main() {
 			}
 			setKey(hotkey.Normalize(a.Settings().ZoneKey))
 			// Задача при входе: программа, сторож игры или ничего.
-			oldMode, mode := gameguard.TaskMode(old), gameguard.TaskMode(cur)
-			if oldMode == mode {
-				return nil
-			}
-			if err := autostart.Sync(mode); err != nil {
+			mode := gameguard.TaskMode(cur)
+			rollback, err := gameguard.SyncTask(old, cur, autostart.Sync)
+			if err != nil {
 				logLine("автозапуск (%v): %v", mode, err)
 				// Откатываем только «Запускать вместе с Windows»: без задачи
-				// сторожа «вместе с игрой» всё равно работает, пока программа
-				// запущена, и после выхода (сторожа поднимает она сама).
-				if old.StartWithWindows != cur.StartWithWindows {
+				// сторожа «вместе с игрой» работает, пока программа запущена,
+				// и после выхода (сторожа поднимает она сама) — но не после
+				// перезагрузки, это и скажет страница.
+				if rollback {
 					cur.StartWithWindows = old.StartWithWindows
 					a.SetSettings(cur)
 					return err
 				}
-				return nil
+				return fmt.Errorf("%s: %w", i18n.T(curLang(), "msg.watchTaskFailed"), err)
 			}
-			logLine("автозапуск: %v", mode)
+			if gameguard.TaskMode(old) != mode {
+				logLine("автозапуск: %v", mode)
+			}
 			return nil
 		},
 		RecordKey: func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error) {
@@ -468,7 +474,8 @@ func main() {
 			ending.Store(true)
 			shutdown()
 		},
-		Logf: logLine,
+		WatchStays: func() bool { return gameguard.Wanted(a.Settings()) },
+		Logf:       logLine,
 	})
 	dp.Store(d)
 
@@ -556,7 +563,10 @@ func main() {
 	}
 	// «Вместе с игрой» работает и у закрытой программы: остаётся сторож.
 	// Ставится обновление — его поднимет установщик (сторож — тот же exe).
-	if gameguard.OnExit(a.Settings(), ending.Load(), upd.Installing()) {
+	if d.QuitAll() && gameguard.Wanted(a.Settings()) {
+		logLine("выход совсем: сторож игры не остаётся")
+	}
+	if gameguard.OnExit(a.Settings(), ending.Load(), upd.Installing(), d.QuitAll()) {
 		if err := update.StartDetached(exe, "-"+gameguard.Flag); err != nil {
 			logLine("сторож игры не запущен: %v", err)
 		} else {
@@ -607,23 +617,20 @@ func runWatch(exe string) int {
 			s, ok := savedSettings(data)
 			return ok && gameguard.Wanted(s)
 		},
-		Marker:  func() bool { return gameguard.TakeMarker(data, time.Now()) },
-		Running: gamewatch.Running,
-		Launch: func(fromMarker bool) error {
-			task := false
+		Running:    gamewatch.Running,
+		AppRunning: desktop.OtherRunning,
+		Launch: func() error {
+			task := autostart.Off
 			if !admin {
-				_, _, task = autostart.Current()
+				_, task, _ = autostart.Current()
 			}
-			way := gameguard.HowToLaunch(admin, fromMarker, task)
+			way := gameguard.HowToLaunch(admin, task)
 			logf("поднимаю программу %v", way)
 			if way == gameguard.ViaTask {
-				if err := gameguard.WriteMarker(data, time.Now()); err != nil {
-					return err
-				}
-				return autostart.Run()
+				return gameguard.LaunchViaTask(data, time.Now(), autostart.Run)
 			}
 			// Ask: программа без прав сама попросит их (окно UAC) — иначе
-			// никак: задачи нет или и она прав не дала.
+			// никак: задача не запускает программу (или её нет).
 			return update.StartDetached(exe, gameguard.LaunchArgs()...)
 		},
 		Logf: logf,

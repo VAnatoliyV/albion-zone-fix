@@ -31,6 +31,9 @@ type Config struct {
 	EndSession func()
 	// Logf — журнал программы.
 	Logf func(format string, args ...any)
+	// WatchStays — после выхода останется сторож игры: тогда в трее есть
+	// «Выйти совсем (без сторожа)». nil — пункта нет.
+	WatchStays func() bool
 }
 
 // Desktop — окно и трей. Show, Quit и Relabel можно звать из любой горутины.
@@ -39,6 +42,7 @@ type Desktop struct {
 
 	mu       sync.Mutex
 	quit     bool
+	quitAll  bool // «Выйти совсем»: в этот раз без сторожа игры
 	hidden   bool // окно спрятано в трей или свёрнуто (страница не крутит кролика)
 	ready    chan struct{}
 	readyOne sync.Once
@@ -72,6 +76,21 @@ func (d *Desktop) Hidden() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.hidden
+}
+
+// QuitCompletely — выход без сторожа игры («Выйти совсем» в трее).
+func (d *Desktop) QuitCompletely() {
+	d.mu.Lock()
+	d.quitAll = true
+	d.mu.Unlock()
+	d.Quit()
+}
+
+// QuitAll — выход был «совсем», без сторожа игры.
+func (d *Desktop) QuitAll() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.quitAll
 }
 
 // Fallback — окно открыто в браузере, а не во встроенном WebView2.

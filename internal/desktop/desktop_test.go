@@ -49,3 +49,15 @@ func TestReadyAndHidden(t *testing.T) {
 		t.Fatal("после Run сторож игры так и ждал бы окна")
 	}
 }
+
+// «Выйти совсем»: выход без сторожа игры.
+func TestQuitCompletely(t *testing.T) {
+	d := New(Config{})
+	if d.QuitAll() {
+		t.Fatal("до выхода")
+	}
+	d.QuitCompletely()
+	if !d.QuitAll() {
+		t.Fatal("после «Выйти совсем»")
+	}
+}

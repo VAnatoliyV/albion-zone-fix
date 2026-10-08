@@ -76,6 +76,7 @@ type nativeState struct {
 	collect  *systray.MenuItem
 	show     *systray.MenuItem
 	exit     *systray.MenuItem
+	exitAll  *systray.MenuItem
 
 	// Окно «Карта Авалона» — второе окно WebView2 на том же потоке. Крестик
 	// его прячет; при следующем открытии оно же показывается снова.
@@ -223,8 +224,9 @@ func (d *Desktop) trayReady() {
 	collect := systray.AddMenuItem("", "")
 	systray.AddSeparator()
 	exit := systray.AddMenuItem(d.cfg.Label("tray.quit"), "")
+	exitAll := systray.AddMenuItem(d.cfg.Label("tray.quitAll"), d.cfg.Label("tray.quitAllHint"))
 	d.mu.Lock()
-	d.native.show, d.native.collect, d.native.exit = show, collect, exit
+	d.native.show, d.native.collect, d.native.exit, d.native.exitAll = show, collect, exit, exitAll
 	d.mu.Unlock()
 	d.Relabel()
 	for {
@@ -241,6 +243,9 @@ func (d *Desktop) trayReady() {
 		case <-exit.ClickedCh:
 			d.Quit()
 			return
+		case <-exitAll.ClickedCh:
+			d.QuitCompletely()
+			return
 		}
 	}
 }
@@ -248,13 +253,20 @@ func (d *Desktop) trayReady() {
 // Relabel обновляет надписи трея (язык сменился, сбор запущен/остановлен).
 func (d *Desktop) Relabel() {
 	d.mu.Lock()
-	show, collect, exit := d.native.show, d.native.collect, d.native.exit
+	show, collect, exit, exitAll := d.native.show, d.native.collect, d.native.exit, d.native.exitAll
 	d.mu.Unlock()
 	if show == nil {
 		return
 	}
 	show.SetTitle(d.cfg.Label("tray.show"))
 	exit.SetTitle(d.cfg.Label("tray.quit"))
+	exitAll.SetTitle(d.cfg.Label("tray.quitAll"))
+	exitAll.SetTooltip(d.cfg.Label("tray.quitAllHint"))
+	if d.cfg.WatchStays != nil && d.cfg.WatchStays() {
+		exitAll.Show()
+	} else {
+		exitAll.Hide()
+	}
 	key := "tray.startCollect"
 	if d.cfg.Collecting != nil && d.cfg.Collecting() {
 		key = "tray.stopCollect"
