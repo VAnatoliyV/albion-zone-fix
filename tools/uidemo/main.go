@@ -5,6 +5,10 @@
 //	go run ./tools/uidemo -fake           — свои цены, сессия, переходы
 //	go run ./tools/uidemo -fake -receiver — то же и «приёмник работает, сайт готов»
 //	go run ./tools/uidemo запись.azf      — переходы из настоящей записи
+//	go run ./tools/uidemo -fake -map 429  — ответ поддельного сервера карты (200, 429, 422, 0 — недоступен)
+//
+// Проходы по дорогам уходят только на поддельный сервер карты внутри демо,
+// на настоящий — никогда.
 package main
 
 import (
@@ -13,11 +17,14 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"time"
 
 	"albionzonefix/internal/app"
+	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/names"
@@ -42,6 +49,7 @@ func main() {
 	fake := flag.Bool("fake", false, "подложить свои цены, сессию и переходы")
 	recv := flag.Bool("receiver", false, "сделать вид, что приёмник работает и сайт готов")
 	lang := flag.String("lang", "", "язык программы (ru, en, es)")
+	mapCode := flag.Int("map", 200, "ответ поддельного сервера карты: 200, 429, 422; 0 — недоступен")
 	flag.Parse()
 
 	dir, _ := os.MkdirTemp("", "aj-ui")
@@ -54,6 +62,24 @@ func main() {
 	}
 	a := app.New(dir, dir, names.Zones())
 	a.AttachCollector(&fakeCollector{})
+
+	// Поддельный сервер карты (настоящему из демо ничего не шлём).
+	fakeMap := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("карта: отчёт", r.URL.Path)
+		w.WriteHeader(*mapCode)
+		switch *mapCode {
+		case 429:
+			fmt.Fprint(w, `{"why":"limit"}`)
+		case 422:
+			fmt.Fprint(w, `{"why":"region"}`)
+		}
+	}))
+	mapURL := fakeMap.URL
+	if *mapCode == 0 {
+		fakeMap.Close() // никто не слушает — «сервер карты недоступен»
+	}
+	a.AttachMap(avalon.NewReporter(avalon.ReporterConfig{URL: mapURL, Install: a.MapInstall}),
+		func(code string) { fmt.Println("карта: подсветить", avalon.HereJS(code)) })
 
 	if *fake {
 		writeFakes(dir)
@@ -88,6 +114,7 @@ func main() {
 		SessionFile: filepath.Join(dir, collector.SessionFileName),
 		OpenURL:     func(u string) { fmt.Println("открыть:", u) },
 		OpenFolder:  func(d string) { fmt.Println("папка:", d) },
+		OpenMap:     func() { fmt.Println("окно карты:", avalon.MapURL(a.HereCode())) },
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -163,6 +190,10 @@ func feedFakeTransitions(a *app.App) {
 			a.Tick(s)
 		}
 	}
+	// Дороги Авалона: вход с портала и проход по дороге — для вкладки «Зона».
+	t = time.Now().Add(-3 * time.Minute)
+	a.Feed(game.Packet{T: t, Addr: "193.169.238.120:5056", Payload: joinPkt("TNL-001")})
+	a.Feed(game.Packet{T: t.Add(time.Minute), Addr: "193.169.238.121:5056", Payload: joinPkt("TNL-384")})
 }
 
 func replay(a *app.App, path string) {

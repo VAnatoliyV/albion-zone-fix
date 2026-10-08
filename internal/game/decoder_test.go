@@ -74,7 +74,8 @@ func TestDecoderIgnoresGarbageAndOtherOps(t *testing.T) {
 }
 
 func TestNormalizeLocation(t *testing.T) {
-	cases := map[string]string{"4002": "4002", " 0301.": "0301", "BLACKBANK-2311": "BLACKBANK-2311", "xx": "", "3004-HellDen": "3004-HellDen"}
+	cases := map[string]string{"4002": "4002", " 0301.": "0301", "BLACKBANK-2311": "BLACKBANK-2311", "xx": "", "3004-HellDen": "3004-HellDen",
+		"TNL-384": "TNL-384", "TNL-38": "", "TNL-3845": "", "tnl-384": ""}
 	for in, want := range cases {
 		if got := NormalizeLocation(in); got != want {
 			t.Errorf("%q → %q, ждали %q", in, got, want)

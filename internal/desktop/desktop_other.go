@@ -51,6 +51,12 @@ func (d *Desktop) Quit() {
 	}
 }
 
+// OpenMap — на маке карта открывается в браузере.
+func (d *Desktop) OpenMap(url string) { OpenURL(url) }
+
+// MapEval — окна карты на маке нет.
+func (d *Desktop) MapEval(js string) {}
+
 // Relabel — на маке трея нет.
 func (d *Desktop) Relabel() {}
 

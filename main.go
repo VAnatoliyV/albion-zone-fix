@@ -21,6 +21,7 @@ import (
 
 	"albionzonefix/internal/app"
 	"albionzonefix/internal/autostart"
+	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/datadir"
 	"albionzonefix/internal/desktop"
@@ -180,6 +181,21 @@ func main() {
 	}()
 
 	var dp atomic.Pointer[desktop.Desktop]
+
+	// Карта Авалона: проходы по дорогам — на общий сервер карты (только
+	// Европа), смена зоны — подсветка на открытом окне карты.
+	mapRep := avalon.NewReporter(avalon.ReporterConfig{
+		Install: a.MapInstall,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(logw, "[карта] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+		},
+	})
+	a.AttachMap(mapRep, func(code string) {
+		if d := dp.Load(); d != nil {
+			d.MapEval(avalon.HereJS(code))
+		}
+	})
+
 	var ending atomic.Bool // Windows выключается: обновление не ставим
 	curLang := func() string { return i18n.Resolve(a.Settings().Language, i18n.System()) }
 	srv, err := ui.Start(a, ui.Options{
@@ -207,8 +223,16 @@ func main() {
 		},
 		OpenURL:    desktop.OpenURL,
 		OpenFolder: desktop.OpenFolder,
-		Version:    version,
-		Update:     upd,
+		OpenMap: func() {
+			u := avalon.MapURL(a.HereCode())
+			if d := dp.Load(); d != nil {
+				d.OpenMap(u)
+			} else {
+				desktop.OpenURL(u)
+			}
+		},
+		Version: version,
+		Update:  upd,
 		// «Перезапустить сейчас»: сначала установка (проверка, права, запуск
 		// установщика — он сам ждёт нашего выхода), и только если она пошла —
 		// выходим. Не пошла — ничего не останавливаем, плашка скажет.

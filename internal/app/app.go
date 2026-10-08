@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/bypass"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
@@ -65,6 +66,20 @@ type App struct {
 	collecting bool      // сбор цен идёт сейчас (включается кнопкой или при открытии)
 	colMu      sync.Mutex
 	rcv        Receiver // приёмник своих цен; nil — не подключён
+
+	// Карта Авалона: где игрок (из живого потока Join), отправка проходов.
+	here      *avalon.Place // nil — после запуска входа в зону ещё не видели
+	hereAt    time.Time
+	mapRep    MapReporter
+	onZone    func(code string) // зона сменилась (подсветить на открытой карте)
+	installMu sync.Mutex
+}
+
+// MapReporter — отправка проходов на карту (avalon.Reporter); в тестах подделка.
+type MapReporter interface {
+	Offer(avalon.Pass)
+	Note(avalon.Pass, string)
+	Last() *avalon.Status
 }
 
 // Receiver — запуск и остановка приёмника своих цен (receiver.Manager);
@@ -97,6 +112,9 @@ func New(dir, binDir string, names map[string]string) *App {
 func (a *App) name(code string) string {
 	if n := a.names[code]; n != "" {
 		return n
+	}
+	if z, ok := avalon.Lookup(code); ok && z.Name != "" {
+		return z.Name // дороги Авалона: в старом справочнике их нет
 	}
 	return code
 }
@@ -133,8 +151,66 @@ func (a *App) Feed(p game.Packet) {
 func (a *App) onEvent(e game.Ev) {
 	if e.Kind == game.Join {
 		a.zone = e.Location
+		a.onJoin(e)
 	}
 	a.tracker.On(e)
+}
+
+// onJoin — вход в зону: текущее место и проход для карты Авалона. Зона —
+// из того же потока пакетов, что учёт переходов (без файлов и процессов);
+// первый вход после запуска проходом не считается. Зовётся под a.mu,
+// поэтому всё, что дальше, не блокирует.
+func (a *App) onJoin(e game.Ev) {
+	cur := avalon.Place{Zone: e.Location, Region: avalon.Region(e.Server)}
+	p, why := avalon.Decide(a.here, cur)
+	if a.here == nil || a.here.Zone != cur.Zone {
+		a.hereAt = e.T
+		if a.onZone != nil {
+			a.onZone(cur.Zone)
+		}
+	}
+	a.here = &cur
+	if a.mapRep == nil || !a.settings.Get().MapSend {
+		return
+	}
+	switch why {
+	case avalon.OK:
+		a.mapRep.Offer(p)
+	case avalon.NotEurope:
+		a.mapRep.Note(p, avalon.ResRegion)
+	}
+}
+
+// AttachMap подключает отправку проходов и подсветку зоны на карте.
+// Звать до начала перехвата.
+func (a *App) AttachMap(r MapReporter, onZone func(code string)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.mapRep, a.onZone = r, onZone
+}
+
+// HereCode — код текущей зоны ("" — неизвестна).
+func (a *App) HereCode() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.here == nil {
+		return ""
+	}
+	return a.here.Zone
+}
+
+// MapInstall — номер установки для сервера карты; при первом вызове
+// создаётся и сохраняется в настройках.
+func (a *App) MapInstall() string {
+	a.installMu.Lock()
+	defer a.installMu.Unlock()
+	s := a.settings.Get()
+	if s.MapInstall != "" {
+		return s.MapInstall
+	}
+	s.MapInstall = avalon.NewInstall()
+	a.settings.Set(s) // не сохранилось — номер живёт до выхода
+	return s.MapInstall
 }
 
 func (a *App) onTransition(tr zones.Transition) {
@@ -307,7 +383,12 @@ func (a *App) Settings() settings.Settings { return a.settings.Get() }
 //
 // Встроенный обход запретили — работающий winws гасится сразу.
 func (a *App) SetSettings(s settings.Settings) error {
-	if err := a.settings.Set(s); err != nil {
+	// Номер установки страница не меняет: берём сохранённый.
+	a.installMu.Lock()
+	s.MapInstall = a.settings.Get().MapInstall
+	err := a.settings.Set(s)
+	a.installMu.Unlock()
+	if err != nil {
 		return err
 	}
 	if !s.BuiltinBypass {
@@ -576,6 +657,18 @@ type State struct {
 	Collector  collector.Stats    `json:"collector"`
 	// ReceiverErr — почему приёмник не работает (порт занят, нет файла, упал).
 	ReceiverErr string `json:"receiverError"`
+	// Here — текущая зона для вкладки «Зона»; nil — входа в зону не видели.
+	Here *Here `json:"here,omitempty"`
+	// MapLast — последний проход по дорогам и итог отправки на карту.
+	MapLast *avalon.Status `json:"mapLast,omitempty"`
+}
+
+// Here — где игрок сейчас.
+type Here struct {
+	avalon.Zone
+	Known  bool      `json:"known"`  // есть в справочнике зон
+	Region string    `json:"region"` // europe, americas, asia или ""
+	Since  time.Time `json:"since"`
 }
 
 func (a *App) State() State {
@@ -584,6 +677,13 @@ func (a *App) State() State {
 	a.colMu.Lock()
 	rcv := a.rcv
 	a.colMu.Unlock()
+	a.mu.Lock()
+	mr := a.mapRep
+	a.mu.Unlock()
+	var mapLast *avalon.Status
+	if mr != nil {
+		mapLast = mr.Last()
+	}
 	rerr := ""
 	if rcv != nil {
 		rerr = rcv.Err()
@@ -591,7 +691,14 @@ func (a *App) State() State {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr,
-		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs, ReceiverErr: rerr}
+		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs, ReceiverErr: rerr, MapLast: mapLast}
+	if a.here != nil {
+		z, ok := avalon.Lookup(a.here.Zone)
+		if !ok {
+			z = avalon.Zone{Code: a.here.Zone, Name: a.name(a.here.Zone)}
+		}
+		st.Here = &Here{Zone: z, Known: ok, Region: a.here.Region, Since: a.hereAt}
+	}
 	if !a.lastPkt.IsZero() {
 		st.LastPacket = a.lastPkt.Format("15:04:05")
 	}

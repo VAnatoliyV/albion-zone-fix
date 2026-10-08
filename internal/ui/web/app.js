@@ -100,6 +100,7 @@ function refreshTab() {
   else if (tab === 'shared') refreshShared(false);
   else if (tab === 'session') refreshSession();
   else if (tab === 'zonefix') renderZoneFix();
+  else if (tab === 'zone') renderZone();
 }
 
 // --- строки состояния ---------------------------------------------------------
@@ -352,6 +353,72 @@ $('zfTrace').onclick = () => zfPost('/api/trace');
 $('zfRec').onclick = () => zfPost('/api/record', S && S.recording ? { stop: 1 } : {});
 $('zfOpenSettings').onclick = () => openSettings();
 
+// --- «Зона» и карта Авалона -------------------------------------------------
+
+const REGION = { europe: 'rg.europe', americas: 'rg.americas', asia: 'rg.asia' };
+const KIND = {
+  roads: 'kind.roads', black: 'kind.black', red: 'kind.red', yellow: 'kind.yellow', safe: 'kind.safe',
+  city: 'kind.city', island: 'kind.island', instance: 'kind.instance', other: 'kind.other',
+};
+const minutesTo = iso => Math.max(1, Math.ceil((new Date(iso) - Date.now()) / 60000));
+
+// Итог отправки прохода — строка и цвет.
+function mapResult(m) {
+  const retry = m.retryAt && new Date(m.retryAt) > Date.now() ? ' · ' + t('map.retry', minutesTo(m.retryAt)) : '';
+  switch (m.result) {
+    case 'ok': return [t('map.ok'), 'green'];
+    case 'sending': return [t('map.sending'), 'muted'];
+    case 'limit': return [t('map.limit') + retry, 'gold'];
+    case 'iplive': return [t('map.ipLive'), 'gold'];
+    case 'region': return [t('map.notEurope'), 'gold'];
+    case 'offline': case 'paused': return [t('map.offline') + retry, 'red'];
+    default: return [t('map.refused', m.why || m.result), 'red'];
+  }
+}
+
+function renderZone() {
+  const s = S;
+  if (!s) return;
+  const h = s.here;
+  if (!h) {
+    $('znName').textContent = '—';
+    $('znSub').textContent = s.packets ? t('zn.waitJoin') : t('zn.wait');
+    $('znRegion').hidden = true;
+  } else {
+    $('znName').textContent = h.name || h.code;
+    const parts = [h.code];
+    if (h.kind && KIND[h.kind]) parts.push(t(KIND[h.kind]));
+    if (h.tier) parts.push(t('zn.tier', h.tier));
+    if (REGION[h.region]) parts.push(t('zn.server', t(REGION[h.region])));
+    parts.push(t('zn.since', ago(Date.parse(h.since) / 1000)));
+    $('znSub').textContent = parts.join('  ·  ');
+    const far = h.region && h.region !== 'europe';
+    $('znRegion').hidden = !far;
+    $('znRegion').textContent = far ? t('map.notEurope') : '';
+  }
+
+  const m = s.mapLast;
+  const on = s.settings.mapSend;
+  $('znSettings').hidden = on;
+  if (m) {
+    $('znPass').textContent = t('zn.lastPass', m.fromName || m.from, m.toName || m.to, clock(m.at));
+    const [text, cls] = mapResult(m);
+    $('znResult').textContent = text;
+    $('znResult').className = 'note ' + cls;
+  } else {
+    $('znPass').textContent = '';
+    $('znResult').textContent = on ? t('zn.noPass') : '';
+    $('znResult').className = 'note';
+  }
+  if (!on) {
+    $('znResult').textContent = t('zn.sendOff');
+    $('znResult').className = 'note gold';
+  }
+}
+
+$('znOpenMap').onclick = () => post('/api/open', { what: 'map' });
+$('znSettings').onclick = () => openSettings();
+
 // --- настройки ----------------------------------------------------------------
 
 function renderSettings() {
@@ -454,6 +521,7 @@ function renderAll() {
   renderSettings();
   renderUpdate();
   if (tab === 'zonefix') renderZoneFix();
+  if (tab === 'zone') renderZone();
   if (tab === 'session') renderSession();
   if (tab === 'shared') renderShared();
 }

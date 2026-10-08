@@ -40,6 +40,7 @@ type env struct {
 	hooks  []settings.Settings
 	opened []string
 	shown  int
+	maps   int
 }
 
 func start(t *testing.T) *env {
@@ -56,6 +57,7 @@ func start(t *testing.T) *env {
 		OpenURL:      func(u string) { e.opened = append(e.opened, u) },
 		OpenFolder:   func(d string) { e.opened = append(e.opened, d) },
 		OnShow:       func() { e.shown++ },
+		OpenMap:      func() { e.maps++ },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -281,6 +283,29 @@ func TestOpenAndShow(t *testing.T) {
 	if e.shown != 1 {
 		t.Fatal("show")
 	}
+	if r := e.post(t, "/api/open", url.Values{"what": {"map"}}, true); r.StatusCode != 200 || e.maps != 1 {
+		t.Fatal("карта не открылась")
+	}
+}
+
+func TestMapSettingAndInstallNotFromPage(t *testing.T) {
+	e := start(t)
+	id := e.a.MapInstall()
+	if !e.a.Settings().MapSend {
+		t.Fatal("отправка на карту по умолчанию включена")
+	}
+	if code, out := postJSON(t, e, `{"mapSend":false,"mapInstall":"подмена"}`); code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	s := e.a.Settings()
+	if s.MapSend || s.MapInstall != id {
+		t.Fatalf("%+v", s)
+	}
+	var st map[string]any
+	e.get(t, "/api/state", &st)
+	if _, ok := st["here"]; ok {
+		t.Fatal("зоны ещё нет, а here есть")
+	}
 }
 
 // Каждая надпись, которую просит страница, есть в словаре, и в словаре нет
@@ -298,7 +323,12 @@ func TestPageKeysInDictionary(t *testing.T) {
 	// ключи, собранные в JS из частей или переданные через переменную
 	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
 		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
-		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied"} {
+		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied",
+		// вкладка «Зона»: типы зон и серверы — через таблицы KIND и REGION
+		"kind.roads", "kind.black", "kind.red", "kind.yellow", "kind.safe", "kind.city", "kind.island", "kind.instance", "kind.other",
+		"rg.europe", "rg.americas", "rg.asia",
+		// заголовок окна карты (Go, internal/desktop)
+		"map.window"} {
 		used[k] = true
 	}
 	var missing, unused []string

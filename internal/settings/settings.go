@@ -34,11 +34,16 @@ type Settings struct {
 	// AutoUpdate — проверять выпуски сам и ставить скачанное при выходе.
 	// Выключено — только кнопкой «Проверить обновления» и «Перезапустить сейчас».
 	AutoUpdate bool `json:"autoUpdate"`
+	// MapSend — отправлять проходы по дорогам Авалона на общую карту.
+	MapSend bool `json:"mapSend"`
+	// MapInstall — случайный номер установки для сервера карты (лимиты и
+	// бан). Создаётся при первой отправке; страница его не меняет.
+	MapInstall string `json:"mapInstall,omitempty"`
 }
 
 // Default — настройки первого запуска.
 func Default() Settings {
-	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true}
+	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.

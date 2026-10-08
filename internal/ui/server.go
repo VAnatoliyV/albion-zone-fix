@@ -53,7 +53,10 @@ type Options struct {
 	OnShow     func()           // вторая копия программы просит показать окно
 	OpenURL    func(url string) // открыть адрес в браузере системы
 	OpenFolder func(dir string) // открыть папку в Проводнике
-	Lang       func() string    // язык системы; nil — i18n.System
+	// OpenMap — окно «Карта Авалона» с текущей зоной (второе окно WebView2,
+	// без него — браузер).
+	OpenMap func()
+	Lang    func() string // язык системы; nil — i18n.System
 
 	Version string  // версия программы (для окна и сведений)
 	Update  Updater // автообновление; nil — нет
@@ -188,6 +191,10 @@ func (s *Server) Handler() http.Handler {
 		case "discord":
 			if s.o.OpenURL != nil {
 				s.o.OpenURL(support.DiscordURL)
+			}
+		case "map":
+			if s.o.OpenMap != nil {
+				s.o.OpenMap()
 			}
 		case "data":
 			if s.o.OpenFolder != nil {

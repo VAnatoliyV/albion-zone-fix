@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/photon"
@@ -261,5 +262,102 @@ func TestKeepFollowsSettingChange(t *testing.T) {
 	a.SetSettings(s)
 	if !r.keep {
 		t.Fatal("выключили «останавливать всё» — Keep должен включиться")
+	}
+}
+
+type fakeMap struct {
+	offered []avalon.Pass
+	noted   []string
+	last    *avalon.Status
+}
+
+func (f *fakeMap) Offer(p avalon.Pass) { f.offered = append(f.offered, p) }
+func (f *fakeMap) Note(p avalon.Pass, r string) {
+	f.noted = append(f.noted, p.From+">"+p.To+":"+r)
+}
+func (f *fakeMap) Last() *avalon.Status { return f.last }
+
+const eu, us = "193.169.238.10:5056", "5.188.125.10:5056"
+
+func joinAt(a *App, t time.Time, addr, loc string) {
+	a.Feed(game.Packet{T: t, Addr: addr, Payload: join(loc)})
+}
+
+func TestPassesFromLiveJoins(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	m := &fakeMap{}
+	var zones []string
+	a.AttachMap(m, func(c string) { zones = append(zones, c) })
+	t0 := time.Unix(5000, 0)
+
+	// Первый вход после запуска — не проход, но зона уже известна.
+	joinAt(a, t0, eu, "TNL-001")
+	if len(m.offered) != 0 || a.HereCode() != "TNL-001" {
+		t.Fatalf("первый вход: %+v %q", m.offered, a.HereCode())
+	}
+	st := a.State()
+	if st.Here == nil || !st.Here.Known || !st.Here.Road || st.Here.Region != "europe" || st.Here.Tier == 0 || st.Here.Name == "" {
+		t.Fatalf("зона: %+v", st.Here)
+	}
+	if st.Zone == "TNL-001" || st.Zone == "" {
+		t.Fatalf("название дороги в Zone Fix: %q", st.Zone)
+	}
+	// Переподключение в ту же зону — не проход.
+	joinAt(a, t0.Add(time.Second), eu, "TNL-001")
+	// Проход по дороге.
+	joinAt(a, t0.Add(time.Minute), eu, "TNL-002")
+	if len(m.offered) != 1 || m.offered[0] != (avalon.Pass{From: "TNL-001", To: "TNL-002", Region: "europe"}) {
+		t.Fatalf("проход: %+v", m.offered)
+	}
+	// Город → город: не дороги, не шлём.
+	joinAt(a, t0.Add(2*time.Minute), eu, "0000")
+	joinAt(a, t0.Add(3*time.Minute), eu, "0004")
+	if len(m.offered) != 2 { // TNL-002 → 0000 — выход с дороги в город, это связь
+		t.Fatalf("проходы: %+v", m.offered)
+	}
+	if len(zones) != 4 || zones[0] != "TNL-001" || zones[3] != "0004" {
+		t.Fatalf("подсветка: %v", zones)
+	}
+}
+
+func TestPassNotEuropeAndSettingOff(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	m := &fakeMap{}
+	a.AttachMap(m, nil)
+	t0 := time.Unix(5000, 0)
+	joinAt(a, t0, us, "TNL-001")
+	joinAt(a, t0.Add(time.Minute), us, "TNL-002")
+	if len(m.offered) != 0 || len(m.noted) != 1 || m.noted[0] != "TNL-001>TNL-002:region" {
+		t.Fatalf("Америка: %+v %v", m.offered, m.noted)
+	}
+	if a.State().Here.Region != "americas" {
+		t.Fatal(a.State().Here)
+	}
+	// Выключено в настройках — ничего.
+	s := a.Settings()
+	s.MapSend = false
+	a.SetSettings(s)
+	joinAt(a, t0.Add(2*time.Minute), eu, "TNL-003")
+	joinAt(a, t0.Add(3*time.Minute), eu, "TNL-004")
+	if len(m.offered) != 0 || len(m.noted) != 1 {
+		t.Fatalf("выключено: %+v %v", m.offered, m.noted)
+	}
+}
+
+func TestMapInstallKeptAcrossSettings(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	id := a.MapInstall()
+	if id == "" || a.MapInstall() != id {
+		t.Fatal("номер установки должен быть один")
+	}
+	s := a.Settings()
+	s.MapInstall = "чужой"
+	s.ShareADP = false
+	a.SetSettings(s)
+	if a.Settings().MapInstall != id || New(dir, dir, nil).MapInstall() != id {
+		t.Fatal("номер установки сменился")
 	}
 }

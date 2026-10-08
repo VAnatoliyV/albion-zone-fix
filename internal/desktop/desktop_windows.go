@@ -55,6 +55,9 @@ const (
 	windowHeight    = 820
 	windowMinWidth  = 480
 	windowMinHeight = 560
+	mapWidth        = 1100
+	mapHeight       = 760
+	wmApp           = 0x8000 // WM_APP: так библиотека будит свою очередь Dispatch
 )
 
 type nativeState struct {
@@ -66,6 +69,13 @@ type nativeState struct {
 	collect  *systray.MenuItem
 	show     *systray.MenuItem
 	exit     *systray.MenuItem
+
+	// Окно «Карта Авалона» — второе окно WebView2 на том же потоке. Крестик
+	// его прячет; при следующем открытии оно же показывается снова.
+	mapW      webview2.WebView
+	mapHwnd   uintptr
+	mapProc   uintptr
+	mapFailed bool // не создалось — дальше карта открывается в браузере
 }
 
 // Run показывает окно и трей и крутит цикл сообщений до Quit. Звать из
@@ -233,6 +243,122 @@ func (d *Desktop) Relabel() {
 		key = "tray.stopCollect"
 	}
 	collect.SetTitle(d.cfg.Label(key))
+}
+
+// OpenMap показывает окно «Карта Авалона» с адресом url. Без WebView2 (или
+// если окно карты не создалось) — в браузере.
+func (d *Desktop) OpenMap(url string) {
+	d.mu.Lock()
+	w, fb, failed := d.native.w, d.fallback, d.native.mapFailed
+	d.mu.Unlock()
+	if fb || w == nil || failed {
+		OpenURL(url)
+		return
+	}
+	w.Dispatch(func() { d.showMap(url) })
+}
+
+// showMap — на потоке окон (через Dispatch главного окна: очередь Dispatch
+// разбирает только его цикл сообщений).
+func (d *Desktop) showMap(url string) {
+	d.mu.Lock()
+	mw, hwnd := d.native.mapW, d.native.mapHwnd
+	d.mu.Unlock()
+	if mw == nil {
+		if mw = d.createMap(); mw == nil {
+			d.mu.Lock()
+			d.native.mapFailed = true
+			d.mu.Unlock()
+			OpenURL(url)
+			return
+		}
+		hwnd = uintptr(mw.Window())
+	}
+	mw.Navigate(url)
+	if r, _, _ := pIsIconic.Call(hwnd); r != 0 {
+		pShowWindow.Call(hwnd, swRestore)
+	} else {
+		pShowWindow.Call(hwnd, swShow)
+	}
+	pSetForegroundWindow.Call(hwnd)
+}
+
+func (d *Desktop) createMap() webview2.WebView {
+	title := d.cfg.Label("map.window")
+	// Пока WebView2 встраивается, библиотека крутит свой цикл сообщений и
+	// съедает то, что адресовано потоку: пробуждение очереди Dispatch и
+	// WM_QUIT от «Выход». После создания посылаем их заново.
+	defer d.repost()
+	mw := webview2.NewWithOptions(webview2.WebViewOptions{
+		DataPath:  filepath.Join(d.cfg.DataDir, "WebView2"),
+		AutoFocus: true,
+		WindowOptions: webview2.WindowOptions{
+			Title: title, Width: mapWidth, Height: mapHeight, Center: true,
+		},
+	})
+	if mw == nil {
+		d.cfg.Logf("окно карты WebView2 не создалось — карта откроется в браузере")
+		// Окно уже показано, а браузер в него не встроился. Только прячем:
+		// на WM_DESTROY библиотека завершила бы цикл сообщений всей программы.
+		cls, _ := windows.UTF16PtrFromString("webview")
+		t, _ := windows.UTF16PtrFromString(title)
+		if h, _, _ := pFindWindowW.Call(uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(t))); h != 0 {
+			pShowWindow.Call(h, swHide)
+		}
+		return nil
+	}
+	hwnd := uintptr(mw.Window())
+	mw.SetSize(windowMinWidth, 400, webview2.HintMin)
+	d.setIcon(hwnd)
+	orig, _, _ := pGetWindowLongPtrW.Call(hwnd, gwlpWndProc)
+	d.mu.Lock()
+	d.native.mapW, d.native.mapHwnd, d.native.mapProc = mw, hwnd, orig
+	d.mu.Unlock()
+	pSetWindowLongPtrW.Call(hwnd, gwlpWndProc, windows.NewCallback(d.mapWndProc))
+	d.cfg.Logf("окно карты открыто")
+	return mw
+}
+
+// mapWndProc: крестик окна карты только прячет его. Библиотека бы его
+// уничтожила, а на WM_DESTROY она завершает цикл сообщений — закрылась бы
+// вся программа.
+func (d *Desktop) mapWndProc(hwnd, msg, wp, lp uintptr) uintptr {
+	if msg == wmClose {
+		pShowWindow.Call(hwnd, swHide)
+		return 0
+	}
+	d.mu.Lock()
+	orig := d.native.mapProc
+	d.mu.Unlock()
+	r, _, _ := pCallWindowProcW.Call(orig, hwnd, msg, wp, lp)
+	return r
+}
+
+// repost будит очередь Dispatch и повторяет выход, если его просили, пока
+// работал вложенный цикл сообщений.
+func (d *Desktop) repost() {
+	d.mu.Lock()
+	th, quit := d.native.thread, d.native.quitting
+	d.mu.Unlock()
+	pPostThreadMessageW.Call(uintptr(th), wmApp, 0, 0)
+	if quit {
+		pPostThreadMessageW.Call(uintptr(th), wmQuit, 0, 0)
+	}
+}
+
+// MapEval выполняет скрипт на открытой карте (подсветить новую зону).
+// Окна карты нет — ничего.
+func (d *Desktop) MapEval(js string) {
+	if js == "" {
+		return
+	}
+	d.mu.Lock()
+	w, mw := d.native.w, d.native.mapW
+	d.mu.Unlock()
+	if w == nil || mw == nil {
+		return
+	}
+	w.Dispatch(func() { mw.Eval(js) })
 }
 
 // Show выводит окно вперёд (из трея, из второй копии программы).

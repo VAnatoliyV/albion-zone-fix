@@ -120,8 +120,22 @@
 
   <!-- Зона -->
   <section class="tab" id="tab-zone" hidden>
-    <div class="caption" data-t="zn.soonTitle"></div>
-    <div class="panel text"><p data-t="zn.soon"></p></div>
+    <div class="caption" data-t="zn.here"></div>
+    <div class="panel box">
+      <div class="big" id="znName">—</div>
+      <div class="note" id="znSub"></div>
+      <div class="warn small" id="znRegion" hidden></div>
+    </div>
+    <div class="caption" data-t="zn.mapTitle"></div>
+    <div class="panel box">
+      <div id="znPass"></div>
+      <div class="note" id="znResult"></div>
+      <div class="controls">
+        <button class="btn" id="znOpenMap" data-t="zn.openMap"></button>
+        <button class="btn ghost small" id="znSettings" data-t="app.settings" hidden></button>
+      </div>
+      <div class="hint flat" data-t="zn.about"></div>
+    </div>
   </section>
 
   <!-- Переходы (Zone Fix) -->
@@ -225,6 +239,11 @@
     <div class="caption gold" data-t="sec.zonefix"></div>
     <label class="toggle"><input type="checkbox" data-set="builtinBypass"><span class="sw"></span><span class="tl" data-t="set.bypass"></span></label>
     <div class="hint warn" data-t="set.bypassHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.map"></div>
+    <label class="toggle"><input type="checkbox" data-set="mapSend"><span class="sw"></span><span class="tl" data-t="set.mapSend"></span></label>
+    <div class="hint" data-t="set.mapSendHint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.update"></div>

@@ -123,6 +123,9 @@ func (d *Decoder) onEvent(_ byte, _ map[byte]interface{}) {
 var (
 	reIsland  = regexp.MustCompile(`(?i)@island@[0-9a-f-]{36}`)
 	reNumeric = regexp.MustCompile(`^[0-9]{3,6}$`)
+	// дороги Авалона: ровно TNL- и три цифры, как все 400 кодов в справочнике
+	// (то же, что reRoad в albiondata-client)
+	reRoad = regexp.MustCompile(`^TNL-[0-9]{3}$`)
 )
 
 // NormalizeLocation — как normalizeLocationID в albiondata-client: оставляет
@@ -135,7 +138,7 @@ func NormalizeLocation(v string) string {
 	if m := reIsland.FindString(s); m != "" {
 		return "@ISLAND@" + m[len("@island@"):]
 	}
-	if reNumeric.MatchString(s) {
+	if reNumeric.MatchString(s) || reRoad.MatchString(s) {
 		return s
 	}
 	ls := strings.ToLower(s)
