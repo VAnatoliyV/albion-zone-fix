@@ -315,6 +315,8 @@ var (
 	lastImg  *image.RGBA
 	lastCrop image.Rectangle // пусто — снимок не обрезан
 	lastK    int             // увеличение обрезки
+	lastFull string          // куда записан вариант VarFull этого снимка
+	lastNat  *image.RGBA     // обрезка для Native (одна на снимок)
 )
 
 // Remember — снимок рамки raw (без увеличения) записан в path (для Variant).
@@ -325,8 +327,39 @@ func Remember(path string, img *image.RGBA) { RememberCrop(path, img, image.Rect
 // всей рамки.
 func RememberCrop(path string, img *image.RGBA, crop image.Rectangle, k int) {
 	lastMu.Lock()
-	lastPath, lastImg, lastCrop, lastK = path, img, crop, k
+	lastPath, lastImg, lastCrop, lastK, lastFull, lastNat = path, img, crop, k, "", nil
 	lastMu.Unlock()
+}
+
+// ErrNoNative — картинки в исходном разрешении нет: это не последний
+// снимок или вариант картинки (серый, инверсия, порог).
+var ErrNoNative = errors.New("нет снимка в исходном разрешении")
+
+// Native — что записано в path, в исходном разрешении экрана, без
+// увеличения: для своего распознавания (internal/paddle). Обрезка по
+// тултипу — без запаса и рамки тултипа (cropped=true); вся рамка (снимок
+// не обрезан или вариант VarFull) — cropped=false.
+func Native(path string) (img *image.RGBA, cropped bool, err error) {
+	lastMu.Lock()
+	defer lastMu.Unlock()
+	raw, crop, full := lastImg, lastCrop, lastFull
+	match := path == lastPath
+	switch {
+	case raw == nil:
+		return nil, false, ErrNoNative
+	case match && !crop.Empty():
+		if lastNat == nil {
+			in := crop.Inset(CropMargin + 1)
+			if in.Empty() {
+				in = crop
+			}
+			lastNat = Crop(raw, in)
+		}
+		return lastNat, true, nil
+	case match || (full != "" && path == full):
+		return raw, false, nil
+	}
+	return nil, false, ErrNoNative
 }
 
 // Variant пишет в dst вариант kind (VarGray, VarBin, VarInvert, VarFull)
@@ -348,7 +381,15 @@ func Variant(src, dst, kind string) error {
 			return errors.New("нет всей рамки: снимок не обрезан")
 		}
 		b := img.Bounds()
-		return SavePNG(dst, Upscale(img, Factor(b.Dx(), b.Dy())))
+		if err := SavePNG(dst, Upscale(img, Factor(b.Dx(), b.Dy()))); err != nil {
+			return err
+		}
+		lastMu.Lock()
+		if lastImg == img {
+			lastFull = dst
+		}
+		lastMu.Unlock()
+		return nil
 	}
 	if img != nil {
 		if !crop.Empty() {

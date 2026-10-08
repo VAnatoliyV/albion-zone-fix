@@ -193,3 +193,34 @@ func TestGrayVariants(t *testing.T) {
 		t.Error("неизвестный вариант")
 	}
 }
+
+// Native: обрезка последнего снимка в исходном разрешении без запаса,
+// вся рамка для VarFull, варианты и чужие пути — нет.
+func TestNative(t *testing.T) {
+	raw := image.NewRGBA(image.Rect(0, 0, 100, 60))
+	crop := image.Rect(10, 10, 70, 50)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zone-capture.png")
+	RememberCrop(path, raw, crop, 4)
+	img, cropped, err := Native(path)
+	if err != nil || !cropped || img.Bounds().Dx() != crop.Dx()-2*(CropMargin+1) {
+		t.Fatalf("обрезка: %v %v %v", img.Bounds(), cropped, err)
+	}
+	if again, _, _ := Native(path); again != img {
+		t.Error("обрезка одного снимка — не та же картинка")
+	}
+	if _, _, err := Native(filepath.Join(dir, "zone-capture-gray.png")); err != ErrNoNative {
+		t.Errorf("вариант: %v", err)
+	}
+	full := filepath.Join(dir, "zone-capture-full.png")
+	if err := Variant(path, full, VarFull); err != nil {
+		t.Fatal(err)
+	}
+	if img, cropped, err := Native(full); err != nil || cropped || img != raw {
+		t.Errorf("вся рамка: %v %v", cropped, err)
+	}
+	Remember(path, raw)
+	if img, cropped, err := Native(path); err != nil || cropped || img != raw {
+		t.Errorf("необрезанный снимок: %v %v", cropped, err)
+	}
+}

@@ -12,7 +12,7 @@
 // папки.
 //
 // Что удаляем: если в папке нет ничего чужого (только наши файлы и папка
-// zapret) — все наши файлы, файлы zapret\bin и пустые папки; иначе (общая
+// zapret и ocr) — все наши файлы, файлы zapret\bin и ocr и пустые папки; иначе (общая
 // папка: «Загрузки», профиль) — только файлы набора, остальное не трогаем.
 // Процессы закрываем только наши (три имени) и только из этой папки.
 //
@@ -36,7 +36,37 @@ const (
 	ItemsName  = "items_by_id.json"
 	BypassName = "winws.exe"
 	ZapretDir  = "zapret"
+	OCRDir     = "ocr"
 )
+
+// ocrFiles — файлы своего распознавания в ocr (как в ocr/files.txt и
+// собрать.sh): только при них папка ocr считается нашей.
+var ocrFiles = []string{"onnxruntime.dll", "onnxruntime-LICENSE.txt", "eslav_PP-OCRv5_rec_mobile.onnx", "models-LICENSE.txt"}
+
+func ocrOurs(name string) bool {
+	for _, f := range ocrFiles {
+		for _, s := range suffixes {
+			if strings.EqualFold(name, f+s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ocrOnlyOurs — в ocr только наши файлы.
+func ocrOnlyOurs(dir string) bool {
+	es, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, de := range es {
+		if !de.Type().IsRegular() || !ocrOurs(de.Name()) {
+			return false
+		}
+	}
+	return true
+}
 
 // setFiles — набор: все три в папке — значит, это наша программа.
 var setFiles = []string{ExeName, RecvName, ItemsName}
@@ -293,7 +323,7 @@ func ours(name string) bool {
 	return false
 }
 
-// onlyOurs — в папке только наши файлы и папка zapret (без ссылок).
+// onlyOurs — в папке только наши файлы и папки zapret и ocr (без ссылок).
 func onlyOurs(dir string) bool {
 	es, err := os.ReadDir(dir)
 	if err != nil {
@@ -303,6 +333,7 @@ func onlyOurs(dir string) bool {
 		switch {
 		case de.Type().IsRegular() && ours(de.Name()):
 		case de.Type() == os.ModeDir && strings.EqualFold(de.Name(), ZapretDir) && zapretOnlyOurs(filepath.Join(dir, de.Name())):
+		case de.Type() == os.ModeDir && strings.EqualFold(de.Name(), OCRDir) && ocrOnlyOurs(filepath.Join(dir, de.Name())):
 		default:
 			return false
 		}
@@ -385,6 +416,16 @@ func Plan(c Copy) (files, dirs []string) {
 				}
 			}
 			dirs = append(dirs, bin, zap)
+		}
+		if ocr := filepath.Join(c.Dir, OCRDir); isDir(ocr) {
+			if es, err := os.ReadDir(ocr); err == nil {
+				for _, de := range es {
+					if de.Type().IsRegular() && ocrOurs(de.Name()) {
+						files = append(files, filepath.Join(ocr, de.Name()))
+					}
+				}
+			}
+			dirs = append(dirs, ocr)
 		}
 	}
 	named := false

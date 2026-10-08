@@ -7,6 +7,7 @@ require golang.org/x/sys v0.45.0
 require (
 	fyne.io/systray v1.12.2
 	github.com/ao-data/albiondata-client v0.0.0
+	github.com/ebitengine/purego v0.11.1
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	golang.org/x/net v0.53.0
 )

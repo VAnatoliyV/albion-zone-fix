@@ -252,7 +252,7 @@ func main() {
 	curLang := func() string { return i18n.Resolve(a.Settings().Language, i18n.System()) }
 
 	// Карточка зоны по кнопке (этап 4): хук кнопки → снимок у курсора →
-	// OCR Windows → опознание → вкладка «Зона», уведомление или панель
+	// распознавание (своё, запасное — OCR Windows) → опознание → вкладка «Зона», уведомление или панель
 	// поверх игры и отчёт портала на карту. Панель — только если человек
 	// сам выбрал её в настройках (по умолчанию уведомление).
 	cardLog := func(format string, args ...any) {
@@ -274,6 +274,19 @@ func main() {
 		cardLog("справочник зон не прочитался")
 	}
 	var mapHint zonecard.HintGate
+	// Своё распознавание (PaddleOCR через ONNX Runtime, папка ocr рядом с
+	// программой) — первым; Windows OCR — запасной. Модель грузится фоном
+	// при запуске, если карточка включена, иначе при первом нажатии.
+	textOCR := &ocr.Combined{
+		Dir:     filepath.Join(dir, "ocr"),
+		Threads: 2,
+		Native:  screen.Native,
+		Windows: ocr.Recognize,
+		Logf:    cardLog,
+	}
+	if hotkey.Normalize(a.Settings().ZoneKey) != hotkey.Off {
+		go textOCR.Warm()
+	}
 	runner := zonecard.NewRunner(zonecard.RunnerConfig{
 		Path: filepath.Join(data, screen.FileName),
 		Capture: func(path string) (zonecard.Snap, error) {
@@ -292,11 +305,11 @@ func main() {
 		Retry:     true,
 		Prepare:   screen.Variant,
 		Variants:  func() bool { return !a.Settings().ZoneOCRPlain },
-		Recognize: ocr.Recognize,
+		Recognize: textOCR.Recognize,
 		Live:      pwsh.Live,
 		Languages: ocr.Languages,
-		Pick:      ocr.Pick,
-		Hint:      ocr.Hint,
+		Pick:      textOCR.Pick,
+		Hint:      textOCR.Hint,
 		Dict:      dict,
 		Gap:       400 * time.Millisecond,
 		Logf:      cardLog,
