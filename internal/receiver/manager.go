@@ -49,6 +49,10 @@ type Manager struct {
 	keep    bool // оставлять работать после выхода
 	lastErr string
 	adopted bool // порт занят нашим приёмником не из этого запуска
+
+	// Подменяются в тестах.
+	inspect func(pid int) (image string, created int64, ok bool)
+	kill    func(pid int)
 }
 
 // NewManager: exe — полный путь, dataDir — каталог данных.
@@ -56,7 +60,65 @@ func NewManager(exe, dataDir string, log io.Writer) *Manager {
 	if log == nil {
 		log = io.Discard
 	}
-	return &Manager{Exe: exe, DataDir: dataDir, Addr: Addr, Log: log}
+	return &Manager{Exe: exe, DataDir: dataDir, Addr: Addr, Log: log,
+		inspect: procutil.Inspect, kill: func(pid int) {
+			if p, err := os.FindProcess(pid); err == nil {
+				p.Kill()
+			}
+		}}
+}
+
+func (m *Manager) logf(format string, a ...any) {
+	fmt.Fprintf(m.Log, "[программа] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, a...))
+}
+
+// writePid запоминает pid и время создания процесса: pid после перезагрузки
+// или долгой работы мог достаться чужой программе.
+func (m *Manager) writePid(pid int) {
+	var created int64
+	if _, c, ok := m.inspect(pid); ok {
+		created = c
+	}
+	os.WriteFile(filepath.Join(m.DataDir, PidFile), []byte(fmt.Sprintf("%d %d", pid, created)), 0644)
+}
+
+// pidVerdict решает, можно ли убивать процесс из pid-файла: он должен
+// быть нашим acp-prices.exe (путь совпадает, регистр не важен) и, если время
+// создания записано, тем же самым запуском.
+func pidVerdict(exe, image string, created, recCreated int64) bool {
+	if !strings.EqualFold(filepath.Clean(image), filepath.Clean(exe)) {
+		return false
+	}
+	return recCreated == 0 || recCreated == created
+}
+
+// leftoverPid читает pid-файл и проверяет процесс. found — файл был.
+func (m *Manager) leftoverPid() (pid int, ok, found bool) {
+	b, err := os.ReadFile(filepath.Join(m.DataDir, PidFile))
+	if err != nil {
+		return 0, false, false
+	}
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return 0, false, true
+	}
+	pid, err = strconv.Atoi(f[0])
+	if err != nil || pid <= 0 {
+		return 0, false, true
+	}
+	var rec int64
+	if len(f) > 1 {
+		rec, _ = strconv.ParseInt(f[1], 10, 64)
+	}
+	image, created, alive := m.inspect(pid)
+	return pid, alive && pidVerdict(m.Exe, image, created, rec), true
+}
+
+func (m *Manager) dropStalePid() {
+	if _, ok, found := m.leftoverPid(); found && !ok {
+		os.Remove(filepath.Join(m.DataDir, PidFile))
+		m.logf("pid-файл приёмника не подходит (процесс чужой или исчез) — удалил")
+	}
 }
 
 // Up — слушает ли порт кто-то.
@@ -121,6 +183,7 @@ func (m *Manager) Start() error {
 	}
 	if m.Up() {
 		if m.isOurs() {
+			m.dropStalePid()
 			m.mu.Lock()
 			m.adopted, m.lastErr = true, ""
 			m.mu.Unlock()
@@ -156,7 +219,7 @@ func (m *Manager) Start() error {
 	if jobbed {
 		procutil.BindToJob(cmd)
 	}
-	os.WriteFile(filepath.Join(m.DataDir, PidFile), []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
+	m.writePid(cmd.Process.Pid)
 	m.mu.Lock()
 	m.cmd, m.jobbed, m.adopted, m.lastErr = cmd, jobbed, false, ""
 	m.mu.Unlock()
@@ -194,14 +257,12 @@ func (m *Manager) Stop() {
 		m.waitDown()
 		return
 	}
-	b, err := os.ReadFile(pidPath)
-	if err != nil {
-		return
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err == nil && pid > 0 && m.Up() && m.isOurs() {
-		if p, err := os.FindProcess(pid); err == nil {
-			p.Kill()
+	if pid, ok, found := m.leftoverPid(); found {
+		if ok {
+			m.logf("останавливаю оставшийся приёмник, pid %d", pid)
+			m.kill(pid)
+		} else {
+			m.logf("pid-файл приёмника не подходит (процесс чужой или исчез) — никого не трогаю")
 		}
 	}
 	os.Remove(pidPath)

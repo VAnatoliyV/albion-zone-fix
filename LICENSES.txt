@@ -29,6 +29,8 @@ gopkg.in/toast.v1 (MIT), golang.org/x/* (BSD-3).
 Шрифт Pixelify Sans — Copyright 2021 The Pixelify Sans Project Authors,
 SIL Open Font License 1.1 (текст лицензии зашит в программу рядом со шрифтом).
 
+acp-prices.exe (приёмник своих цен) — собственный код, MIT; стандартная библиотека Go, BSD-3.
+
 Таблица предметов (items_by_id.json) — из albibong (MIT).
 
 Названия локаций — из ao-data/ao-bin-dumps.

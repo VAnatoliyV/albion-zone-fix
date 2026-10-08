@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"albionzonefix/internal/procutil"
-	"sync"
 )
 
 // Runner держит один процесс winws. Включение новой стратегии гасит старую.

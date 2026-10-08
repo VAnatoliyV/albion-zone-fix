@@ -163,6 +163,7 @@ func TestAdoptLeftoverAndStopByPid(t *testing.T) {
 
 	m2 := NewManager(m1.Exe, m1.DataDir, nil)
 	m2.Addr = m1.Addr
+	m2.inspect = func(int) (string, int64, bool) { return m1.Exe, 0, true } // не-Windows процессов не видит
 	if err := m2.Start(); err != nil || m2.Err() != "" {
 		t.Fatalf("подхват: %v %q", err, m2.Err())
 	}
@@ -191,5 +192,89 @@ func TestKeepChangeRestarts(t *testing.T) {
 	m.mu.Unlock()
 	if second == nil || second == first || j2 {
 		t.Fatalf("перезапуска без объекта задания не было: %v %v", second == first, j2)
+	}
+}
+
+func TestPidVerdict(t *testing.T) {
+	exe := `C:\AJ\acp-prices.exe`
+	cases := []struct {
+		image        string
+		created, rec int64
+		want         bool
+	}{
+		{`c:\aj\ACP-PRICES.exe`, 5, 5, true},    // регистр не важен
+		{`C:\AJ\acp-prices.exe`, 5, 0, true},    // время не записано — по пути
+		{`C:\Windows\notepad.exe`, 5, 5, false}, // pid достался чужому
+		{`C:\AJ\acp-prices.exe`, 9, 5, false},   // тот же exe, но другой запуск
+	}
+	for _, c := range cases {
+		if got := pidVerdict(exe, c.image, c.created, c.rec); got != c.want {
+			t.Errorf("%+v: %v", c, got)
+		}
+	}
+}
+
+func TestStopByPidChecksIdentity(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "acp-prices.exe")
+	var killed []int
+	mk := func(image string, created int64, alive bool) *Manager {
+		m := NewManager(exe, dir, nil)
+		m.Addr = freeAddr(t)
+		m.inspect = func(int) (string, int64, bool) { return image, created, alive }
+		m.kill = func(p int) { killed = append(killed, p) }
+		return m
+	}
+	pidPath := filepath.Join(dir, PidFile)
+
+	os.WriteFile(pidPath, []byte("4242 77"), 0644)
+	mk(`C:\Windows\notepad.exe`, 77, true).Stop()
+	if len(killed) != 0 {
+		t.Fatal("убит чужой процесс с переиспользованным pid")
+	}
+	if _, err := os.Stat(pidPath); err == nil {
+		t.Fatal("устаревший pid-файл остался")
+	}
+
+	os.WriteFile(pidPath, []byte("4242 77"), 0644)
+	mk(exe, 78, true).Stop() // тот же exe, но другой запуск
+	if len(killed) != 0 {
+		t.Fatal("убит процесс с другим временем создания")
+	}
+
+	os.WriteFile(pidPath, []byte("4242 77"), 0644)
+	mk(exe, 0, false).Stop() // процесса нет
+	if len(killed) != 0 {
+		t.Fatal("убит несуществующий")
+	}
+
+	os.WriteFile(pidPath, []byte("4242 77"), 0644)
+	mk(exe, 77, true).Stop()
+	if len(killed) != 1 || killed[0] != 4242 {
+		t.Fatalf("свой процесс не остановлен: %v", killed)
+	}
+
+	os.WriteFile(pidPath, []byte("мусор"), 0644)
+	mk(exe, 77, true).Stop()
+	if len(killed) != 1 {
+		t.Fatal("убит по мусорному pid-файлу")
+	}
+}
+
+func TestAdoptDropsForeignPidFile(t *testing.T) {
+	m1 := newMgr(t, "ok")
+	m1.Keep(true)
+	if err := m1.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "порт открыт", m1.Up)
+	m2 := NewManager(m1.Exe, m1.DataDir, nil)
+	m2.Addr = m1.Addr
+	m2.inspect = func(int) (string, int64, bool) { return `C:\other.exe`, 1, true } // pid уже чужой
+	if err := m2.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(m1.DataDir, PidFile)); err == nil {
+		t.Fatal("чужой pid-файл не удалён при подхвате")
 	}
 }
