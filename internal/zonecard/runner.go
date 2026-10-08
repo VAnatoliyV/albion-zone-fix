@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +69,8 @@ type Shot struct {
 	Source string
 	Try    string
 	Tries  []string
+	// Read — что OCR прочитал по языкам (для журнала при неудаче).
+	Read map[string][]string
 }
 
 // RunnerConfig — что нужно снимающему (на Windows — снимок GDI и OCR через
@@ -208,7 +211,40 @@ func (r *Runner) Run(ctx context.Context) Shot {
 	} else {
 		r.cfg.Logf("карточка зоны: %s %s %s; %s", s.Kind, s.Arg, took, s.Capture)
 	}
+	if s.Kind == ErrKindNoTooltip || s.Kind == ErrKindUnknown || (s.Kind == "" && !s.Result.Portal) {
+		if txt := readSummary(s.Read); txt != "" {
+			r.cfg.Logf("карточка зоны: прочитано %s", txt)
+		}
+	}
 	return s
+}
+
+// readSummary — коротко, что прочитал OCR: до 8 строк на язык, строки
+// длиннее 40 букв (чат, описания) пропускаем — нужен только текст тултипа.
+func readSummary(byLang map[string][]string) string {
+	langs := make([]string, 0, len(byLang))
+	for l := range byLang {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	var parts []string
+	for _, lang := range langs {
+		var keep []string
+		for _, l := range byLang[lang] {
+			l = strings.TrimSpace(l)
+			if l == "" || len([]rune(l)) > 40 {
+				continue
+			}
+			keep = append(keep, l)
+			if len(keep) == 8 {
+				break
+			}
+		}
+		if len(keep) > 0 {
+			parts = append(parts, lang+": "+strings.Join(keep, " | "))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (r *Runner) run(ctx context.Context, at time.Time) Shot {
@@ -367,7 +403,7 @@ func (r *Runner) recognize(ctx context.Context, img string, first, rest []string
 			err = err2
 		}
 	}
-	var s Shot
+	s := Shot{Read: byLang}
 	if err != nil && len(byLang) == 0 {
 		s.Kind, s.Arg = ErrKindOCR, err.Error()
 		return s, used

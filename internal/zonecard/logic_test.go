@@ -1,6 +1,7 @@
 package zonecard
 
 import (
+	"fmt"
 	"context"
 	"errors"
 	"strings"
@@ -511,5 +512,29 @@ func TestRunnerCityNameIsFinal(t *testing.T) {
 	}
 	if len(*calls) != 1 || len(*sleeps) != 0 {
 		t.Fatalf("лишние попытки: %v паузы %v", *calls, *sleeps)
+	}
+}
+
+// Неудача — в журнал то, что OCR прочитал на самом деле (коротко), иначе по
+// журналу тестера причину не найти.
+func TestRunnerLogsReadLinesOnFailure(t *testing.T) {
+	var logs []string
+	r := NewRunner(RunnerConfig{
+		Path:      "/d/zone-capture.png",
+		Capture:   func(p string) (Snap, error) { return Snap{Info: p}, nil },
+		Recognize: func(_ context.Context, img string, langs []string) (map[string][]string, error) {
+			return map[string][]string{"ru": {"Путь Абракадабра", "что-то очень длинное и совсем не относящееся к делу, длиннее сорока букв"}}, nil
+		},
+		Pick: func([]string) []string { return []string{"ru"} },
+		Dict: dict(t),
+		Logf: func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) },
+	})
+	s := r.Run(context.Background())
+	if s.Kind != ErrKindNoTooltip {
+		t.Fatalf("%+v", s)
+	}
+	all := strings.Join(logs, "\n")
+	if !strings.Contains(all, "прочитано") || !strings.Contains(all, "Путь Абракадабра") || strings.Contains(all, "длиннее сорока букв") {
+		t.Fatalf("журнал: %s", all)
 	}
 }

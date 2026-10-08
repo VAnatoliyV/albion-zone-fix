@@ -21,7 +21,65 @@ type Tooltip struct {
 
 // markers — признак, что перед нами портал дорог, а не случайный текст.
 // Русский клиент пишет «Путь Авалона в», английский — «Road of Avalon to».
-var markers = []string{"road of avalon", "путь авалона", "дорога авалона"}
+var markers = []string{"road of avalon", "путь авалона", "дорога авалона",
+	// «Нестабильные Пути в …» — портал в один конец (время «для вашей группы»).
+	"нестабильные пути", "unstable roads", "unstable road"}
+
+// markerAt — номер признака в строке или -1. Мелкий серый заголовок Windows
+// OCR читает с ошибками в буквах («Авапона», «Пvть», «Rood»), поэтому
+// сравнение нестрогое: до 1 ошибки на короткий признак, до 2 — на длинный.
+// Строку «Биом: Пути Авалона» из тултипа нестабильного пути не берём.
+func markerAt(line string) bool {
+	ll := strings.ToLower(line)
+	if strings.Contains(ll, "биом") || strings.Contains(ll, "biome") {
+		return false
+	}
+	for _, m := range markers {
+		if strings.Contains(ll, m) {
+			return true
+		}
+		k := 1
+		if len([]rune(m)) >= 12 {
+			k = 2
+		}
+		if fuzzyContains(ll, m, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// fuzzyContains — есть ли в s подстрока, отличающаяся от pat не больше чем
+// на k правок (вставка, удаление, замена букв). Алгоритм Селлерса.
+func fuzzyContains(s, pat string, k int) bool {
+	p, t := []rune(pat), []rune(s)
+	if len(p) == 0 {
+		return true
+	}
+	prev := make([]int, len(p)+1)
+	cur := make([]int, len(p)+1)
+	for i := range prev {
+		prev[i] = i
+	}
+	if prev[len(p)] <= k {
+		return true
+	}
+	for _, c := range t {
+		cur[0] = 0
+		for i := 1; i <= len(p); i++ {
+			cost := 1
+			if p[i-1] == c {
+				cost = 0
+			}
+			cur[i] = min(prev[i-1]+cost, prev[i]+1, cur[i-1]+1)
+		}
+		if cur[len(p)] <= k {
+			return true
+		}
+		prev, cur = cur, prev
+	}
+	return false
+}
 
 // prepositions — после них в той же строке может стоять название.
 var prepositions = []string{" to ", " в "}
@@ -30,11 +88,8 @@ var prepositions = []string{" to ", " в "}
 // язык OCR, на котором тултип прочитан).
 func HasMarker(lines []string) bool {
 	for _, l := range lines {
-		ll := strings.ToLower(l)
-		for _, m := range markers {
-			if strings.Contains(ll, m) {
-				return true
-			}
+		if markerAt(l) {
+			return true
 		}
 	}
 	return false
@@ -50,14 +105,8 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 	}
 	idx := -1
 	for i, l := range clean {
-		ll := strings.ToLower(l)
-		for _, m := range markers {
-			if strings.Contains(ll, m) {
-				idx = i
-				break
-			}
-		}
-		if idx >= 0 {
+		if markerAt(l) {
+			idx = i
 			break
 		}
 	}
@@ -121,7 +170,7 @@ var reTime = regexp.MustCompile(`(?:(\d{1,3})\s*[dд]\D{0,3})?(?:(\d{1,3})\s*[h�
 func timeLeft(lines []string) time.Duration {
 	for _, l := range lines {
 		low := strings.ToLower(l)
-		if !(strings.Contains(low, "closes") || strings.Contains(low, "закро") || strings.Contains(low, ":") ||
+		if !(strings.Contains(low, "closes") || strings.Contains(low, "закро") || strings.Contains(low, "через") || strings.Contains(low, ":") ||
 			strings.Contains(low, " m") || strings.Contains(low, " м")) {
 			continue
 		}

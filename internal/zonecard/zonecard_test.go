@@ -226,3 +226,51 @@ func TestChooseLanguage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Живые снимки тестера (Windows 10, русский клиент, 8 октября 2026):
+// мелкий серый заголовок Windows OCR читает с ошибкой в букве — признак
+// должен находиться и так.
+func TestTooltipMarkerWithOCRTypos(t *testing.T) {
+	for _, head := range []string{"Путь Авапона в", "Пvть Авалона в", "Путь Аваnона в", "Road of Avaion to", "Rood of Avalon to"} {
+		tt := mustParse(t, []string{head, "Fleos-Aluttum", "нет", "Закроется через 6 ч 26 м"})
+		if tt.Read != "Fleos-Aluttum" || tt.Left != 6*time.Hour+26*time.Minute {
+			t.Errorf("%q: %+v", head, tt)
+		}
+	}
+}
+
+// «Нестабильные Пути в» — портал в один конец, время «для вашей группы».
+func TestTooltipUnstableRoads(t *testing.T) {
+	tt := mustParse(t, []string{"Нестабильные Пути в", "Poues-Unatam", "6/7", "Тип зоны Черный регион",
+		"Биом Пути Авалона", "Уровень VI", "Это переход в один конец!", "Закроется для вашей группы через 4 м 18 с"})
+	if tt.Read != "Poues-Unatam" || tt.Size != 7 || tt.Left != 4*time.Minute+18*time.Second {
+		t.Errorf("%+v", tt)
+	}
+	tt = mustParse(t, []string{"Unstable Roads to", "Poues-Unatam", "6/7", "Closes for your group in 4 m 18 s"})
+	if tt.Read != "Poues-Unatam" || tt.Left != 4*time.Minute+18*time.Second {
+		t.Errorf("англ.: %+v", tt)
+	}
+}
+
+// Заголовок не прочитан вовсе, но есть название дороги и «Закроется через» —
+// это тултип портала (иначе выходило noPortal без времени).
+func TestIdentifyRoadNameWithTimeIsPortal(t *testing.T) {
+	d := dict(t)
+	r, err := Identify(d, []string{"• Pasos-Avosam", "нет", "2 Закроется через 6 ч 26 м"}, time.Unix(1_800_000_000, 0))
+	if err != nil || !r.Portal || r.Tooltip.Left != 6*time.Hour+26*time.Minute || r.Zone() == nil || !r.Zone().Road {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Название города со временем чего-то другого — не портал.
+	r, err = Identify(d, []string{"Brecilien", "Закроется через 6 ч 26 м"}, time.Unix(1_800_000_000, 0))
+	if err == nil && r.Portal {
+		t.Fatalf("город с временем принят за портал: %+v", r)
+	}
+}
+
+func TestTooltipFuzzyDoesNotOvermatch(t *testing.T) {
+	for _, l := range [][]string{{"Avalonian Chest", "T6"}, {"Путь", "Fleos"}, {"Avalon", "Roads"}} {
+		if _, ok := ParseTooltip(l); ok {
+			t.Errorf("принято лишнее: %q", l)
+		}
+	}
+}

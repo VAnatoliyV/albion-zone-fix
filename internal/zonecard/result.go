@@ -105,6 +105,14 @@ func Identify(d *Dict, lines []string, at time.Time) (Result, error) {
 	if len(best) == 0 {
 		return Result{}, ErrNoTooltip
 	}
+	// Заголовок не прочитан, а название — дорога и рядом «Закроется через …»:
+	// это тултип портала дорог, только без строки-признака.
+	if best[0].Zone.Road {
+		if left := timeLeft(lines); left > 0 {
+			return Result{Tooltip: Tooltip{Read: best[0].Zone.Name, Size: portalSize(lines), Left: left},
+				Matches: best, At: at, Portal: true}, nil
+		}
+	}
 	return Result{Tooltip: Tooltip{Read: best[0].Zone.Name}, Matches: best, At: at}, nil
 }
 
