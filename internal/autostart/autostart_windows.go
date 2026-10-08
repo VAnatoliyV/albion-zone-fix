@@ -33,9 +33,10 @@ func Installed() (exe string, ok bool) {
 	return CommandOf(out), true
 }
 
-// Enable создаёт (или пересоздаёт) задачу на текущую программу.
-// tmpDir — куда положить XML на время создания.
-func Enable(tmpDir string) error {
+// Enable создаёт (или пересоздаёт) задачу на текущую программу. XML
+// кладём в свежую временную папку и сразу удаляем: в папке данных ему
+// делать нечего.
+func Enable() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -45,11 +46,15 @@ func Enable(tmpDir string) error {
 		return err
 	}
 	t := Task{Exe: exe, Dir: filepath.Dir(exe), UserID: u.Username}
-	path := filepath.Join(tmpDir, "autostart-task.xml")
+	tmp, err := os.MkdirTemp("", "albion-journal-task-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	path := filepath.Join(tmp, "task.xml")
 	if err := os.WriteFile(path, UTF16(t.XML()), 0600); err != nil {
 		return err
 	}
-	defer os.Remove(path)
 	_, err = schtasks(CreateArgs(path)...)
 	return err
 }
@@ -65,7 +70,7 @@ func Disable() error {
 
 // Sync приводит задачу к настройке: включено — задача есть и указывает на
 // этот exe (папку с программой могли перенести); выключено — задачи нет.
-func Sync(on bool, tmpDir string) error {
+func Sync(on bool) error {
 	if !on {
 		return Disable()
 	}
@@ -73,5 +78,5 @@ func Sync(on bool, tmpDir string) error {
 	if cur, ok := Installed(); ok && strings.EqualFold(cur, exe) {
 		return nil
 	}
-	return Enable(tmpDir)
+	return Enable()
 }

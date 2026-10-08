@@ -192,10 +192,11 @@ var Table = map[string][3]string{
 	"zf.recHint":        {"Пишет только пакеты Albion (порты 5055/5056) в папку данных программы. Файл можно прислать разработчику: по нему видно, что происходит при переходах.", "Writes only Albion packets (ports 5055/5056) into the app's data folder. You can send the file to the developer: it shows what happens during zone changes.", "Graba solo paquetes de Albion (puertos 5055/5056) en la carpeta de datos de la app. Puedes enviar el archivo al desarrollador: muestra qué pasa en los cambios de zona."},
 
 	// трей и сообщения программы (Go)
-	"tray.show":         {"Показать окно", "Show window", "Mostrar ventana"},
-	"tray.startCollect": {"Запустить сбор", "Start collecting", "Iniciar recolección"},
-	"tray.stopCollect":  {"Остановить сбор", "Stop collecting", "Detener recolección"},
-	"tray.quit":         {"Выход", "Quit", "Salir"},
-	"msg.needAdmin":     {"Нужны права администратора: без них драйвер перехвата пакетов не работает.\n\nНажми на AlbionJournal.exe правой кнопкой → «Запуск от имени администратора».", "Administrator rights are required: the packet capture driver does not work without them.\n\nRight-click AlbionJournal.exe → “Run as administrator”.", "Se necesitan permisos de administrador: el controlador de captura no funciona sin ellos.\n\nHaz clic derecho en AlbionJournal.exe → «Ejecutar como administrador»."},
-	"msg.uiFailed":      {"Окно не запустилось: %s", "The window failed to start: %s", "La ventana no se inició: %s"},
+	"tray.show":          {"Показать окно", "Show window", "Mostrar ventana"},
+	"tray.startCollect":  {"Запустить сбор", "Start collecting", "Iniciar recolección"},
+	"tray.stopCollect":   {"Остановить сбор", "Stop collecting", "Detener recolección"},
+	"tray.quit":          {"Выход", "Quit", "Salir"},
+	"msg.needAdmin":      {"Нужны права администратора: без них драйвер перехвата пакетов не работает.\n\nНажми на AlbionJournal.exe правой кнопкой → «Запуск от имени администратора».", "Administrator rights are required: the packet capture driver does not work without them.\n\nRight-click AlbionJournal.exe → “Run as administrator”.", "Se necesitan permisos de administrador: el controlador de captura no funciona sin ellos.\n\nHaz clic derecho en AlbionJournal.exe → «Ejecutar como administrador»."},
+	"msg.alreadyRunning": {"Albion Journal уже запущен (значок с кроликом в трее), но не ответил: %s", "Albion Journal is already running (rabbit icon in the tray) but did not respond: %s", "Albion Journal ya está en marcha (icono del conejo en la bandeja) pero no respondió: %s"},
+	"msg.uiFailed":       {"Окно не запустилось: %s", "The window failed to start: %s", "La ventana no se inició: %s"},
 }

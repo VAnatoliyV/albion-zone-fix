@@ -58,7 +58,7 @@ func main() {
 	// первой и выходит. Без прав администратора знак только проверяем:
 	// создаст его копия, перезапущенная с правами.
 	if desktop.OtherRunning() {
-		showOther(data)
+		showOther(data, lang)
 		return
 	}
 	if !isAdmin() {
@@ -68,7 +68,7 @@ func main() {
 		return
 	}
 	if !desktop.SingleInstance() {
-		showOther(data)
+		showOther(data, lang)
 		return
 	}
 
@@ -117,7 +117,7 @@ func main() {
 	defer shutdown()
 
 	go func() {
-		if err := autostart.Sync(a.Settings().StartWithWindows, data); err != nil {
+		if err := autostart.Sync(a.Settings().StartWithWindows); err != nil {
 			logLine("автозапуск: %v", err)
 		}
 	}()
@@ -133,7 +133,7 @@ func main() {
 			if old.StartWithWindows == cur.StartWithWindows {
 				return nil
 			}
-			if err := autostart.Sync(cur.StartWithWindows, data); err != nil {
+			if err := autostart.Sync(cur.StartWithWindows); err != nil {
 				logLine("автозапуск: %v", err)
 				cur.StartWithWindows = old.StartWithWindows
 				a.SetSettings(cur)
@@ -200,25 +200,52 @@ func main() {
 	logLine("окно закрыто")
 }
 
-// showOther просит уже запущенную копию показать окно.
-func showOther(data string) {
-	b, err := os.ReadFile(filepath.Join(data, uiFile))
+// showOther просит уже запущенную копию показать окно. Не вышло —
+// честное сообщение вместо молчаливого выхода.
+func showOther(data, lang string) {
+	if err := askShow(filepath.Join(data, uiFile), 10*time.Second); err != nil {
+		desktop.Message("Albion Journal", i18n.Tf(lang, "msg.alreadyRunning", err))
+	}
+}
+
+// askShow читает адрес страницы первой копии и просит показать окно.
+// Первая копия могла только что запуститься и ещё не записать ui.json
+// (UAC, запуск сборщика) — поэтому пробуем до wait.
+func askShow(path string, wait time.Duration) error {
+	c := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(wait)
+	for {
+		err := tryShow(c, path)
+		if err == nil || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func tryShow(c *http.Client, path string) error {
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return err
 	}
 	var u struct{ URL, Token string }
-	if json.Unmarshal(b, &u) != nil || u.URL == "" {
-		return
+	if err := json.Unmarshal(b, &u); err != nil || u.URL == "" {
+		return fmt.Errorf("%s: нет адреса страницы", filepath.Base(path))
 	}
 	req, err := http.NewRequest(http.MethodPost, u.URL+"api/show", bytes.NewReader(nil))
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set(ui.TokenHeader, u.Token)
-	c := &http.Client{Timeout: 2 * time.Second}
-	if r, err := c.Do(req); err == nil {
-		r.Body.Close()
+	r, err := c.Do(req)
+	if err != nil {
+		return err
 	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return fmt.Errorf("окно не показано: %s", r.Status)
+	}
+	return nil
 }
 
 // sniffLoop держит драйвер открытым; если он упал, пробует снова через 5 секунд.

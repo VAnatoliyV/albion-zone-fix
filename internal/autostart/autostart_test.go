@@ -86,7 +86,7 @@ func TestArgs(t *testing.T) {
 }
 
 func TestSyncOffElsewhere(t *testing.T) {
-	if err := Sync(false, t.TempDir()); err != nil {
+	if err := Sync(false); err != nil {
 		t.Fatal(err)
 	}
 }
