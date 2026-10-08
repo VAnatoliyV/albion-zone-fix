@@ -92,20 +92,20 @@ func (a *App) SetCard(s zonecard.Shot, d *zonecard.Dict) string {
 	case !s.Result.Portal || z == nil:
 		return "не отправлено (noPortal)"
 	}
+	// Цель для вылетов сверяется с учётом переходов, а у него «откуда» —
+	// последний Join, поэтому здесь a.here и без проверки ухода.
 	if a.here != nil && !s.Result.Doubtful() {
 		a.expect = &expectation{from: a.here.Zone, to: z.Code, at: now}
 	}
+	// Где игрок для карты — на момент снимка: ушёл из локации и Join нет
+	// дольше awayAfter (Туманы без входа) — неизвестно, а не прошлый город.
+	here := a.placeLocked(now)
 	if !set.MapSend {
 		c.why = "off"
 		return "не отправлено (off)"
 	}
 	if a.mapRep == nil || d == nil {
 		return "не отправлено (noReporter)"
-	}
-	var here *avalon.Place
-	if a.here != nil {
-		h := *a.here
-		here = &h
 	}
 	tip, why := zonecard.ByButton(s.Result, here, d)
 	if why != "" {
@@ -149,6 +149,7 @@ func (a *App) OnStall(fn func(server, fromName string)) {
 func (a *App) CheckStall(now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.checkAway(now)
 	a.tracker.CheckStall(now)
 }
 

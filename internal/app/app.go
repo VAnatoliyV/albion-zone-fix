@@ -71,6 +71,8 @@ type App struct {
 	// Карта Авалона: где игрок (из живого потока Join), отправка проходов.
 	here      *avalon.Place // nil — после запуска входа в зону ещё не видели
 	hereAt    time.Time
+	leaves    leaveCounter // уходы из локации с последнего Join
+	away      bool         // ушли из локации, Join нет дольше awayAfter: место неизвестно
 	mapRep    MapReporter
 	onZone    func(code string) // зона сменилась (подсветить на открытой карте)
 	installMu sync.Mutex
@@ -162,9 +164,10 @@ func (a *App) Feed(p game.Packet) {
 }
 
 func (a *App) onEvent(e game.Ev) {
+	n := a.leaves.on(e)
 	if e.Kind == game.Join {
 		a.zone = e.Location
-		a.onJoin(e)
+		a.onJoin(e, n)
 	}
 	a.tracker.On(e)
 }
@@ -173,10 +176,19 @@ func (a *App) onEvent(e game.Ev) {
 // из того же потока пакетов, что учёт переходов (без файлов и процессов);
 // первый вход после запуска проходом не считается. Зовётся под a.mu,
 // поэтому всё, что дальше, не блокирует.
-func (a *App) onJoin(e game.Ev) {
+//
+// leaves — уходов из локации с прошлого Join. Больше одного — между ними
+// была зона без Join (Туманы): откуда пришли, неизвестно, это не проход.
+func (a *App) onJoin(e game.Ev, leaves int) {
 	cur := avalon.Place{Zone: e.Location, Region: avalon.Region(e.Server)}
+	wasAway := a.away
+	a.away = false
+	if leaves > 1 && a.here != nil {
+		a.logfLocked("место: %d ухода без входа с %s — вход в %s не проход", leaves, a.here.Zone, cur.Zone)
+		a.here = nil
+	}
 	p, why := avalon.Decide(a.here, cur)
-	if a.here == nil || a.here.Zone != cur.Zone {
+	if a.here == nil || a.here.Zone != cur.Zone || wasAway {
 		a.hereAt = e.T
 		if a.onZone != nil {
 			a.onZone(cur.Zone)
@@ -206,10 +218,33 @@ func (a *App) AttachMap(r MapReporter, onZone func(code string)) {
 func (a *App) HereCode() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.here == nil {
+	if a.here == nil || a.away {
 		return ""
 	}
 	return a.here.Zone
+}
+
+// placeLocked — где игрок на момент now: nil — неизвестно (входа не видели
+// или ушли из локации и Join нет дольше awayAfter). Зовётся под a.mu.
+func (a *App) placeLocked(now time.Time) *avalon.Place {
+	if a.here == nil || a.here.Zone == "" || a.away || a.leaves.away(now) {
+		return nil
+	}
+	h := *a.here
+	return &h
+}
+
+// checkAway — ушли из локации и Join нет дольше awayAfter: место
+// неизвестно (вкладка «Не знаю, где ты», подсветка на карте снимается).
+// Зовётся под a.mu из Tick и CheckStall.
+func (a *App) checkAway(now time.Time) {
+	if a.away || a.here == nil || !a.leaves.away(now) {
+		return
+	}
+	a.away = true
+	if a.onZone != nil {
+		a.onZone("")
+	}
 }
 
 // MapInstall — номер установки для сервера карты; при первом вызове
@@ -258,6 +293,7 @@ func (a *App) onTransition(tr zones.Transition) {
 func (a *App) Tick(now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.checkAway(now)
 	a.tracker.Tick(now)
 	if a.rec != nil && now.After(a.recUntil) {
 		a.stopRecordLocked()
@@ -456,6 +492,13 @@ func (a *App) logf(format string, args ...any) {
 	a.mu.Unlock()
 	if l != nil {
 		l(format, args...)
+	}
+}
+
+// logfLocked — то же под a.mu (журнал не берёт a.mu).
+func (a *App) logfLocked(format string, args ...any) {
+	if a.log != nil {
+		a.log(format, args...)
 	}
 }
 
@@ -761,7 +804,11 @@ func (a *App) State() State {
 	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr,
 		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs, ReceiverErr: rerr, MapLast: mapLast}
 	st.Card = a.cardView(tipLast, set.BlackWarn)
-	if a.here != nil {
+	switch {
+	case a.here != nil && a.away:
+		// Ушли из локации, а входа нет: «не знаю, где ты» с момента ухода.
+		st.Here = &Here{Since: a.leaves.leftAt}
+	case a.here != nil:
 		z, ok := avalon.Lookup(a.here.Zone)
 		if !ok {
 			z = avalon.Zone{Code: a.here.Zone, Name: a.name(a.here.Zone)}
