@@ -8,6 +8,9 @@ SetCompressor /SOLID lzma
 !ifndef VERSION
   !error "нужен -DVERSION=1.2.3"
 !endif
+!ifndef ZLIST
+  !error "нужен -DZLIST=файл со списком Delete для zapret (его делает собрать.sh)"
+!endif
 !ifndef SRC
   !define SRC "dist\AlbionJournal"
 !endif
@@ -24,9 +27,11 @@ Name "${APP}"
 OutFile "${OUTFILE}"
 RequestExecutionLevel admin
 InstallDir "$PROGRAMFILES64\${APP}"
-InstallDirRegKey HKLM "${UNKEY}" "InstallLocation"
 BrandingText "${APP} ${VERSION}"
-VIProductVersion "${VERSION}.0.0"
+!ifndef VERSION4
+  !define VERSION4 "${VERSION}.0"
+!endif
+VIProductVersion "${VERSION4}"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "FileDescription" "${APP} (установщик)"
 VIAddVersionKey "FileVersion" "${VERSION}"
@@ -43,6 +48,7 @@ VIAddVersionKey "LegalCopyright" "${APP}"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN
@@ -67,29 +73,54 @@ LangString T_DESKTOP ${LANG_ENGLISH} "Create a desktop shortcut"
 LangString T_DESKTOP ${LANG_RUSSIAN} "Создать ярлык на рабочем столе"
 LangString T_CLOSE ${LANG_ENGLISH} "Albion Journal is running. Close it (tray icon -> Exit) and click Retry."
 LangString T_CLOSE ${LANG_RUSSIAN} "Albion Journal сейчас запущен. Закройте его (значок в трее -> Выход) и нажмите «Повторить»."
-LangString T_UNLINK ${LANG_ENGLISH} "Albion Journal Uninstall"
-LangString T_UNLINK ${LANG_RUSSIAN} "Удалить Albion Journal"
 LangString T_DATA ${LANG_ENGLISH} "Also delete settings and logs ($APPDATA\${APP})?$\r$\n$\r$\nChoose No to keep them."
 LangString T_DATA ${LANG_RUSSIAN} "Удалить также настройки и журналы ($APPDATA\${APP})?$\r$\n$\r$\nВыберите «Нет», чтобы оставить их."
 
-; Закрыть программу. Работающий exe Windows удалить не даёт — по этому и видно,
-; что он запущен: просим закрыть и ждём «Повторить». Потом гасим только наши
-; фоновые процессы из папки установки (приёмник цен и обход), чужие не трогаем.
+; Закрыть программу. Запущенный exe открыть на запись нельзя — по этому и видно,
+; что он запущен (файл при этом не меняется): просим закрыть и ждём «Повторить».
+; Потом гасим только наши фоновые процессы (приёмник цен и обход), чей путь
+; начинается с папки установки (путь передаём переменной среды, без шаблонов).
+; 64-битные процессы видны через WMI из любой разрядности PowerShell.
 !macro CloseApp ID
   again_${ID}:
+  IfFileExists "$INSTDIR\AlbionJournal.exe" 0 closed_${ID}
   ClearErrors
-  Delete "$INSTDIR\AlbionJournal.exe"
-  IfErrors 0 closed_${ID}
+  FileOpen $0 "$INSTDIR\AlbionJournal.exe" a
+  IfErrors busy_${ID}
+  FileClose $0
+  Goto closed_${ID}
+  busy_${ID}:
   MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(T_CLOSE)" /SD IDCANCEL IDRETRY again_${ID}
   Abort
   closed_${ID}:
-  nsExec::Exec `powershell -NoProfile -NonInteractive -Command "Get-Process acp-prices,winws -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '$INSTDIR\*' } | Stop-Process -Force"`
+  System::Call 'kernel32::SetEnvironmentVariableW(w "AJ_DIR", w "$INSTDIR")'
+  nsExec::Exec `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='winws.exe' or Name='acp-prices.exe'\" | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$env:AJ_DIR + '\', [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"`
   Pop $0
   Sleep 500
 !macroend
 
+; Папка установки всегда оканчивается на «Albion Journal»: удаление не заденет
+; чужие файлы общей папки.
+Function FixDir
+  StrLen $1 "\${APP}"
+  IntOp $1 0 - $1
+  StrCpy $0 $INSTDIR "" $1
+  StrCmp $0 "\${APP}" +2
+  StrCpy $INSTDIR "$INSTDIR\${APP}"
+FunctionEnd
+
+Function DirLeave
+  Call FixDir
+FunctionEnd
+
 Function .onInit
   SetRegView 64
+  ; Обновление: та же папка, куда ставили в прошлый раз (если не задана /D=).
+  ; (если $INSTDIR уже не стандартный — задан через /D= — его не трогаем)
+  StrCmp $INSTDIR "$PROGRAMFILES64\${APP}" 0 +4
+  ReadRegStr $0 HKLM "${UNKEY}" "InstallLocation"
+  StrCmp $0 "" +2
+  StrCpy $INSTDIR $0
 FunctionEnd
 
 Function LaunchApp
@@ -105,6 +136,7 @@ FunctionEnd
 
 Section "Install"
   SetShellVarContext all
+  Call FixDir
   !insertmacro CloseApp inst
   SetOutPath "$INSTDIR"
   File "${SRC}\AlbionJournal.exe"
@@ -117,7 +149,7 @@ Section "Install"
 
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\AlbionJournal.exe"
-  CreateShortcut "$SMPROGRAMS\${APP}\$(T_UNLINK).lnk" "$INSTDIR\uninstall.exe"
+  CreateShortcut "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk" "$INSTDIR\uninstall.exe"
 
   SetRegView 64
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "${APP}"
@@ -145,18 +177,19 @@ Section "Uninstall"
   Pop $0
 
   Delete "$INSTDIR\AlbionJournal.exe"
-  Delete "$INSTDIR\AlbionJournal.exe.new"
   Delete "$INSTDIR\acp-prices.exe"
-  Delete "$INSTDIR\acp-prices.exe.new"
+  Delete "$INSTDIR\*.old"
+  Delete "$INSTDIR\*.new"
   Delete "$INSTDIR\items_by_id.json"
   Delete "$INSTDIR\README-RU.txt"
   Delete "$INSTDIR\LICENSES.txt"
-  RMDir /r "$INSTDIR\zapret"
+  !include "${ZLIST}"
+  RMDir "$INSTDIR\zapret\bin"
+  RMDir "$INSTDIR\zapret"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR" ; только если пусто: чужие файлы в папке не трогаем
 
-  Delete "$SMPROGRAMS\${APP}\${APP}.lnk"
-  Delete "$SMPROGRAMS\${APP}\$(T_UNLINK).lnk"
+  Delete "$SMPROGRAMS\${APP}\*.lnk"
   RMDir "$SMPROGRAMS\${APP}"
   Delete "$DESKTOP\${APP}.lnk"
 

@@ -56,6 +56,11 @@ go run ./tools/updatekey sign dist/AlbionJournal.zip "$VERSION"
 go run ./tools/updatekey verify dist/AlbionJournal.zip "$VERSION"
 echo "собираю установщик (NSIS)..."
 command -v makensis >/dev/null || { echo "нет makensis: brew install makensis"; exit 1; }
-makensis -V2 -DVERSION="$VERSION" installer.nsi
+# Список файлов zapret для удаления (удаляем только свои файлы, не папку целиком).
+ZLIST="$PWD/dist/zapret-delete.nsh"
+(cd "$OUT" && find zapret -type f | sed 's|/|\\|g; s|.*|  Delete "$INSTDIR\\&"|') > "$ZLIST"
+# Версия из четырёх чисел для свойств файла: 1.2 -> 1.2.0.0
+V4="$(printf '%s' "$VERSION" | awk -F. '{for(i=NF+1;i<=4;i++)$i=0; print $1"."$2"."$3"."$4}' OFS=.)"
+makensis -V2 -DVERSION="$VERSION" -DVERSION4="$V4" -DZLIST="$ZLIST" installer.nsi
 ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig dist/AlbionJournalSetup-"$VERSION".exe | awk '{print "готово:", $NF, $5, "байт"}'
 echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip, AlbionJournal.zip.sig и AlbionJournalSetup-$VERSION.exe"
