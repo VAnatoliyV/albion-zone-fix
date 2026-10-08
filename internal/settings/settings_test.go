@@ -11,8 +11,8 @@ func TestDefaultsWhenNoFile(t *testing.T) {
 	if s.Get() != Default() {
 		t.Fatalf("ждал умолчания, получил %+v", s.Get())
 	}
-	if !s.Get().ShareADP || !s.Get().SessionStats {
-		t.Fatal("ADP и счётчик по умолчанию включены")
+	if !s.Get().ShareADP || !s.Get().SessionStats || !s.Get().AutoUpdate {
+		t.Fatal("ADP, счётчик и автообновление по умолчанию включены")
 	}
 	if s.Get().BuiltinBypass || s.Get().StartWithWindows {
 		t.Fatal("встроенный обход и автозапуск по умолчанию выключены")
@@ -36,7 +36,8 @@ func TestMissingFieldsKeepDefaults(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"shareADP": false}`), 0644)
 	got := Open(dir).Get()
-	if got.ShareADP || !got.SessionStats || !got.CollectOnStart {
+	// Файл прошлой версии без autoUpdate — автообновление включено.
+	if got.ShareADP || !got.SessionStats || !got.CollectOnStart || !got.AutoUpdate {
 		t.Fatalf("%+v", got)
 	}
 }

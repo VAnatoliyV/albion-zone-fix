@@ -45,6 +45,14 @@
   <div class="alert" id="rcvErr" hidden></div>
   <div class="alert soft" id="panics" hidden></div>
 
+  <!-- Обновление готово (только в окне: поверх игры ничего не всплывает) -->
+  <section class="panel upd" id="updBanner" hidden>
+    <div class="caption gold" id="updTitle"></div>
+    <details id="updNotesBox"><summary data-t="upd.whatsNew"></summary><div class="updnotes" id="updNotes"></div></details>
+    <div class="controls"><button class="btn small" id="updRestart" data-t="upd.restart"></button></div>
+    <div class="hint flat" id="updHint"></div>
+  </section>
+
   <nav class="tabs" id="tabs">
     <button data-tab="own" data-t="tab.own"></button>
     <button data-tab="shared" data-t="tab.shared"></button>
@@ -217,6 +225,15 @@
     <div class="caption gold" data-t="sec.zonefix"></div>
     <label class="toggle"><input type="checkbox" data-set="builtinBypass"><span class="sw"></span><span class="tl" data-t="set.bypass"></span></label>
     <div class="hint warn" data-t="set.bypassHint"></div>
+
+    <div class="dash"></div>
+    <div class="caption gold" data-t="sec.update"></div>
+    <label class="toggle"><input type="checkbox" data-set="autoUpdate"><span class="sw"></span><span class="tl" data-t="set.autoUpdate"></span></label>
+    <div class="hint" data-t="set.autoUpdateHint"></div>
+    <div class="controls"><button class="btn ghost small" id="updCheck" data-t="upd.check"></button><span class="note" id="updResult"></span></div>
+    <div class="hint flat" id="appVersion"></div>
+    <div class="controls"><button class="btn small" id="supDiscord" data-t="sup.discord"></button><button class="btn ghost small" id="supCopy" data-t="sup.copy"></button></div>
+    <div class="hint flat" data-t="sup.hint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.data"></div>

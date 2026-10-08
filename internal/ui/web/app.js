@@ -148,6 +148,14 @@ const toggleFame = async () => { if (S) { await saveSettings({ sessionStats: !S.
 $('btnFame').onclick = toggleFame;
 $('btnFame2').onclick = toggleFame;
 
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+}
+
 // --- «Мои цены» ---------------------------------------------------------------
 
 function icon(id, big) {
@@ -264,12 +272,7 @@ $('btnCopy').onclick = async () => {
   if (!total) return;
   const lines = list.map(x => `${x.name} ${Math.floor(x.damage / total * 100)}% — ${fmt(x.damage)}`);
   if (f.fame > 0) lines.push(t('se.copyTotals', fmt(f.fame), fmt(f.silverEarned)));
-  const text = lines.join('\n');
-  try { await navigator.clipboard.writeText(text); }
-  catch (e) {
-    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-  }
+  await copyText(lines.join('\n'));
   copied = true; renderSession();
   setTimeout(() => { copied = false; renderSession(); }, 1600);
 };
@@ -387,12 +390,69 @@ $('langTabs').addEventListener('click', async e => {
 });
 $('openData').onclick = () => post('/api/open', { what: 'data' });
 
+// --- обновление и поддержка ---------------------------------------------------
+
+let restarting = false;   // нажали «Перезапустить сейчас», ждём закрытия
+let supCopied = false;
+
+function renderUpdate() {
+  const u = S.update;
+  const r = u && u.ready;
+  $('updBanner').hidden = !r;
+  if (r) {
+    $('updTitle').textContent = t('upd.ready', r.version);
+    $('updNotesBox').hidden = !r.notes;
+    if ($('updNotes').textContent !== (r.notes || '')) $('updNotes').textContent = r.notes || '';
+    $('updRestart').hidden = !!u.noWrite;
+    $('updRestart').disabled = restarting || u.installing;
+    let hint, bad = false;
+    if (u.noWrite) { hint = t('upd.noWrite'); bad = true; }
+    else if (u.installing || restarting) hint = t('upd.restarting');
+    else if (u.installFailed) { hint = t('upd.installFailed'); bad = true; }
+    else hint = S.settings.autoUpdate ? t('upd.onQuit') : t('upd.manualOnly');
+    $('updHint').textContent = hint;
+    $('updHint').classList.toggle('red', bad);
+  }
+
+  $('appVersion').textContent = t('upd.version', S.version || '—');
+  const st = u ? u.state : 'dev';
+  $('updCheck').disabled = !u || st === 'checking' || st === 'downloading' || st === 'dev';
+  let res = '';
+  if (st === 'checking') res = t('upd.checking');
+  else if (st === 'latest') res = t('upd.latest', u.version);
+  else if (st === 'downloading') res = t('upd.downloading', u.version);
+  else if (st === 'ready') res = t('upd.downloaded', u.version);
+  else if (st === 'error') res = t('upd.failed');
+  else if (st === 'dev') res = t('upd.dev');
+  $('updResult').textContent = res;
+  $('updResult').classList.toggle('red', st === 'error');
+  $('supCopy').textContent = supCopied ? t('sup.copied') : t('sup.copy');
+}
+
+$('updCheck').onclick = async () => { await post('/api/update/check'); refresh(); };
+$('updRestart').onclick = async () => {
+  restarting = true; renderUpdate();
+  // Ошибку покажет сама плашка (installFailed) — без окна alert.
+  const { ok } = await post('/api/update/restart', {}, true);
+  if (!ok) restarting = false;
+  refresh();
+};
+$('supDiscord').onclick = () => post('/api/open', { what: 'discord' });
+$('supCopy').onclick = async () => {
+  const { ok, j } = await post('/api/support', {}, true);
+  if (!ok || !j.text) return;
+  await copyText(j.text);
+  supCopied = true; renderUpdate();
+  setTimeout(() => { supCopied = false; if (S) renderUpdate(); }, 1600);
+};
+
 // --- общий цикл ---------------------------------------------------------------
 
 function renderAll() {
   if (!S) return;
   renderStatus();
   renderSettings();
+  renderUpdate();
   if (tab === 'zonefix') renderZoneFix();
   if (tab === 'session') renderSession();
   if (tab === 'shared') renderShared();

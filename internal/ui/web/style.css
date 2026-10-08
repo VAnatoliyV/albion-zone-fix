@@ -159,3 +159,12 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
   .srow .btn { width: 120px; }
   .tabs button { font-size: 11px; }
 }
+
+/* обновление */
+.upd { margin-top: 10px; padding: 10px 12px; }
+.upd .caption { margin-top: 0; font-size: 12px; }
+.upd details { margin: 2px 0 8px; font-size: 11.5px; color: var(--muted); }
+.upd summary { cursor: pointer; }
+.updnotes { white-space: pre-wrap; color: var(--text); max-height: 140px; overflow-y: auto; margin-top: 6px; user-select: text; }
+.upd .hint.red, .hint.red { color: var(--red); }
+.hint.flat { margin-left: 0; }

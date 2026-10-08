@@ -31,11 +31,14 @@ type Settings struct {
 	// умолчанию выключен: у многих игроков в России уже стоит свой zapret,
 	// и два обхода на одном трафике мешают друг другу.
 	BuiltinBypass bool `json:"builtinBypass"`
+	// AutoUpdate — проверять выпуски сам и ставить скачанное при выходе.
+	// Выключено — только кнопкой «Проверить обновления» и «Перезапустить сейчас».
+	AutoUpdate bool `json:"autoUpdate"`
 }
 
 // Default — настройки первого запуска.
 func Default() Settings {
-	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true}
+	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.

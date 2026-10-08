@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"albionzonefix/internal/i18n"
 	"albionzonefix/internal/ownprices"
 	"albionzonefix/internal/settings"
+	"albionzonefix/internal/update"
 )
 
 type fakeCol struct {
@@ -296,7 +298,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 	// ключи, собранные в JS из частей или переданные через переменную
 	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
 		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
-		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff"} {
+		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied"} {
 		used[k] = true
 	}
 	var missing, unused []string
@@ -348,5 +350,92 @@ func TestReceiverEndpointAndError(t *testing.T) {
 	e.get(t, "/api/state", &st)
 	if st["receiverError"] != "порт 7777 занят другой программой" {
 		t.Fatalf("причина в состоянии: %v", st["receiverError"])
+	}
+}
+
+type fakeUpd struct {
+	st     update.Status
+	checks int
+}
+
+func (f *fakeUpd) Status() update.Status { return f.st }
+func (f *fakeUpd) Check()                { f.checks++ }
+
+func TestUpdateAndSupport(t *testing.T) {
+	dir := t.TempDir()
+	a := app.New(dir, dir, nil)
+	u := &fakeUpd{st: update.Status{State: update.StateReady, Current: "1.0.0", Version: "1.0.1",
+		Ready: &update.Release{Version: "1.0.1", Notes: "что нового"}}}
+	restarts := 0
+	var restartErr error
+	var opened []string
+	srv, err := Start(a, Options{
+		DataDir: dir, ReceiverAddr: "127.0.0.1:1", Lang: func() string { return "ru" },
+		Version: "1.0.0", Update: u,
+		OnUpdateRestart: func() error { restarts++; return restartErr },
+		SupportInfo:     func() string { return "Albion Journal 1.0.0" },
+		OpenURL:         func(s string) { opened = append(opened, s) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	e := &env{srv: srv, a: a, dir: dir}
+
+	var st PageState
+	e.get(t, "/api/state", &st)
+	if st.Version != "1.0.0" || st.Update == nil || st.Update.Ready == nil || st.Update.Ready.Notes != "что нового" {
+		t.Fatalf("%+v", st.Update)
+	}
+	if e.post(t, "/api/update/check", nil, false).StatusCode != 403 || u.checks != 0 {
+		t.Fatal("проверка без ключа")
+	}
+	if e.post(t, "/api/update/check", nil, true).StatusCode != 200 || u.checks != 1 {
+		t.Fatal("проверка")
+	}
+	if e.post(t, "/api/update/restart", nil, false).StatusCode != 403 || restarts != 0 {
+		t.Fatal("перезапуск без ключа")
+	}
+	if e.post(t, "/api/update/restart", nil, true).StatusCode != 200 || restarts != 1 {
+		t.Fatal("перезапуск")
+	}
+	restartErr = errors.New("нет прав")
+	if e.post(t, "/api/update/restart", nil, true).StatusCode != 400 {
+		t.Fatal("ошибка установки должна дойти до страницы")
+	}
+	e.post(t, "/api/open", url.Values{"what": {"discord"}}, true)
+	if len(opened) != 1 || opened[0] != "https://discord.gg/5pV9ZqZMve" {
+		t.Fatalf("%v", opened)
+	}
+	// Сведения — только с ключом (в них хвост журнала).
+	if e.post(t, "/api/support", nil, false).StatusCode != 403 {
+		t.Fatal("сведения без ключа")
+	}
+	req, _ := http.NewRequest("POST", srv.URL+"api/support", nil)
+	req.Header.Set(TokenHeader, srv.Token)
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sup map[string]string
+	json.NewDecoder(r.Body).Decode(&sup)
+	r.Body.Close()
+	if sup["text"] != "Albion Journal 1.0.0" {
+		t.Fatalf("%v", sup)
+	}
+	if r, _ := http.Get(srv.URL + "api/support"); r.StatusCode == 200 {
+		t.Fatal("GET сведений не должен работать")
+	}
+}
+
+func TestNoUpdater(t *testing.T) {
+	e := start(t)
+	var st PageState
+	e.get(t, "/api/state", &st)
+	if st.Update != nil {
+		t.Fatal("без обновлятеля — нет состояния")
+	}
+	if e.post(t, "/api/update/check", nil, true).StatusCode != 400 || e.post(t, "/api/update/restart", nil, true).StatusCode != 400 {
+		t.Fatal("без обновлятеля — ошибка")
 	}
 }

@@ -25,6 +25,8 @@ import (
 	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/settings"
 	"albionzonefix/internal/shared"
+	"albionzonefix/internal/support"
+	"albionzonefix/internal/update"
 )
 
 //go:embed web
@@ -52,6 +54,20 @@ type Options struct {
 	OpenURL    func(url string) // открыть адрес в браузере системы
 	OpenFolder func(dir string) // открыть папку в Проводнике
 	Lang       func() string    // язык системы; nil — i18n.System
+
+	Version string  // версия программы (для окна и сведений)
+	Update  Updater // автообновление; nil — нет
+	// OnUpdateRestart — «Перезапустить сейчас»: запустить установку и, только
+	// если она пошла, остановить своё и выйти. Ошибка — ничего не тронуто.
+	OnUpdateRestart func() error
+	// SupportInfo — текст «Скопировать сведения для поддержки».
+	SupportInfo func() string
+}
+
+// Updater — то, что странице нужно от update.Updater.
+type Updater interface {
+	Status() update.Status
+	Check()
 }
 
 // Server — запущенный сервер страницы.
@@ -71,6 +87,9 @@ type PageState struct {
 	Lang      string `json:"lang"`
 	Receiver  bool   `json:"receiver"`
 	SiteReady bool   `json:"siteReady"`
+	Version   string `json:"version"`
+	// Update — состояние автообновления; nil — обновлений нет.
+	Update *update.Status `json:"update,omitempty"`
 }
 
 // SessionReply — вкладка «Сессия»: настройка, работает ли счётчик и данные.
@@ -166,6 +185,10 @@ func (s *Server) Handler() http.Handler {
 			if s.o.OpenURL != nil {
 				s.o.OpenURL(receiver.SiteURL)
 			}
+		case "discord":
+			if s.o.OpenURL != nil {
+				s.o.OpenURL(support.DiscordURL)
+			}
 		case "data":
 			if s.o.OpenFolder != nil {
 				s.o.OpenFolder(s.o.DataDir)
@@ -181,6 +204,30 @@ func (s *Server) Handler() http.Handler {
 			s.o.OnShow()
 		}
 		reply(w, nil)
+	})
+	mux.HandleFunc("POST /api/update/check", func(w http.ResponseWriter, r *http.Request) {
+		if s.o.Update == nil {
+			reply(w, errors.New("обновления выключены"))
+			return
+		}
+		s.o.Update.Check()
+		reply(w, nil)
+	})
+	mux.HandleFunc("POST /api/update/restart", func(w http.ResponseWriter, r *http.Request) {
+		if s.o.OnUpdateRestart == nil {
+			reply(w, errors.New("обновления выключены"))
+			return
+		}
+		reply(w, s.o.OnUpdateRestart())
+	})
+	// Сведения для поддержки — POST: в них хвост журнала, отдаём только
+	// своей странице (с ключом).
+	mux.HandleFunc("POST /api/support", func(w http.ResponseWriter, r *http.Request) {
+		text := ""
+		if s.o.SupportInfo != nil {
+			text = s.o.SupportInfo()
+		}
+		s.json(w, map[string]string{"text": text})
 	})
 	mux.HandleFunc("POST /api/bypass", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, s.a.SetBypass(r.FormValue("mode")))
@@ -233,7 +280,11 @@ func (s *Server) page(w http.ResponseWriter) {
 func (s *Server) lang() string { return i18n.Resolve(s.a.Settings().Language, s.o.Lang()) }
 
 func (s *Server) state() PageState {
-	st := PageState{State: s.a.State(), Lang: s.lang()}
+	st := PageState{State: s.a.State(), Lang: s.lang(), Version: s.o.Version}
+	if s.o.Update != nil {
+		u := s.o.Update.Status()
+		st.Update = &u
+	}
 	st.Receiver = receiver.Up(s.o.ReceiverAddr)
 	st.SiteReady = st.Receiver && receiver.SiteReady(s.o.LogPath)
 	return st

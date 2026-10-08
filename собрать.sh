@@ -1,8 +1,21 @@
 #!/bin/bash
 # Собирает dist/AlbionJournal.zip: программа под Windows x64 (Albion Journal: сбор цен,
-# счётчик, Zone Fix) + приёмник своих цен acp-prices.exe + таблица предметов + официальные файлы zapret (Flowseal).
+# счётчик, Zone Fix) + приёмник своих цен acp-prices.exe + таблица предметов + официальные файлы zapret (Flowseal)
+# и подпись dist/AlbionJournal.zip.sig для автообновления.
+#
+#   ./собрать.sh          версия из файла VERSION
+#   ./собрать.sh 1.0.1    версия из аргумента (и записывается в VERSION)
+#
+# Подпись — закрытым ключом ~/.config/albion-journal/windows-update.key
+# (tools/updatekey; формат — internal/update/sign.go). Без ключа сборка
+# останавливается: выпуск без подписи программа не поставит.
 set -e
 cd "$(dirname "$0")"
+if [ -n "$1" ]; then echo "$1" > VERSION; fi
+VERSION="$(tr -d ' \r\n' < VERSION)"
+# Только числа через точку: иначе программа сочтёт себя сборкой разработчика.
+echo "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+$' || { echo "версия «$VERSION» не похожа на 1.2.3"; exit 1; }
+echo "версия $VERSION"
 ZAPRET_VER="1.10.3"
 OUT=dist/AlbionJournal
 RECV=../acp-prices-src # приёмник своих цен (тот же код, что у мака)
@@ -16,7 +29,7 @@ echo "собираю AlbionJournal.exe..."
 # -H windowsgui: у программы окно и трей, чёрная консоль больше не нужна.
 # Значок exe (кролик) — rsrc_windows_amd64.syso, Go подхватывает его сам. Пересобрать:
 #   go run github.com/akavel/rsrc@v0.10.2 -ico internal/desktop/rabbit.ico -arch amd64 -o rsrc_windows_amd64.syso
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o "$OUT/AlbionJournal.exe" .
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$VERSION" -o "$OUT/AlbionJournal.exe" .
 
 echo "собираю acp-prices.exe..."
 (cd "$RECV" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$OLDPWD/$OUT/acp-prices.exe" .)
@@ -31,4 +44,9 @@ cp README-RU.txt LICENSES.txt "$OUT/"
 cp "$ITEMS" "$OUT/items_by_id.json"
 (cd dist && zip -qr AlbionJournal.zip AlbionJournal)
 rm -rf dist/cache
-ls -l dist/AlbionJournal.zip | awk '{print "готово:", $NF, $5, "байт"}'
+
+echo "подписываю..."
+go run ./tools/updatekey sign dist/AlbionJournal.zip
+go run ./tools/updatekey verify dist/AlbionJournal.zip
+ls -l dist/AlbionJournal.zip dist/AlbionJournal.zip.sig | awk '{print "готово:", $NF, $5, "байт"}'
+echo "выпуск: тег v$VERSION в VAnatoliyV/albion-zone-fix, вложения AlbionJournal.zip и AlbionJournal.zip.sig"

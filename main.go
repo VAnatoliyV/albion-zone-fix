@@ -31,8 +31,14 @@ import (
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/settings"
 	"albionzonefix/internal/sniff"
+	"albionzonefix/internal/support"
 	"albionzonefix/internal/ui"
+	"albionzonefix/internal/update"
 )
+
+// version — версия сборки; собрать.sh ставит её через -ldflags "-X main.version=…".
+// «dev» — сборка разработчика: автообновление выключено.
+var version = "dev"
 
 // uiFile — адрес и ключ страницы работающей копии: по ним вторая копия
 // просит первую показать окно.
@@ -41,7 +47,25 @@ const uiFile = "ui.json"
 func main() {
 	replay := flag.String("replay", "", "прогнать запись .azf и напечатать переходы")
 	hidden := flag.Bool("autostart", false, "запуск вместе с Windows: без окна, сразу в трей")
+	showVersion := flag.Bool("version", false, "напечатать версию и выйти")
+	apply := flag.String(update.ApplyFlag, "", "поставить обновление из папки (запускает сама программа)")
+	applyTarget := flag.String("target", "", "для -apply-update: папка программы")
+	applyPrev := flag.String("prev", "", "для -apply-update: куда убрать прежние файлы")
+	applyData := flag.String("data", "", "для -apply-update: каталог данных")
+	applyPID := flag.Int("pid", 0, "для -apply-update: чьего выхода ждать")
+	applyRestart := flag.Bool("restart", false, "для -apply-update: запустить программу после установки")
 	flag.Parse()
+
+	// Версию спрашивает старая копия у скачанной новой — до всего остального
+	// (без прав администратора, без окна и без проверки второй копии).
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+	if *apply != "" {
+		os.Exit(runApply(update.Plan{Src: *apply, Dest: *applyTarget, Prev: *applyPrev,
+			PID: *applyPID, Restart: *applyRestart, DataDir: *applyData}))
+	}
 
 	exe, _ := os.Executable()
 	dir := filepath.Dir(exe)
@@ -86,7 +110,7 @@ func main() {
 	logLine := func(format string, args ...any) {
 		fmt.Fprintf(logw, "[программа] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
 	}
-	logLine("запуск Albion Journal, данные: %s", data)
+	logLine("запуск Albion Journal %s, данные: %s", version, data)
 	if dataErr != nil {
 		logLine("нет каталога данных, пишу рядом с программой: %v", dataErr)
 	}
@@ -112,6 +136,17 @@ func main() {
 		logLine("сборщик цен не запустился: %v", err)
 	}
 
+	// Автообновление: выпуски GitHub, подпись ed25519 (internal/update).
+	upd := update.New(update.Config{
+		Dir: filepath.Join(data, "обновление"), Current: version, ProgramDir: dir, DataDir: data,
+		Auto: func() bool { return a.Settings().AutoUpdate },
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(logw, "[обновление] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+		},
+	})
+	upd.Start()
+	defer upd.Stop()
+
 	// Всё останавливаем один раз: при выходе из трея, при выключении Windows
 	// (окно получает WM_ENDSESSION) и по Ctrl+C в разработке.
 	var stopOnce sync.Once
@@ -121,6 +156,11 @@ func main() {
 			// Всё, что живёт внутри программы, останавливается всегда;
 			// приёмник — только при «останавливать всё при выходе».
 			a.Shutdown()
+			// Ставится обновление: приёмник запущен из папки, которую сейчас
+			// заменят, — гасим и его, как на маке. Новая копия поднимет сама.
+			if upd.Installing() {
+				rcv.Stop()
+			}
 			os.Remove(filepath.Join(data, uiFile))
 		})
 	}
@@ -133,6 +173,7 @@ func main() {
 	}()
 
 	var dp atomic.Pointer[desktop.Desktop]
+	var ending atomic.Bool // Windows выключается: обновление не ставим
 	curLang := func() string { return i18n.Resolve(a.Settings().Language, i18n.System()) }
 	srv, err := ui.Start(a, ui.Options{
 		DataDir: data, LogPath: logPath, SessionFile: col.SessionFile(),
@@ -159,6 +200,24 @@ func main() {
 		},
 		OpenURL:    desktop.OpenURL,
 		OpenFolder: desktop.OpenFolder,
+		Version:    version,
+		Update:     upd,
+		// «Перезапустить сейчас»: сначала установка (проверка, права, запуск
+		// установщика — он сам ждёт нашего выхода), и только если она пошла —
+		// выходим. Не пошла — ничего не останавливаем, плашка скажет.
+		OnUpdateRestart: func() error {
+			if err := upd.Install(true); err != nil {
+				return err
+			}
+			if d := dp.Load(); d != nil {
+				go d.Quit()
+			}
+			return nil
+		},
+		SupportInfo: func() string {
+			home, _ := os.UserHomeDir()
+			return support.Info(version, support.OSVersion(), logPath, home)
+		},
 	})
 	if err != nil {
 		logLine("страница не запустилась: %v", err)
@@ -176,8 +235,11 @@ func main() {
 		Label:         func(k string) string { return i18n.T(curLang(), k) },
 		Collecting:    a.Collecting,
 		SetCollecting: a.SetCollecting,
-		EndSession:    shutdown,
-		Logf:          logLine,
+		EndSession: func() {
+			ending.Store(true)
+			shutdown()
+		},
+		Logf: logLine,
 	})
 	dp.Store(d)
 
@@ -208,6 +270,46 @@ func main() {
 
 	d.Run() // окно и трей; возвращается после «Выход»
 	logLine("окно закрыто")
+	// Выход с готовым обновлением и включённым автообновлением — ставим.
+	// Установщик ждёт нашего выхода; своё гасит shutdown (и приёмник тоже,
+	// раз установка пошла). Не пошла — выходим как обычно.
+	if !ending.Load() && a.Settings().AutoUpdate && upd.Ready() != nil && !upd.Installing() {
+		if err := upd.Install(false); err != nil {
+			logLine("обновление при выходе не поставлено: %v", err)
+		}
+	}
+}
+
+// runApply — процесс установки обновления (запущен прежней копией из
+// распакованной новой версии). Пишет в тот же журнал.
+func runApply(p update.Plan) int {
+	logw := io.Discard
+	if p.DataDir != "" {
+		if f, err := os.OpenFile(filepath.Join(p.DataDir, "albion-journal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			defer f.Close()
+			logw = f
+		}
+	}
+	logf := func(format string, args ...any) {
+		fmt.Fprintf(logw, "[обновление] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	}
+	if p.Dest == "" || p.Prev == "" || p.DataDir == "" {
+		logf("установка: не хватает -target, -prev или -data")
+		return 2
+	}
+	logf("установщик %s: ставлю из %s в %s", version, p.Src, p.Dest)
+	err := update.Apply(p, update.Env{
+		WaitExit: update.WaitExit,
+		// Только наш приёмник из этой папки (pid-файл + путь exe), чужой не трогаем.
+		StopReceiver: func() { receiver.NewManager(filepath.Join(p.Dest, receiver.ExeName), p.DataDir, logw).Stop() },
+		Unblock:      update.Unblock,
+		Start:        func(exe string) error { return update.StartDetached(exe) },
+		Logf:         logf,
+	})
+	if err != nil {
+		return 1
+	}
+	return 0
 }
 
 // showOther просит уже запущенную копию показать окно. Не вышло —
