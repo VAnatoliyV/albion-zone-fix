@@ -4,6 +4,7 @@ package paddle
 
 import (
 	"fmt"
+	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -12,10 +13,18 @@ import (
 // LibName — файл ONNX Runtime в папке ocr.
 const LibName = "onnxruntime.dll"
 
-// openSym грузит библиотеку по полному пути. LOAD_WITH_ALTERED_SEARCH_PATH:
-// её зависимости ищутся сначала в её же папке, а не рядом с exe.
+// loadFlags — где искать зависимости onnxruntime.dll (MSVCP140, VCRUNTIME140…):
+// только в её папке (ocr, там же своя копия VC++ runtime) и в System32.
+// Не в текущей папке и не в PATH: программа работает с правами
+// администратора, а туда может подложить dll кто угодно.
+const loadFlags = windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | windows.LOAD_LIBRARY_SEARCH_SYSTEM32
+
+// openSym грузит библиотеку по полному пути (LoadLibraryExW).
 func openSym(path, name string) (uintptr, error) {
-	h, err := windows.LoadLibraryEx(path, 0, windows.LOAD_WITH_ALTERED_SEARCH_PATH)
+	if !filepath.IsAbs(path) {
+		return 0, fmt.Errorf("путь к %s не полный", path)
+	}
+	h, err := windows.LoadLibraryEx(path, 0, loadFlags)
 	if err != nil {
 		return 0, fmt.Errorf("не загрузилась %s: %w", path, err)
 	}
