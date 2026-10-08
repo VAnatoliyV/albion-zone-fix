@@ -21,6 +21,7 @@
 package oldcopy
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,34 @@ var setFiles = []string{ExeName, RecvName, ItemsName}
 // нет ничего чужого (uninstall.exe — прежняя установка в другую папку).
 var extraFiles = []string{"README-RU.txt", "LICENSES.txt", "TESTER-RU.txt", "uninstall.exe"}
 
+// zapretBin — имена файлов zapret\bin из нашего выпуска (собрать.sh
+// сверяет список с тем, что кладёт в zip). Только их удаляем, и только
+// при них папка zapret считается нашей.
+//
+//go:embed zapret_bin.txt
+var zapretBinList string
+
+func zapretOurs(name string) bool {
+	for _, f := range strings.Fields(zapretBinList) {
+		for _, s := range suffixes {
+			if strings.EqualFold(name, f+s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// DirNames — имена папки копии, которую можно удалить целиком (когда
+// пуста): из zip и из установщика. Иначе папка («Загрузки») остаётся.
+var DirNames = []string{"AlbionJournal", "Albion Journal"}
+
+// isDir — настоящая папка (не ссылка и не junction).
+func isDir(p string) bool {
+	fi, err := os.Lstat(p)
+	return err == nil && fi.Mode().Type() == os.ModeDir
+}
+
 // suffixes — сам файл и следы обновления рядом (.new — недокопированный,
 // .old — прежний).
 var suffixes = []string{"", ".old", ".new"}
@@ -54,6 +83,13 @@ const ParentName = "AlbionJournal"
 
 // Wait — сколько ждать выхода процессов старой копии.
 const Wait = 5 * time.Second
+
+// SoftGrace — сколько ждать после мягкой просьбы, прежде чем завершать.
+const SoftGrace = 2 * time.Second
+
+// resolve раскрывает ссылки (в тестах подменяется: junction и подключённые
+// папки Go на Windows не раскрывает).
+var resolve = filepath.EvalSymlinks
 
 // Proc — процесс: pid, имя и полный путь exe.
 type Proc struct {
@@ -74,6 +110,7 @@ type Env struct {
 	TaskExe func() (string, bool)  // программа из задачи автозапуска
 	Keep    []string               // системные папки: сами по себе не трогаем
 	Under   []string               // внутри этих папок не трогаем ничего (Windows)
+	SelfExe string                 // свой exe (новая копия)
 	Self    uint32                 // свой pid
 	Logf    func(string, ...any)   // журнал (может быть nil)
 }
@@ -101,23 +138,54 @@ func norm(p string) string {
 	if a, err := filepath.Abs(p); err == nil {
 		p = a
 	}
-	if r, err := filepath.EvalSymlinks(p); err == nil {
+	if r, err := resolve(p); err == nil {
 		p = r
 	}
 	return p
 }
 
-// same — один и тот же путь (без учёта регистра: так в Windows).
-func same(a, b string) bool { return strings.EqualFold(norm(a), norm(b)) }
+// same — один и тот же путь: строки без учёта регистра или (если оба
+// есть) один и тот же файл — так ловятся junction, подключённые папки и
+// subst, которые Go на Windows не раскрывает.
+func same(a, b string) bool {
+	if strings.EqualFold(norm(a), norm(b)) {
+		return true
+	}
+	return sameFile(a, b)
+}
 
-// within — child лежит внутри parent (не равен ему).
+func sameFile(a, b string) bool {
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	return err == nil && os.SameFile(fa, fb)
+}
+
+// within — child лежит внутри parent (не равен ему): по строке или по
+// идентичности одной из папок над child.
 func within(parent, child string) bool {
 	p := strings.ToLower(norm(parent))
 	c := strings.ToLower(norm(child))
 	if !strings.HasSuffix(p, string(filepath.Separator)) {
 		p += string(filepath.Separator)
 	}
-	return len(c) > len(p) && strings.HasPrefix(c, p)
+	if len(c) > len(p) && strings.HasPrefix(c, p) {
+		return true
+	}
+	fp, err := os.Stat(parent)
+	if err != nil {
+		return false
+	}
+	for d := filepath.Dir(filepath.Clean(child)); ; d = filepath.Dir(d) {
+		if fd, err := os.Stat(d); err == nil && os.SameFile(fd, fp) {
+			return true
+		}
+		if filepath.Dir(d) == d {
+			return false
+		}
+	}
 }
 
 // isRoot — корень диска (C:\, /, \\server\share).
@@ -141,7 +209,11 @@ func Find(inst string, e Env) []Copy {
 			e.logf("список процессов: %v", err)
 		}
 		for _, p := range ps {
-			if p.Exe != "" && strings.EqualFold(filepath.Base(p.Exe), ExeName) {
+			if p.PID == e.Self && e.Self != 0 {
+				continue // это мы (-find-old из папки установки)
+			}
+			// Источник — и приёмник цен: он переживает программу.
+			if b := filepath.Base(p.Exe); p.Exe != "" && (strings.EqualFold(b, ExeName) || strings.EqualFold(b, RecvName)) {
 				cands = append(cands, filepath.Dir(p.Exe))
 			}
 		}
@@ -181,6 +253,8 @@ func check(d, inst string, e Env) (Copy, string) {
 	n := norm(d)
 	switch {
 	case same(n, inst):
+		return Copy{}, "-"
+	case e.SelfExe != "" && sameFile(filepath.Join(n, ExeName), e.SelfExe):
 		return Copy{}, "-"
 	case isRoot(n):
 		return Copy{}, "корень диска"
@@ -228,9 +302,32 @@ func onlyOurs(dir string) bool {
 	for _, de := range es {
 		switch {
 		case de.Type().IsRegular() && ours(de.Name()):
-		case de.Type() == os.ModeDir && strings.EqualFold(de.Name(), ZapretDir):
+		case de.Type() == os.ModeDir && strings.EqualFold(de.Name(), ZapretDir) && zapretOnlyOurs(filepath.Join(dir, de.Name())):
 		default:
 			return false
+		}
+	}
+	return true
+}
+
+// zapretOnlyOurs — в zapret только bin, в bin только файлы нашего выпуска.
+func zapretOnlyOurs(zap string) bool {
+	es, err := os.ReadDir(zap)
+	if err != nil {
+		return false
+	}
+	for _, de := range es {
+		if !(de.Type() == os.ModeDir && strings.EqualFold(de.Name(), "bin")) {
+			return false
+		}
+		bs, err := os.ReadDir(filepath.Join(zap, de.Name()))
+		if err != nil {
+			return false
+		}
+		for _, b := range bs {
+			if !b.Type().IsRegular() || !zapretOurs(b.Name()) {
+				return false
+			}
 		}
 	}
 	return true
@@ -279,16 +376,23 @@ func Plan(c Copy) (files, dirs []string) {
 	if c.Full {
 		zap := filepath.Join(c.Dir, ZapretDir)
 		bin := filepath.Join(zap, "bin")
-		if fi, err := os.Lstat(zap); err == nil && fi.IsDir() {
+		if isDir(zap) && isDir(bin) {
 			if es, err := os.ReadDir(bin); err == nil {
 				for _, de := range es {
-					if de.Type().IsRegular() {
+					if de.Type().IsRegular() && zapretOurs(de.Name()) {
 						files = append(files, filepath.Join(bin, de.Name()))
 					}
 				}
 			}
 			dirs = append(dirs, bin, zap)
 		}
+	}
+	named := false
+	for _, n := range DirNames {
+		named = named || strings.EqualFold(filepath.Base(c.Dir), n)
+	}
+	if !named {
+		return files, dirs // «Загрузки» и т. п. не удаляем, даже пустые
 	}
 	dirs = append(dirs, c.Dir)
 	if up := filepath.Dir(c.Dir); !isRoot(up) && strings.EqualFold(filepath.Base(up), ParentName) {
@@ -352,10 +456,15 @@ func Remove(inst string, e Env, cl Closer, retarget func(exe string) error) (fai
 	for _, c := range copies {
 		e.logf("старая копия %s (целиком наша: %v)", c.Dir, c.Full)
 		t := Targets(c, ps, e.Self)
+		var mains []Proc
 		for _, p := range t {
 			if strings.EqualFold(filepath.Base(p.Exe), ExeName) {
 				cl.Soft(p)
+				mains = append(mains, p)
 			}
+		}
+		if len(mains) > 0 {
+			cl.Wait(mains, SoftGrace) // успеть сохранить сессию до завершения
 		}
 		for _, p := range t {
 			if err := cl.Kill(p); err != nil {

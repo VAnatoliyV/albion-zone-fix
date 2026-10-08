@@ -370,3 +370,160 @@ func TestRemoveTaskElsewhereNotRetargeted(t *testing.T) {
 		t.Fatal("задача на новую копию переписана зря")
 	}
 }
+
+// Fix round 1.
+
+// noResolve — как junction на Windows: EvalSymlinks его не раскрывает.
+func noResolve(t *testing.T) {
+	old := resolve
+	resolve = func(p string) (string, error) { return p, nil }
+	t.Cleanup(func() { resolve = old })
+}
+
+func TestFindInstallAliasedLikeJunction(t *testing.T) {
+	noResolve(t)
+	r := root(t)
+	real := filepath.Join(r, "D", "Games", "Albion Journal")
+	release(t, real)
+	touch(t, filepath.Join(real, "uninstall.exe"))
+	alias := filepath.Join(r, "C", "Games")
+	os.MkdirAll(filepath.Dir(alias), 0755)
+	if err := os.Symlink(filepath.Join(r, "D", "Games"), alias); err != nil {
+		t.Skip(err)
+	}
+	inst := filepath.Join(alias, "Albion Journal") // как $INSTDIR
+	// Свой процесс (-find-old) и задача — по «настоящему» пути.
+	e := procEnv(Proc{PID: 1, Name: ExeName, Exe: filepath.Join(real, ExeName)})
+	e.TaskExe = func() (string, bool) { return filepath.Join(real, ExeName), true }
+	if got := Find(inst, e); len(got) != 0 {
+		t.Fatalf("новая установка под другим путём принята за старую: %+v", got)
+	}
+	// Даже без Self: тот же каталог по идентичности файла.
+	e.Self = 99
+	if got := Find(inst, e); len(got) != 0 {
+		t.Fatalf("SameFile: %+v", got)
+	}
+	// Вложенность тоже по идентичности: старая копия внутри установки.
+	inner := filepath.Join(real, "sub")
+	release(t, inner)
+	e.TaskExe = func() (string, bool) { return filepath.Join(inner, ExeName), true }
+	e.Procs = nil
+	if got := Find(inst, e); len(got) != 0 {
+		t.Fatalf("внутри установки по другому пути: %+v", got)
+	}
+}
+
+func TestFindSkipsSelfExe(t *testing.T) {
+	noResolve(t)
+	r := root(t)
+	inst := filepath.Join(r, "Albion Journal")
+	other := filepath.Join(r, "где-то")
+	release(t, other)
+	e := procEnv(Proc{PID: 1, Name: ExeName, Exe: filepath.Join(other, ExeName)}) // Self
+	if got := Find(inst, e); len(got) != 0 {
+		t.Fatalf("свой процесс — кандидат: %+v", got)
+	}
+	e = Env{TaskExe: func() (string, bool) { return filepath.Join(other, ExeName), true }, SelfExe: filepath.Join(other, ExeName)}
+	if got := Find(inst, e); len(got) != 0 {
+		t.Fatalf("папка своего exe — кандидат: %+v", got)
+	}
+}
+
+func TestZapretOnlyShippedNames(t *testing.T) {
+	r := root(t)
+	inst := filepath.Join(r, "Albion Journal")
+	old := filepath.Join(r, "Tools")
+	release(t, old)
+	e := Env{TaskExe: func() (string, bool) { return filepath.Join(old, ExeName), true }}
+	if got := Find(inst, e); len(got) != 1 || !got[0].Full {
+		t.Fatalf("наш zapret: %+v", got)
+	}
+	// Свой zapret пользователя: чужой файл в bin — папка не целиком наша.
+	touch(t, filepath.Join(old, ZapretDir, "bin", "my-fake.bin"))
+	got := Find(inst, e)
+	if len(got) != 1 || got[0].Full {
+		t.Fatalf("чужой файл в zapret\\bin: %+v", got)
+	}
+	os.Remove(filepath.Join(old, ZapretDir, "bin", "my-fake.bin"))
+	// Чужая папка рядом с bin.
+	touch(t, filepath.Join(old, ZapretDir, "lists", "list.txt"))
+	if got := Find(inst, e); len(got) != 1 || got[0].Full {
+		t.Fatalf("zapret\\lists: %+v", got)
+	}
+	// Plan удаляет из bin только наши имена, даже при Full.
+	c := Copy{Dir: old, Full: true}
+	touch(t, filepath.Join(old, ZapretDir, "bin", "my-fake.bin"))
+	files, _ := Plan(c)
+	for _, f := range files {
+		if filepath.Base(f) == "my-fake.bin" {
+			t.Fatal("в плане чужой файл zapret\\bin")
+		}
+	}
+}
+
+func TestZapretBinLinkNotFollowed(t *testing.T) {
+	r := root(t)
+	old := filepath.Join(r, "Old")
+	release(t, old)
+	os.RemoveAll(filepath.Join(old, ZapretDir, "bin"))
+	userBin := filepath.Join(r, "user-zapret", "bin")
+	touch(t, filepath.Join(userBin, BypassName))
+	if err := os.Symlink(userBin, filepath.Join(old, ZapretDir, "bin")); err != nil {
+		t.Skip(err)
+	}
+	Delete(Copy{Dir: old, Full: true}, Env{})
+	if !exists(filepath.Join(userBin, BypassName)) {
+		t.Fatal("удалено по ссылке zapret\\bin")
+	}
+}
+
+func TestDeleteKeepsWellKnownDir(t *testing.T) {
+	r := root(t)
+	dl := filepath.Join(r, "Downloads")
+	release(t, dl)
+	Delete(Copy{Dir: dl, Full: true}, Env{})
+	if !exists(dl) {
+		t.Fatal("удалена сама папка «Загрузки»")
+	}
+	for _, name := range []string{"AlbionJournal", "Albion Journal"} {
+		d := filepath.Join(r, "x", name)
+		release(t, d)
+		Delete(Copy{Dir: d, Full: true}, Env{})
+		if exists(d) {
+			t.Fatalf("%s не удалена", name)
+		}
+	}
+}
+
+type orderCloser struct{ log []string }
+
+func (o *orderCloser) Soft(p Proc)       { o.log = append(o.log, "soft") }
+func (o *orderCloser) Kill(p Proc) error { o.log = append(o.log, "kill"); return nil }
+func (o *orderCloser) Wait(ps []Proc, d time.Duration) []Proc {
+	o.log = append(o.log, "wait "+d.String())
+	return nil
+}
+
+func TestRemoveGraceAfterSoft(t *testing.T) {
+	r := root(t)
+	inst := filepath.Join(r, "Albion Journal")
+	old := filepath.Join(r, "AlbionJournal")
+	release(t, old)
+	e := procEnv(Proc{PID: 5, Name: ExeName, Exe: filepath.Join(old, ExeName)})
+	cl := &orderCloser{}
+	Remove(inst, e, cl, nil)
+	if strings.Join(cl.log, ",") != "soft,wait "+SoftGrace.String()+",kill,wait "+Wait.String() {
+		t.Fatalf("порядок: %v", cl.log)
+	}
+}
+
+func TestFindByOrphanReceiver(t *testing.T) {
+	r := root(t)
+	inst := filepath.Join(r, "Albion Journal")
+	old := filepath.Join(r, "AlbionJournal")
+	release(t, old)
+	e := procEnv(Proc{PID: 7, Name: RecvName, Exe: filepath.Join(old, RecvName)})
+	if got := Find(inst, e); len(got) != 1 {
+		t.Fatalf("приёмник без программы: %+v", got)
+	}
+}

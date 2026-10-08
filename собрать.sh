@@ -44,6 +44,11 @@ ZIP=dist/cache/zapret.zip
 curl -sfL -o "$ZIP" "https://github.com/Flowseal/zapret-discord-youtube/releases/download/$ZAPRET_VER/zapret-discord-youtube-$ZAPRET_VER.zip"
 unzip -q -o "$ZIP" -d dist/cache
 cp dist/cache/zapret-discord-youtube-$ZAPRET_VER/bin/* "$OUT/zapret/bin/"
+# Установщик удаляет у старых копий только файлы zapret\bin из этого списка
+# (internal/oldcopy/zapret_bin.txt, вшит в exe): он должен совпадать с выпуском.
+if ! diff <(ls "$OUT/zapret/bin" | LC_ALL=C sort) <(LC_ALL=C sort internal/oldcopy/zapret_bin.txt) >/dev/null; then
+  echo "состав zapret\bin изменился: ls $OUT/zapret/bin > internal/oldcopy/zapret_bin.txt и собрать заново"; exit 1
+fi
 
 cp README-RU.txt LICENSES.txt "$OUT/"
 cp TESTER-RU.txt dist/ # памятка тестеру рядом с выпуском (в zip и установщик не входит)

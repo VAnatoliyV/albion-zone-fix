@@ -19,6 +19,9 @@ import (
 // задача автозапуска, системные папки.
 func System(logf func(string, ...any)) Env {
 	e := Env{Procs: procs, TaskExe: autostart.Installed, Self: windows.GetCurrentProcessId(), Logf: logf}
+	if exe, err := os.Executable(); err == nil {
+		e.SelfExe = exe
+	}
 	for _, id := range []*windows.KNOWNFOLDERID{windows.FOLDERID_ProgramFiles, windows.FOLDERID_ProgramFilesX86,
 		windows.FOLDERID_ProgramData, windows.FOLDERID_UserProfiles, windows.FOLDERID_Profile} {
 		if p, err := windows.KnownFolderPath(id, 0); err == nil {
@@ -36,6 +39,10 @@ func System(logf func(string, ...any)) Env {
 	if p := os.Getenv("SystemRoot"); p != "" {
 		e.Under = append(e.Under, p)
 	}
+	// Распакованное обновление (-apply-update идёт оттуда) — не старая копия.
+	if p, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0); err == nil {
+		e.Under = append(e.Under, filepath.Join(p, "Albion Journal", "update"))
+	}
 	return e
 }
 
@@ -46,12 +53,19 @@ func procs() ([]Proc, error) {
 		return nil, err
 	}
 	defer windows.CloseHandle(snap)
+	// Только свой сеанс: копии других вошедших пользователей не трогаем.
+	var mine uint32
+	windows.ProcessIdToSessionId(windows.GetCurrentProcessId(), &mine)
 	var out []Proc
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		name := windows.UTF16ToString(e.ExeFile[:])
 		if !strings.EqualFold(name, ExeName) && !strings.EqualFold(name, RecvName) && !strings.EqualFold(name, BypassName) {
+			continue
+		}
+		var sess uint32
+		if windows.ProcessIdToSessionId(e.ProcessID, &sess) != nil || sess != mine {
 			continue
 		}
 		if img, _, ok := procutil.Inspect(int(e.ProcessID)); ok {
@@ -106,12 +120,13 @@ type WinCloser struct{}
 func (WinCloser) Soft(p Proc) {
 	deadline := time.Now().Add(softTotal)
 	for _, h := range windowsOf(p.PID) {
-		if time.Now().After(deadline) {
+		left := time.Until(deadline).Milliseconds()
+		if left <= 0 {
 			return
 		}
 		var res uintptr
 		pSendMessageTimeoutW.Call(uintptr(h), wmEndSession, 1, 0, smtoAbortIfHung|smtoBlock,
-			softPerWindowMS, uintptr(unsafe.Pointer(&res)))
+			uintptr(min(left, softPerWindowMS)), uintptr(unsafe.Pointer(&res)))
 	}
 }
 

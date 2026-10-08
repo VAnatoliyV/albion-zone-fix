@@ -503,14 +503,18 @@ func oldLog() (func(string, ...any), func()) {
 	}, func() { f.Close() }
 }
 
-// runFindOld: код выхода — число найденных старых копий (0 — нет).
+// runFindOld: код выхода — 100 + число найденных старых копий (100 — нет).
+// Остальные коды (паника Go — 2, ошибка флагов, сбой) установщик считает
+// ошибкой и молча пропускает шаг.
 func runFindOld(inst string) int {
 	logf, done := oldLog()
 	defer done()
 	n := len(oldcopy.Find(inst, oldcopy.System(logf)))
 	logf("установщик (%s): старых копий %d", inst, n)
-	return min(n, 100)
+	return findOldCode(n)
 }
+
+func findOldCode(n int) int { return 100 + min(n, 99) }
 
 // runRemoveOld закрывает и удаляет старые копии; 0 — все убраны.
 func runRemoveOld(inst string) int {

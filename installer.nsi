@@ -75,6 +75,8 @@ LangString T_CLOSE ${LANG_ENGLISH} "Albion Journal is running. Close it (tray ic
 LangString T_CLOSE ${LANG_RUSSIAN} "Albion Journal сейчас запущен. Закройте его (значок в трее -> Выход) и нажмите «Повторить»."
 LangString T_OLD ${LANG_ENGLISH} "Found an old copy of Albion Journal in another folder (for example, an unpacked archive in Downloads). Close it and delete its files? Settings, session and prices will be kept."
 LangString T_OLD ${LANG_RUSSIAN} "Найдена старая копия Albion Journal в другой папке (например, распакованный архив в «Загрузках»). Закрыть её и удалить её файлы? Настройки, сессия и цены сохранятся."
+LangString T_OLDFAIL ${LANG_ENGLISH} "Could not fully remove the old copy. Close it (tray icon -> Exit) and delete its folder by hand. Details are in the log: %AppData%\Albion Journal\albion-journal.log (lines [старая копия])."
+LangString T_OLDFAIL ${LANG_RUSSIAN} "Старую копию убрать до конца не вышло. Закройте её (значок в трее -> Выход) и удалите её папку вручную. Подробности — в журнале %AppData%\Albion Journal\albion-journal.log (строки [старая копия])."
 LangString T_DATA ${LANG_ENGLISH} "Also delete settings and logs ($APPDATA\${APP})?$\r$\n$\r$\nChoose No to keep them."
 LangString T_DATA ${LANG_RUSSIAN} "Удалить также настройки и журналы ($APPDATA\${APP})?$\r$\n$\r$\nВыберите «Нет», чтобы оставить их."
 
@@ -151,13 +153,20 @@ Section "Install"
 
   ; Старая копия в другой папке (распакованный zip): запущенная, она держит
   ; знак «уже запущена», и новая показывает её окно. Ищет и убирает сама
-  ; программа (internal/oldcopy): код выхода -find-old — число найденных;
-  ; -remove-old ищет заново (пути через установщик не передаются).
-  StrCpy $0 0 ; не запустилась — как «не найдено»
+  ; программа (internal/oldcopy): код выхода -find-old — 100 + число
+  ; найденных; любой другой (паника, сбой, не запустилась) — шаг пропускаем.
+  ; -remove-old ищет заново (пути через установщик не передаются), 0 — убрано.
+  StrCpy $0 0
   ExecWait '"$INSTDIR\AlbionJournal.exe" -find-old "$INSTDIR"' $0
-  ${If} $0 > 0
-    MessageBox MB_YESNO|MB_ICONQUESTION "$(T_OLD)" /SD IDYES IDNO +2
+  ${If} $0 > 100
+  ${AndIf} $0 < 200
+    MessageBox MB_YESNO|MB_ICONQUESTION "$(T_OLD)" /SD IDYES IDNO old_done
+    StrCpy $0 1
     ExecWait '"$INSTDIR\AlbionJournal.exe" -remove-old "$INSTDIR"' $0
+    ${If} $0 != 0
+      MessageBox MB_OK|MB_ICONEXCLAMATION "$(T_OLDFAIL)" /SD IDOK
+    ${EndIf}
+    old_done:
   ${EndIf}
 
   CreateDirectory "$SMPROGRAMS\${APP}"

@@ -45,3 +45,11 @@ func TestAskShowReportsFailure(t *testing.T) {
 		t.Fatal("отказ первой копии (403) должен быть ошибкой")
 	}
 }
+
+func TestFindOldCode(t *testing.T) {
+	// 0 и 1–2 — коды паники и ошибки флагов: их установщик не должен
+	// принять за число копий.
+	if findOldCode(0) != 100 || findOldCode(2) != 102 || findOldCode(500) != 199 {
+		t.Fatalf("коды: %d %d %d", findOldCode(0), findOldCode(2), findOldCode(500))
+	}
+}
