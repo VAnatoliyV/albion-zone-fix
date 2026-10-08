@@ -41,7 +41,7 @@ type Snap struct {
 // мигнуть, текст мог прочитаться плохо — ещё снимки и варианты картинки,
 // пока не выйдет уверенно или не кончится время.
 const (
-	RetryBudget = 800 * time.Millisecond // новый шаг после этого не начинаем
+	RetryBudget = 550 * time.Millisecond // новый шаг после этого не начинаем
 	RetryGap    = 120 * time.Millisecond // между снимками
 	RetryShots  = 3                      // снимков на нажатие, не больше
 )
@@ -298,8 +298,18 @@ func (r *Runner) run(ctx context.Context, at time.Time) Shot {
 		empty            string
 		lastCap          time.Time
 	)
+	var loose []Shot // порталы с нестрогим временем — для подтверждения повтором
 	keep := func(s Shot, try string) bool {
 		s.Try = try
+		if s.Kind == "" && s.Result.Portal && !s.Result.Doubtful() && s.Result.Tooltip.TimeLoose {
+			if confirmLoose(loose, s) {
+				s.Result.Tooltip.TimeLoose = false
+				try += " (время подтверждено)"
+				s.Try = try
+			} else {
+				loose = append(loose, s)
+			}
+		}
 		tries = append(tries, try+" "+shotWord(s))
 		if !have || Quality(s) > Quality(best) {
 			best, have = s, true
@@ -449,6 +459,31 @@ func Good(s Shot) bool {
 		return z != nil && !z.Road
 	}
 	return s.Result.Tooltip.Left > 0 && !s.Result.Tooltip.TimeLoose
+}
+
+// confirmLoose — нестрогое время подтверждено, если на другом снимке этого
+// же нажатия та же зона и то же время (±90 с: снимки идут с разницей в доли
+// секунды, а OCR путает только единицы, не цифры одинаково дважды).
+func confirmLoose(prev []Shot, s Shot) bool {
+	z := s.Result.Zone()
+	if z == nil {
+		return false
+	}
+	shot := func(try string) string { return strings.SplitN(try, " ", 2)[0] } // «2/3»
+	for _, p := range prev {
+		pz := p.Result.Zone()
+		if pz == nil || pz.Code != z.Code || shot(p.Try) == shot(s.Try) {
+			continue // вариант той же картинки ошибается так же — не подтверждение
+		}
+		d := p.Result.Tooltip.Left - s.Result.Tooltip.Left
+		if d < 0 {
+			d = -d
+		}
+		if d <= 90*time.Second {
+			return true
+		}
+	}
+	return false
 }
 
 // Quality — оценка итога для выбора среди повторов: удачное опознание

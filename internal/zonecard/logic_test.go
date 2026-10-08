@@ -538,3 +538,38 @@ func TestRunnerLogsReadLinesOnFailure(t *testing.T) {
 		t.Fatalf("журнал: %s", all)
 	}
 }
+
+// Нестрогое время на двух снимках одного нажатия совпало — значит, прочитано
+// верно: портал можно отправлять (журнал тестера: «ok, ok, ok» и noTime).
+func TestRunnerLooseTimeConfirmedByRepeat(t *testing.T) {
+	loose := []string{"Путь Авалона в", "Qiient-Al-Vynsis", "Закроется через 6 q 17 N"}
+	r, calls, _ := retryRunner(t, map[string][]string{"/d/zone-capture.png": loose, "/d/zone-capture-2.png": loose}, nil)
+	s := r.Run(context.Background())
+	if s.Kind != "" || !s.Result.Portal || s.Result.Tooltip.TimeLoose || s.Result.Tooltip.Left != 6*time.Hour+17*time.Minute {
+		t.Fatalf("%+v (попытки %v)", s.Result.Tooltip, s.Tries)
+	}
+	if !Good(s) {
+		t.Fatal("подтверждённое повтором время должно давать готовый итог")
+	}
+	_ = calls
+}
+
+func TestRunnerLooseTimeDisagreementStaysLoose(t *testing.T) {
+	a := []string{"Путь Авалона в", "Qiient-Al-Vynsis", "Закроется через 6 q 17 N"}
+	b := []string{"Путь Авалона в", "Qiient-Al-Vynsis", "Закроется через 2 q 47 N"}
+	r, _, _ := retryRunner(t, map[string][]string{"/d/zone-capture.png": a, "/d/zone-capture-2.png": b, "/d/zone-capture-3.png": b[:2]}, nil)
+	s := r.Run(context.Background())
+	if s.Kind == "" && s.Result.Portal && !s.Result.Tooltip.TimeLoose {
+		t.Fatalf("разное время на снимках не должно подтверждаться: %+v", s.Result.Tooltip)
+	}
+}
+
+func TestRunnerLooseTimeNotConfirmedByVariantOfSameShot(t *testing.T) {
+	loose := []string{"Путь Авалона в", "Qiient-Al-Vynsis", "Закроется через 6 q 17 N"}
+	// Цвет и серый одного снимка дают одно и то же — это не подтверждение.
+	r, _, _ := retryRunner(t, map[string][]string{"/d/zone-capture.png": loose, "/d/zone-capture-gray.png": loose}, nil)
+	s := r.Run(context.Background())
+	if s.Kind == "" && !s.Result.Tooltip.TimeLoose {
+		t.Fatalf("подтверждено вариантом той же картинки: %v", s.Tries)
+	}
+}
