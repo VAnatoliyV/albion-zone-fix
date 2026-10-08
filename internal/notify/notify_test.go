@@ -44,3 +44,14 @@ func TestPNGFromICO(t *testing.T) {
 		t.Fatal("мусор")
 	}
 }
+
+func TestScriptASCII(t *testing.T) {
+	for i, r := range Script {
+		if r > 127 {
+			t.Fatalf("не ASCII в скрипте на %d", i)
+		}
+	}
+	if !strings.Contains(Script, "AJ_TOAST_XML") || !strings.Contains(Script, "AJ_TOAST_APP") {
+		t.Fatal(Script)
+	}
+}

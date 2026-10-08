@@ -4,23 +4,16 @@ package notify
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"albionzonefix/internal/ocr"
 
 	"golang.org/x/sys/windows/registry"
 )
-
-const script = `$ErrorActionPreference = 'Stop'
-$null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-$null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
-$x = New-Object Windows.Data.Xml.Dom.XmlDocument
-$x.LoadXml($env:AJ_TOAST_XML)
-$t = New-Object Windows.UI.Notifications.ToastNotification $x
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:AJ_TOAST_APP).Show($t)
-`
 
 var (
 	mu    sync.Mutex
@@ -83,8 +76,21 @@ func show(title, subtitle, body string) {
 	mu.Lock()
 	id := appID
 	mu.Unlock()
-	out, err := ocr.RunScript(context.Background(), script, []string{"AJ_TOAST_XML=" + XML(title, subtitle, body), "AJ_TOAST_APP=" + id})
+	x := XML(title, subtitle, body)
+	run := func(app string) error {
+		out, err := ocr.RunScript(context.Background(), Script, []string{"AJ_TOAST_XML=" + x, "AJ_TOAST_APP=" + app})
+		if err != nil {
+			return fmt.Errorf("%v %s", err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	err := run(id)
+	if err != nil && id != PowerShellAppID {
+		// Свой AUMID не сработал — ещё раз от имени Windows PowerShell.
+		logf("уведомление от %s не показано (%v), пробую от имени Windows PowerShell", id, err)
+		err = run(PowerShellAppID)
+	}
 	if err != nil {
-		logf("уведомление не показано: %v %s", err, string(out))
+		logf("уведомление не показано: %v", err)
 	}
 }

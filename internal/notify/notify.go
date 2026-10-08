@@ -10,8 +10,9 @@
 // без ярлыка и без COM. Ставит его сама программа при запуске (а не
 // установщик): установщик NSIS без сторонних плагинов не умеет записать
 // AUMID в ярлык, а ключ в реестре работает и для zip без установки.
-// Не вышло записать ключ — уведомление идёт от имени Windows PowerShell
-// (его AUMID зарегистрирован всегда), это видно в журнале.
+// Не вышло записать ключ или Windows не приняла наш AUMID при показе —
+// уведомление повторяется от имени Windows PowerShell (его AUMID
+// зарегистрирован всегда), это видно в журнале.
 //
 // Здесь — XML уведомления и значок (проверяется на маке); показ — в
 // notify_windows.go через PowerShell (WinRT), как OCR.
@@ -22,6 +23,23 @@ import (
 	"encoding/binary"
 	"strings"
 )
+
+// Script — показать уведомление: XML и AUMID — в переменных среды
+// AJ_TOAST_XML и AJ_TOAST_APP (через стандартный ввод PowerShell, как OCR;
+// только ASCII). Ошибка WinRT (AUMID не принят) — код выхода не 0.
+const Script = `$ErrorActionPreference = 'Stop'
+try {
+  $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+  $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+  $x = New-Object Windows.Data.Xml.Dom.XmlDocument
+  $x.LoadXml($env:AJ_TOAST_XML)
+  $t = New-Object Windows.UI.Notifications.ToastNotification $x
+  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:AJ_TOAST_APP).Show($t)
+} catch {
+  [Console]::Out.WriteLine([string]$_.Exception.Message)
+  exit 1
+}
+`
 
 // AppID — AppUserModelID программы.
 const AppID = "VAnatoliyV.AlbionJournal"

@@ -27,15 +27,15 @@ func PowerShell() string {
 	return filepath.Join(dir, "WindowsPowerShell", "v1.0", "powershell.exe")
 }
 
-// RunScript запускает PowerShell со скриптом script и переменными env,
+// RunScript запускает PowerShell со скриптом script (через стандартный ввод) и переменными env,
 // без окна, в объекте задания программы, с таймаутом (процесс убивается).
 // Отдаёт стандартный вывод.
 func RunScript(ctx context.Context, script string, env []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, PowerShell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-EncodedCommand", Encode(script))
+	cmd := exec.CommandContext(ctx, PowerShell(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-")
 	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdin = strings.NewReader(Stdin(script))
 	procutil.Hide(cmd)
 	var out, errOut strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errOut

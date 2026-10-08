@@ -1,8 +1,12 @@
 // Пакет ocr — распознавание текста встроенным OCR Windows
 // (Windows.Media.Ocr) через PowerShell 5.1, который есть в каждой Windows
 // 10/11. Без CGO и без Tesseract: скрипт зашит в программу и передаётся
-// через -EncodedCommand (не файлом — программа работает с правами
-// администратора, а файл в папке пользователя мог бы подменить кто угодно).
+// PowerShell через стандартный ввод (`-Command -`): не файлом — программа
+// работает с правами администратора, а файл в папке пользователя мог бы
+// подменить кто угодно; и не -EncodedCommand с -ExecutionPolicy Bypass —
+// так выглядят вредоносные загрузчики, и антивирусы на это злятся.
+// Политика выполнения касается только файлов скриптов, ввод команд она не
+// ограничивает. Параметры — через переменные среды.
 //
 // Здесь — скрипт и разбор его вывода (проверяется на маке); запуск — в
 // ocr_windows.go.
@@ -11,12 +15,10 @@ package ocr
 import (
 	"bufio"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
 	"time"
-	"unicode/utf16"
 )
 
 // Timeout — сколько ждём PowerShell: запуск с загрузкой WinRT — 1–2 с,
@@ -75,14 +77,12 @@ try {
 }
 `
 
-// Encode — скрипт для -EncodedCommand: base64 от UTF-16LE.
-func Encode(script string) string {
-	u := utf16.Encode([]rune(script))
-	b := make([]byte, 2*len(u))
-	for i, c := range u {
-		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
-	}
-	return base64.StdEncoding.EncodeToString(b)
+// Stdin — скрипт для `powershell -Command -`. PowerShell читает ввод
+// построчно, как с клавиатуры: многострочная конструкция (try/catch)
+// завершается пустой строкой, поэтому в конце их две. Ввод читается в
+// кодировке консоли (OEM), поэтому скрипты — только ASCII (тест).
+func Stdin(script string) string {
+	return strings.ReplaceAll(script, "\r\n", "\n") + "\n\n"
 }
 
 // Output — разобранный вывод скрипта.

@@ -204,9 +204,13 @@ func BuildToast(lang string, z *Zone, r Result, o ToastOptions, now time.Time) T
 			other = append(other, strings.Join(tail, " · "))
 		}
 	}
-	order := append(chests, res...)
+	first, second := chests, res
 	if !o.ChestsFirst {
-		order = append(res, chests...)
+		first, second = res, chests
 	}
-	return Toast{Title: z.Name, Subtitle: Subtitle(lang, z, true), Body: strings.Join(append(order, other...), "\n")}
+	lines := make([]string, 0, len(chests)+len(res)+len(other))
+	lines = append(lines, first...)
+	lines = append(lines, second...)
+	lines = append(lines, other...)
+	return Toast{Title: z.Name, Subtitle: Subtitle(lang, z, true), Body: strings.Join(lines, "\n")}
 }

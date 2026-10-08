@@ -1,12 +1,10 @@
 package ocr
 
 import (
-	"encoding/base64"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
-	"unicode/utf16"
 )
 
 // Фикстура — вывод скрипта в том виде, в каком его отдаёт PowerShell 5.1:
@@ -59,21 +57,16 @@ func TestPickAndHint(t *testing.T) {
 	}
 }
 
-func TestEncodeAndScript(t *testing.T) {
-	b, err := base64.StdEncoding.DecodeString(Encode("Путь $x"))
-	if err != nil || len(b)%2 != 0 {
-		t.Fatal(err)
+func TestStdinAndScript(t *testing.T) {
+	in := Stdin("a\r\nb")
+	if in != "a\nb\n\n" {
+		t.Fatalf("%q", in)
 	}
-	u := make([]uint16, len(b)/2)
-	for i := range u {
-		u[i] = uint16(b[2*i]) | uint16(b[2*i+1])<<8
-	}
-	if string(utf16.Decode(u)) != "Путь $x" {
-		t.Fatal(string(utf16.Decode(u)))
-	}
-	// Командная строка Windows — до 32767 знаков: скрипт должен влезать с запасом.
-	if n := len(Encode(Script)); n > 20000 {
-		t.Fatalf("скрипт слишком длинный: %d", n)
+	// Ввод PowerShell читает в кодировке консоли: в скрипте только ASCII.
+	for i, r := range Script {
+		if r > 127 {
+			t.Fatalf("не ASCII в скрипте на %d: %q", i, string(r))
+		}
 	}
 	for _, s := range []string{"IAsyncOperation`1", "AJ_OCR_PATH", "AJ_OCR_LANGS", "UTF8Encoding $false", "TryCreateFromLanguage"} {
 		if !strings.Contains(Script, s) {
