@@ -35,7 +35,19 @@ const (
 	ModAlt
 	ModShift
 	ModWin
+	// ModAltGr — нажат AltGr (правый Alt на европейских раскладках): Windows
+	// подмешивает к нему левый Ctrl, но это не Ctrl+Alt, а набор символа
+	// (AltGr+2 — «@» в испанской). Ctrl и Alt при нём не считаются.
+	ModAltGr
 )
+
+// realMods — модификаторы без AltGr и подмешанных им Ctrl+Alt.
+func realMods(m uint8) uint8 {
+	if m&ModAltGr != 0 {
+		m &^= ModCtrl | ModAlt
+	}
+	return m &^ ModAltGr
+}
 
 var modNames = []struct {
 	bit  uint8
@@ -70,7 +82,7 @@ const (
 
 // keyNames — имена клавиш в строке кнопки (кроме букв, цифр и F-клавиш).
 var keyNames = map[uint32]string{
-	0x08: "backspace", 0x09: "tab", 0x0D: "enter", vkPause: "pause", 0x14: "capslock",
+	0x03: "break", 0x08: "backspace", 0x09: "tab", 0x0D: "enter", vkPause: "pause", 0x14: "capslock",
 	vkEsc: "esc", 0x20: "space", vkPageUp: "pageup", vkPageDown: "pagedown", 0x23: "end", 0x24: "home",
 	0x25: "left", 0x26: "up", 0x27: "right", 0x28: "down", vkInsert: "insert", 0x2E: "delete",
 	0x6A: "num*", 0x6B: "num+", 0x6D: "num-", 0x6E: "num.", 0x6F: "num/", 0x90: "numlock", vkScroll: "scrolllock",
@@ -302,6 +314,9 @@ func mouseButton(msg uintptr, mouseData uint32) int {
 // MatchMouse — событие мыши msg (wParam хука) с mouseData и flags
 // (MSLLHOOKSTRUCT) — нажатие выбранной кнопки. Подделанные нажатия не берём.
 func MatchMouse(k Key, msg uintptr, mouseData, flags uint32) bool {
+	if msg != wmMButtonDown && msg != wmXButtonDn { // движение и прочее — сразу мимо
+		return false
+	}
 	b := k.Mouse()
 	return b != 0 && flags&llmhfInjected == 0 && mouseButton(msg, mouseData) == b
 }
@@ -315,12 +330,23 @@ func MatchKey(k Key, msg uintptr, vk, flags uint32, mods uint8) bool {
 	if c.VK == 0 || !isKeyDown(msg) || vk != c.VK || flags&llkhfInjected != 0 {
 		return false
 	}
-	return c.Mods == 0 || c.Mods == mods
+	return c.Mods == 0 || c.Mods == realMods(mods)
 }
 
 // Repeat отличает новое нажатие от автоповтора удержанной клавиши: хук
 // получает keydown на каждый повтор, отдельного флага у него нет.
-type Repeat struct{ down map[uint32]bool }
+//
+// Отпускание хук может и не увидеть (хук сняли раньше, Win+L, UAC, окно
+// с правами администратора) — тогда клавиша «держалась» бы вечно. Поэтому
+// при повторе спрашиваем Held: внутри низкоуровневого хука
+// GetAsyncKeyState ещё показывает состояние до этого события — при
+// автоповторе клавиша зажата, а после потерянного отпускания — нет.
+type Repeat struct {
+	down map[uint32]bool
+	// Held — клавиша физически зажата (до текущего события); nil — не
+	// проверять.
+	Held func(vk uint32) bool
+}
 
 // Down — клавиша нажата; true — это новое нажатие, false — повтор.
 func (r *Repeat) Down(vk uint32) bool {
@@ -328,6 +354,9 @@ func (r *Repeat) Down(vk uint32) bool {
 		r.down = map[uint32]bool{}
 	}
 	if r.down[vk] {
+		if r.Held != nil && !r.Held(vk) {
+			return true // отпускание потерялось — это новое нажатие
+		}
 		return false
 	}
 	r.down[vk] = true
@@ -376,6 +405,7 @@ func DecideKey(msg uintptr, vk, flags uint32, mods uint8) (Verdict, Key) {
 	if vk == vkEsc {
 		return Cancel, ""
 	}
+	mods = realMods(mods)
 	if mods == 0 && !BareOK(vk) {
 		return NeedMod, ""
 	}

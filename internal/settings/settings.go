@@ -61,6 +61,11 @@ type Settings struct {
 	// углы), как Skin у мака. В старом файле без ключа — обычное.
 	Skin string `json:"skin"`
 	// LogoAnim — живой кролик в шапке (logoAnim у мака); выключен — значок.
+	// ThemeV2 — разовый переход на обычное оформление уже сделан. В файлах
+	// до него skin всегда "pixel" (так писала любая запись настроек с 1.0.2),
+	// поэтому при первом чтении без этого ключа ставим обычное; дальше
+	// выбор пользователя не трогаем.
+	ThemeV2  bool `json:"themeV2"`
 	LogoAnim bool `json:"logoAnim"`
 	// ResetOnZone — обнулять урон при смене зоны (resetOnZone у мака). Сам
 	// сброс делает форк сборщика при входе в зону: он читает файл
@@ -95,7 +100,7 @@ func (s Settings) WatchGame() bool { return s.ShowWithGame || s.StartWithGame ||
 func Default() Settings {
 	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true,
 		ZoneKey: "xbutton1", ZoneNotify: true, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
-		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPlain, LogoAnim: true}
+		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPlain, ThemeV2: true, LogoAnim: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.
@@ -112,6 +117,15 @@ func Open(dir string) *Store {
 		v := Default()
 		if json.Unmarshal(b, &v) == nil {
 			s.cur = v
+			var keys map[string]json.RawMessage
+			if json.Unmarshal(b, &keys) == nil {
+				if _, ok := keys["themeV2"]; !ok {
+					v.Skin, v.ThemeV2 = SkinPlain, true
+					if s.Set(v) != nil {
+						s.cur = v // не записалось — хотя бы на этот запуск
+					}
+				}
+			}
 		}
 	}
 	return s

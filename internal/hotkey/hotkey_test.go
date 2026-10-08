@@ -169,3 +169,50 @@ func TestDecide(t *testing.T) {
 		}
 	}
 }
+
+// Отпускание потерялось (хук сняли, Win+L, UAC): при следующем нажатии
+// клавиша физически не зажата — это новое нажатие, а не повтор.
+func TestRepeatLostKeyUp(t *testing.T) {
+	held := map[uint32]bool{}
+	r := Repeat{Held: func(vk uint32) bool { return held[vk] }}
+	if !r.Down(vkEsc) {
+		t.Fatal("первое нажатие")
+	}
+	held[vkEsc] = true // держит — автоповтор
+	if r.Down(vkEsc) {
+		t.Fatal("автоповтор — не новое нажатие")
+	}
+	held[vkEsc] = false // отпустил, но хук этого не видел
+	if !r.Down(vkEsc) {
+		t.Fatal("после потерянного отпускания — новое нажатие")
+	}
+}
+
+// AltGr (правый Alt с подмешанным Ctrl) — набор символа, а не Ctrl+Alt.
+func TestAltGr(t *testing.T) {
+	altGr := ModCtrl | ModAlt | ModAltGr
+	if v, _ := DecideKey(wmKeyDown, '2', 0, altGr); v != NeedMod {
+		t.Errorf("AltGr+2 («@») — нужен модификатор, а не ctrl+alt+2: %v", v)
+	}
+	if v, k := DecideKey(wmKeyDown, 0x76, 0, altGr); v != Accept || k != "f7" {
+		t.Errorf("AltGr+F7 — просто F7: %v %q", v, k)
+	}
+	if v, k := DecideKey(wmKeyDown, 'E', 0, altGr|ModShift); v != Accept || k != "shift+e" {
+		t.Errorf("Shift+AltGr+E: %v %q", v, k)
+	}
+	if v, k := DecideKey(wmKeyDown, 'E', 0, ModCtrl|ModAlt); v != Accept || k != "ctrl+alt+e" {
+		t.Errorf("настоящий Ctrl+Alt+E: %v %q", v, k)
+	}
+	if MatchKey("ctrl+alt+e", wmKeyDown, 'E', 0, altGr) || !MatchKey("ctrl+alt+e", wmKeyDown, 'E', 0, ModCtrl|ModAlt) {
+		t.Error("ctrl+alt+e не срабатывает от AltGr+E («€»), но срабатывает от Ctrl+Alt+E")
+	}
+}
+
+func TestCtrlBreak(t *testing.T) {
+	if v, k := DecideKey(wmKeyDown, 0x03, 0, ModCtrl); v != Accept || k != "ctrl+break" {
+		t.Fatalf("Ctrl+Pause приходит как VK_CANCEL: %v %q", v, k)
+	}
+	if Key("ctrl+break").Label() != "Ctrl+Break" || Normalize("ctrl+break") != "ctrl+break" || Normalize("break") != Default {
+		t.Fatal("подпись и разбор Ctrl+Break")
+	}
+}

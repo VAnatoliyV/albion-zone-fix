@@ -78,12 +78,14 @@ var (
 
 // modsNow — какие модификаторы сейчас зажаты (физически). Alt берём ещё и
 // из флага события: у Alt+клавиши он надёжнее.
+// AltGr — правый Alt вместе с подмешанным Windows левым Ctrl (без
+// левого Alt и правого Ctrl).
 func modsNow(kbFlags uint32) uint8 {
-	down := func(vk uintptr) bool {
-		r, _, _ := pGetAsyncKeyState.Call(vk)
-		return r&0x8000 != 0
-	}
+	down := func(vk uintptr) bool { return asyncDown(uint32(vk)) }
 	var m uint8
+	if down(0xA5) && !down(0xA4) && down(0xA2) && !down(0xA3) {
+		m |= ModAltGr
+	}
 	if down(0x11) {
 		m |= ModCtrl
 	}
@@ -97,6 +99,12 @@ func modsNow(kbFlags uint32) uint8 {
 		m |= ModWin
 	}
 	return m
+}
+
+// asyncDown — клавиша физически зажата (в хуке — до текущего события).
+func asyncDown(vk uint32) bool {
+	r, _, _ := pGetAsyncKeyState.Call(uintptr(vk))
+	return r&0x8000 != 0
 }
 
 func send(ch chan struct{}) {
@@ -219,7 +227,7 @@ func Start(k Key, fire func(), logf func(string, ...any)) (*Hook, error) {
 	}
 	ch := make(chan struct{}, 1)
 	curMu.Lock()
-	curKey, curFire, curRep = c.String(), ch, Repeat{}
+	curKey, curFire, curRep = c.String(), ch, Repeat{Held: asyncDown}
 	curMu.Unlock()
 	h := &Hook{fire: ch, done: make(chan struct{})}
 	go func() {
@@ -277,7 +285,7 @@ func Record(ctx context.Context, timeout time.Duration, hint func(string), logf 
 	defer recMu.Unlock()
 	rc := make(chan recEvent, 4)
 	curMu.Lock()
-	recCh = rc
+	recCh, curRep = rc, Repeat{Held: asyncDown} // зажатое с прошлого раза не в счёт
 	curMu.Unlock()
 	defer func() {
 		curMu.Lock()

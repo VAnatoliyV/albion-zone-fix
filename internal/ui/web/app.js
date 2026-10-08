@@ -453,7 +453,7 @@ function clockLeft(sec) {
 // Подпись кнопки карточки: мышь — словами, клавиша — «Ctrl+Q», «F7».
 const KEY_MODS = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win' };
 const KEY_NAMES = { pageup: 'Page Up', pagedown: 'Page Down', scrolllock: 'Scroll Lock', capslock: 'Caps Lock', numlock: 'Num Lock',
-  insert: 'Insert', delete: 'Delete', home: 'Home', end: 'End', pause: 'Pause', esc: 'Esc', space: 'Space', enter: 'Enter',
+  insert: 'Insert', delete: 'Delete', break: 'Break', home: 'Home', end: 'End', pause: 'Pause', esc: 'Esc', space: 'Space', enter: 'Enter',
   tab: 'Tab', backspace: 'Backspace', left: '←', right: '→', up: '↑', down: '↓',
   vkba: ';', vkbb: '=', vkbc: ',', vkbd: '-', vkbe: '.', vkbf: '/', vkc0: '`', vkdb: '[', vkdc: '\\', vkdd: ']', vkde: "'" };
 function keyLabel(k) {
@@ -682,6 +682,8 @@ $('zoneKeyRec').onclick = async () => {
   renderKeyRec();
   pollKeyRec();
 };
+// Страницу перезагрузили посреди записи — подхватываем её.
+getJSON('/api/hotkey/record').then(st => { if (st.active) { KR.seq = st.seq; KR.active = true; pollKeyRec(); } }).catch(() => {});
 $('zoneKeyOff').onclick = async () => { KR.res = ''; await saveSettings({ zoneKey: 'off' }); refresh(); };
 $('ntOrder').addEventListener('click', async e => {
   const b = e.target.closest('button');

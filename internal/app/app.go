@@ -409,6 +409,7 @@ func (a *App) SetSettings(s settings.Settings) error {
 	// Номер установки страница не меняет: берём сохранённый.
 	a.installMu.Lock()
 	s.MapInstall = a.settings.Get().MapInstall
+	s.ThemeV2 = true // переход на обычное оформление уже сделан (settings.Open)
 	err := a.settings.Set(s)
 	a.installMu.Unlock()
 	if err != nil {
