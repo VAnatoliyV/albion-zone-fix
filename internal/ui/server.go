@@ -65,6 +65,9 @@ type Options struct {
 	OnUpdateRestart func() error
 	// SupportInfo — текст «Скопировать сведения для поддержки».
 	SupportInfo func() string
+	// WindowHidden — окно спрятано в трей или свёрнуто (кролик стоит);
+	// nil — окна нет (браузер сам скажет через document.hidden).
+	WindowHidden func() bool
 }
 
 // Updater — то, что странице нужно от update.Updater.
@@ -93,6 +96,8 @@ type PageState struct {
 	Version   string `json:"version"`
 	// Update — состояние автообновления; nil — обновлений нет.
 	Update *update.Status `json:"update,omitempty"`
+	// WindowHidden — окно программы спрятано или свёрнуто.
+	WindowHidden bool `json:"windowHidden"`
 }
 
 // SessionReply — вкладка «Сессия»: настройка, работает ли счётчик и данные.
@@ -300,6 +305,9 @@ func (s *Server) state() PageState {
 	if s.o.Update != nil {
 		u := s.o.Update.Status()
 		st.Update = &u
+	}
+	if s.o.WindowHidden != nil {
+		st.WindowHidden = s.o.WindowHidden()
 	}
 	st.Receiver = receiver.Up(s.o.ReceiverAddr)
 	st.SiteReady = st.Receiver && receiver.SiteReady(s.o.LogPath)

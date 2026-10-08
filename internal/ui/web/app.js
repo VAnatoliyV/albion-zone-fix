@@ -556,19 +556,23 @@ $('znSettings').onclick = () => openSettings();
 // --- оформление и кролик ------------------------------------------------------
 
 // Тема меняется сразу, без перезапуска: переменные цветов и шрифтов висят
-// на <html data-skin>. Кролик не крутится, пока окно спрятано в трей.
+// на <html data-skin>. Кролик не крутится, пока окно спрятано в трей или
+// свёрнуто: об этом говорит программа (windowHidden в /api/state и сразу —
+// window.ajVisible), потому что WebView2 спрятанную страницу скрытой не
+// считает. document.hidden — для браузера в режиме без WebView2.
 function applyLook() {
   if (!S) return;
   const st = S.settings;
   const skin = st.skin === 'plain' ? 'plain' : 'pixel';
   if (document.documentElement.dataset.skin !== skin) document.documentElement.dataset.skin = skin;
-  const still = !st.logoAnim || document.hidden;
+  const still = !st.logoAnim || S.windowHidden || document.hidden;
   const src = still ? 'rabbit.png' : 'rabbit.gif';
   const r = $('rabbit');
   if (!r.src.endsWith('/' + src)) r.src = src;
   r.classList.toggle('still', !st.logoAnim);
 }
 document.addEventListener('visibilitychange', applyLook);
+window.ajVisible = v => { if (S) { S.windowHidden = !v; applyLook(); } };
 
 // --- настройки ----------------------------------------------------------------
 

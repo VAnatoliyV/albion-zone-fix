@@ -33,7 +33,11 @@ var (
 	pGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
 	pFindWindowW         = user32.NewProc("FindWindowW")
 	pDestroyWindow       = user32.NewProc("DestroyWindow")
-	pSetWindowPos        = user32.NewProc("SetWindowPos")
+	pGetForegroundWindow = user32.NewProc("GetForegroundWindow")
+	pGetWindowThreadPID  = user32.NewProc("GetWindowThreadProcessId")
+	pAttachThreadInput   = user32.NewProc("AttachThreadInput")
+	pBringWindowToTop    = user32.NewProc("BringWindowToTop")
+	pIsWindowVisible     = user32.NewProc("IsWindowVisible")
 )
 
 const (
@@ -45,10 +49,8 @@ const (
 	wmSetIcon       = 0x0080
 	swHide          = 0
 	swShow          = 5
-	swShowNoActive  = 4 // SW_SHOWNOACTIVATE: показать (и развернуть), не забирая фокус
-	swpNoSize       = 0x0001
-	swpNoMove       = 0x0002
-	swpNoActivate   = 0x0010
+	wmSize          = 0x0005
+	sizeMinimized   = 1
 	swRestore       = 9
 	imageIcon       = 1
 	lrLoadFromFile  = 0x10
@@ -93,6 +95,7 @@ func (d *Desktop) Run() {
 	quit := d.quit
 	d.mu.Unlock()
 	if quit {
+		d.markReady()
 		return
 	}
 
@@ -104,9 +107,11 @@ func (d *Desktop) Run() {
 	})
 
 	w := d.createWindow()
+	d.markReady()
 	if w == nil {
 		d.mu.Lock()
 		d.fallback = true
+		d.hidden = false // страница в браузере
 		d.mu.Unlock()
 		if !d.cfg.Hidden {
 			OpenURL(d.cfg.URL)
@@ -172,7 +177,14 @@ func (d *Desktop) wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 		d.mu.Unlock()
 		if !q {
 			pShowWindow.Call(hwnd, swHide)
+			d.setHidden(true)
 			return 0
+		}
+	case wmSize:
+		// Свернули — кролик замирает; развернули — снова живой.
+		// Размер спрятанного окна (смена DPI) видимым его не делает.
+		if v, _, _ := pIsWindowVisible.Call(hwnd); v != 0 {
+			d.setHidden(wp == sizeMinimized)
 		}
 	case wmQueryEndSess:
 		return 1
@@ -383,14 +395,37 @@ func (d *Desktop) Show() {
 		} else {
 			pShowWindow.Call(hwnd, swShow)
 		}
+		d.setHidden(false)
 		pSetForegroundWindow.Call(hwnd)
 	})
 }
 
-// ShowQuiet выводит окно, не отбирая фокус (как показатьОкно у мака):
-// игра только запустилась, и персонаж не должен встать столбом. Окно
-// в браузере (без WebView2) не открываем — браузер забрал бы фокус.
-func (d *Desktop) ShowQuiet() {
+// setHidden запоминает, видно ли окно, и сразу говорит странице (звать на
+// потоке окна). WebView2 у спрятанного окна страницу скрытой не считает
+// (document.hidden остаётся false), поэтому кролика останавливает сама
+// страница по этому сигналу.
+func (d *Desktop) setHidden(h bool) {
+	d.mu.Lock()
+	changed := d.hidden != h
+	d.hidden = h
+	w := d.native.w
+	d.mu.Unlock()
+	if changed && w != nil {
+		v := "true"
+		if h {
+			v = "false"
+		}
+		w.Eval("window.ajVisible && window.ajVisible(" + v + ")")
+	}
+}
+
+// ShowFront выводит окно вперёд и отдаёт ему фокус — один раз, когда
+// запустилась игра (main ждёт несколько секунд, чтобы окно игры уже
+// появилось и не перекрыло наше). Windows не даёт фоновой программе
+// забрать фокус, поэтому на время подключаемся к очереди ввода окна,
+// у которого фокус сейчас (обычный приём AttachThreadInput). Окно в
+// браузере (без WebView2) не трогаем.
+func (d *Desktop) ShowFront() {
 	d.mu.Lock()
 	w, hwnd, fb := d.native.w, d.native.hwnd, d.fallback
 	d.mu.Unlock()
@@ -398,8 +433,21 @@ func (d *Desktop) ShowQuiet() {
 		return
 	}
 	w.Dispatch(func() {
-		pShowWindow.Call(hwnd, swShowNoActive)
-		pSetWindowPos.Call(hwnd, 0 /* HWND_TOP */, 0, 0, 0, 0, swpNoSize|swpNoMove|swpNoActivate)
+		if r, _, _ := pIsIconic.Call(hwnd); r != 0 {
+			pShowWindow.Call(hwnd, swRestore)
+		} else {
+			pShowWindow.Call(hwnd, swShow)
+		}
+		d.setHidden(false)
+		cur := uintptr(windows.GetCurrentThreadId())
+		if fg, _, _ := pGetForegroundWindow.Call(); fg != 0 && fg != hwnd {
+			if th, _, _ := pGetWindowThreadPID.Call(fg, 0); th != 0 && th != cur {
+				pAttachThreadInput.Call(cur, th, 1)
+				defer pAttachThreadInput.Call(cur, th, 0)
+			}
+		}
+		pBringWindowToTop.Call(hwnd)
+		pSetForegroundWindow.Call(hwnd)
 	})
 }
 

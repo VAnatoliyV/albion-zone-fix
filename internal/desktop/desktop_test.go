@@ -30,3 +30,22 @@ func TestQuitBeforeRun(t *testing.T) {
 	d.Quit()
 	d.Run() // не должен ждать
 }
+
+func TestReadyAndHidden(t *testing.T) {
+	d := New(Config{URL: "http://127.0.0.1:1/", Hidden: true})
+	if !d.Hidden() {
+		t.Fatal("запуск в трей — окно спрятано")
+	}
+	select {
+	case <-d.Ready():
+		t.Fatal("готово до Run")
+	default:
+	}
+	d.Quit()
+	d.Run()
+	select {
+	case <-d.Ready():
+	default:
+		t.Fatal("после Run сторож игры так и ждал бы окна")
+	}
+}

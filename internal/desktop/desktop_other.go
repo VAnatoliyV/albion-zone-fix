@@ -16,11 +16,13 @@ type nativeState struct{ stop chan struct{} }
 func (d *Desktop) Run() {
 	d.mu.Lock()
 	d.fallback = true
+	d.hidden = false // страница в браузере: за видимостью следит он сам
 	if d.native.stop == nil {
 		d.native.stop = make(chan struct{})
 	}
 	stop, quit := d.native.stop, d.quit
 	d.mu.Unlock()
+	d.markReady()
 	if quit {
 		return
 	}
@@ -38,8 +40,8 @@ func (d *Desktop) Run() {
 // Show — открыть страницу ещё раз.
 func (d *Desktop) Show() { OpenURL(d.cfg.URL) }
 
-// ShowQuiet — на маке (разработка) окна нет, браузер не открываем.
-func (d *Desktop) ShowQuiet() {}
+// ShowFront — на маке (разработка) окна нет, браузер не открываем.
+func (d *Desktop) ShowFront() {}
 
 // Quit завершает Run.
 func (d *Desktop) Quit() {

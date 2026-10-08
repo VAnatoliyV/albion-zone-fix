@@ -178,10 +178,16 @@ const SessionFileName = "albion-session.json"
 // перезапускать разборщик ради переключателя не нужно.
 const OptionsFileName = "albion-session-options.json"
 
+// optionsMu — две записи подряд (два переключателя за раз) идут по очереди.
+var optionsMu sync.Mutex
+
 // WriteOptions пишет настройки счётчика в каталог данных: resetOnZone —
-// обнулять урон при смене зоны. Через временный файл, чтобы форк не
-// прочитал полфайла.
+// обнулять урон при смене зоны. Через свой временный файл, чтобы форк не
+// прочитал полфайла. Переименование повторяется: на Windows оно не
+// проходит, пока форк держит файл открытым (readOptions при входе в зону).
 func WriteOptions(dataDir string, resetOnZone bool) error {
+	optionsMu.Lock()
+	defer optionsMu.Unlock()
 	b, err := json.Marshal(map[string]bool{"resetOnZone": resetOnZone})
 	if err != nil {
 		return err
@@ -189,17 +195,38 @@ func WriteOptions(dataDir string, resetOnZone bool) error {
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return err
 	}
-	path := filepath.Join(dataDir, OptionsFileName)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
+	f, err := os.CreateTemp(dataDir, "albion-session-options-*.tmp")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
 		os.Remove(tmp)
-		return err
+		return werr
 	}
-	return nil
+	path := filepath.Join(dataDir, OptionsFileName)
+	for i := 0; ; i++ {
+		err = os.Rename(tmp, path)
+		if err == nil || i == optionsRetries {
+			break
+		}
+		time.Sleep(optionsRetryGap)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }
+
+// Сколько раз и с каким шагом повторять переименование файла настроек.
+var (
+	optionsRetries  = 5
+	optionsRetryGap = 40 * time.Millisecond
+)
 
 // Close останавливает разборщик (при выходе).
 func (c *Collector) Close() {

@@ -533,3 +533,44 @@ func TestPageSkinAndLogo(t *testing.T) {
 		t.Fatal("незнакомое оформление должно стать пиксельным")
 	}
 }
+
+// Файл для форка не записался — страница получает «сохранено», хук
+// настроек (автозапуск и прочее) всё равно вызван.
+func TestSettingsSavedWhenForkOptionsFail(t *testing.T) {
+	e := start(t)
+	path := filepath.Join(e.dir, collector.OptionsFileName)
+	os.Remove(path)
+	os.MkdirAll(filepath.Join(path, "x"), 0755)
+	code, out := postJSON(t, e, `{"resetOnZone":true,"startWithWindows":true}`)
+	if code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if len(e.hooks) != 1 || !e.hooks[0].ResetOnZone || !e.hooks[0].StartWithWindows {
+		t.Fatalf("хук настроек: %+v", e.hooks)
+	}
+	if !settings.Open(e.dir).Get().ResetOnZone {
+		t.Fatal("не сохранено")
+	}
+}
+
+func TestWindowHiddenInState(t *testing.T) {
+	dir := t.TempDir()
+	a := app.New(dir, dir, nil)
+	hidden := true
+	srv, err := Start(a, Options{DataDir: dir, ReceiverAddr: "127.0.0.1:1", WindowHidden: func() bool { return hidden }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	r, _ := http.Get(srv.URL + "api/state")
+	var st map[string]any
+	json.NewDecoder(r.Body).Decode(&st)
+	r.Body.Close()
+	if st["windowHidden"] != true {
+		t.Fatalf("windowHidden: %v", st["windowHidden"])
+	}
+	js, _ := webFS.ReadFile("web/app.js")
+	if !strings.Contains(string(js), "window.ajVisible") {
+		t.Fatal("страница не принимает сигнал видимости окна")
+	}
+}

@@ -128,6 +128,7 @@ func main() {
 		logLine("перенёс файлы Zone Fix в %s: %v %v", data, moved, err)
 	}
 	a := app.New(data, binDir, names.Zones())
+	a.SetLog(logLine)
 
 	// Приёмник своих цен (acp-prices.exe рядом с программой): стартует вместе
 	// со сбором, вывод идёт в тот же журнал.
@@ -333,6 +334,12 @@ func main() {
 			}
 			return nil
 		},
+		WindowHidden: func() bool {
+			if d := dp.Load(); d != nil {
+				return d.Hidden()
+			}
+			return *hidden
+		},
 		SupportInfo: func() string {
 			home, _ := os.UserHomeDir()
 			return support.Info(version, support.OSVersion(), logPath, home)
@@ -370,24 +377,37 @@ func main() {
 	}
 	watchCtx, stopWatch := context.WithCancel(context.Background())
 	defer stopWatch()
-	go gamewatch.Run(watchCtx, gamewatch.Config{
-		Options: func() gamewatch.Options { return gameOpts(a.Settings()) },
-		On: func(e gamewatch.Event) {
-			act := gamewatch.Decide(e, gameOpts(a.Settings()), a.Collecting())
-			logLine("сторож игры: %v (показать %v, сбор %v, выход %v)", e, act.Show, act.Collect, act.Quit)
-			if act.Show {
-				d.ShowQuiet()
-			}
-			if act.Collect {
-				if err := a.SetCollecting(true); err != nil {
-					logLine("сбор вместе с игрой не запустился: %v", err)
+	go func() {
+		// Следить — когда окно уже есть: показывать и закрывать до него нечего.
+		select {
+		case <-d.Ready():
+		case <-watchCtx.Done():
+			return
+		}
+		gamewatch.Run(watchCtx, gamewatch.Config{
+			Options: func() gamewatch.Options { return gameOpts(a.Settings()) },
+			On: func(e gamewatch.Event) {
+				act := gamewatch.Decide(e, gameOpts(a.Settings()), a.Collecting())
+				logLine("сторож игры: %v (показать %v, сбор %v, выход %v)", e, act.Show, act.Collect, act.Quit)
+				if act.Show {
+					// Один раз на запуск игры и после того, как появится её окно.
+					time.AfterFunc(gamewatch.ShowDelay, func() {
+						if watchCtx.Err() == nil && a.Settings().ShowWithGame {
+							d.ShowFront()
+						}
+					})
 				}
-			}
-			if act.Quit {
-				d.Quit()
-			}
-		},
-	})
+				if act.Collect {
+					if err := a.SetCollecting(true); err != nil {
+						logLine("сбор вместе с игрой не запустился: %v", err)
+					}
+				}
+				if act.Quit {
+					d.Quit()
+				}
+			},
+		})
+	}()
 
 	packets := make(chan game.Packet, 4096)
 	go sniffLoop(a, binDir, packets, col.Feed)

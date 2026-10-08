@@ -411,3 +411,31 @@ func TestSkinNormalizedOnSave(t *testing.T) {
 		t.Fatal("обычное оформление не сохранилось")
 	}
 }
+
+// Файл для форка не записался — настройки всё равно сохранены и применены,
+// причина — в журнале.
+func TestOptionsWriteFailureDoesNotAbortSettings(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	f := &fakeCollector{}
+	a.AttachCollector(f)
+	var logged []string
+	a.SetLog(func(format string, args ...any) { logged = append(logged, format) })
+	path := filepath.Join(dir, collector.OptionsFileName)
+	os.Remove(path)
+	os.MkdirAll(filepath.Join(path, "x"), 0755) // на месте файла — папка: записать нельзя
+	s := a.Settings()
+	s.ResetOnZone, s.ShareADP = true, false
+	if err := a.SetSettings(s); err != nil {
+		t.Fatalf("ошибка файла форка не должна прерывать сохранение: %v", err)
+	}
+	if !New(dir, dir, nil).Settings().ResetOnZone {
+		t.Fatal("настройка не сохранилась")
+	}
+	if got := f.applied[len(f.applied)-1]; got.ShareADP {
+		t.Fatalf("разборщик не перенастроен: %+v", got)
+	}
+	if len(logged) == 0 {
+		t.Fatal("причина не записана в журнал")
+	}
+}

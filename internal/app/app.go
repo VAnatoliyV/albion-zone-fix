@@ -79,6 +79,8 @@ type App struct {
 	card     *cardState
 	expect   *expectation
 	cardInfo CardInfo
+
+	log func(format string, args ...any) // журнал программы; nil — молча
 }
 
 // MapReporter — отправка проходов на карту (avalon.Reporter); в тестах подделка.
@@ -116,7 +118,7 @@ func New(dir, binDir string, names map[string]string) *App {
 	a.load()
 	// Сброс урона при смене зоны делает форк по своему файлу: файл мог
 	// остаться от другой версии или пропасть — пишем по настройкам сразу.
-	collector.WriteOptions(dir, a.settings.Get().ResetOnZone)
+	a.writeOptions(a.settings.Get().ResetOnZone)
 	return a
 }
 
@@ -424,10 +426,35 @@ func (a *App) SetSettings(s settings.Settings) error {
 	if r != nil {
 		r.Keep(!s.StopOnExit)
 	}
-	if err := collector.WriteOptions(a.dir, s.ResetOnZone); err != nil {
-		return fmt.Errorf("сброс при смене зоны не передан счётчику: %w", err)
+	err = a.applyCollector()
+	// Настройки уже сохранены: неудача с файлом для форка (его держит
+	// открытым сам форк, редкий случай) — только в журнал, не повод
+	// говорить странице «не сохранилось» и пропускать хук настроек.
+	a.writeOptions(s.ResetOnZone)
+	return err
+}
+
+// writeOptions — файл настроек счётчика для форка (resetOnZone).
+func (a *App) writeOptions(resetOnZone bool) {
+	if err := collector.WriteOptions(a.dir, resetOnZone); err != nil {
+		a.logf("сброс урона при смене зоны не передан счётчику: %v", err)
 	}
-	return a.applyCollector()
+}
+
+// SetLog — куда писать то, что не показывается на странице (журнал программы).
+func (a *App) SetLog(logf func(format string, args ...any)) {
+	a.mu.Lock()
+	a.log = logf
+	a.mu.Unlock()
+}
+
+func (a *App) logf(format string, args ...any) {
+	a.mu.Lock()
+	l := a.log
+	a.mu.Unlock()
+	if l != nil {
+		l(format, args...)
+	}
 }
 
 // SetCollecting запускает или останавливает сбор цен (не трогая счётчик).

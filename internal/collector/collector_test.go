@@ -129,7 +129,39 @@ func TestWriteOptionsForFork(t *testing.T) {
 			t.Fatalf("%s", b)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, OptionsFileName+".tmp")); !os.IsNotExist(err) {
-		t.Fatal("временный файл остался")
+	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
+		t.Fatalf("временный файл остался: %v", m)
+	}
+}
+
+// Две записи сразу (два переключателя подряд) не мешают друг другу.
+func TestWriteOptionsConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	errs := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		go func(on bool) { errs <- WriteOptions(dir, on) }(i%2 == 0)
+	}
+	for i := 0; i < 20; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
+		t.Fatalf("временные файлы остались: %v", m)
+	}
+}
+
+// Переименовать не вышло (на месте файла — папка) — ошибка, хвостов нет.
+func TestWriteOptionsRenameFails(t *testing.T) {
+	old := optionsRetryGap
+	optionsRetryGap = time.Millisecond
+	t.Cleanup(func() { optionsRetryGap = old })
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, OptionsFileName, "x"), 0755)
+	if WriteOptions(dir, true) == nil {
+		t.Fatal("ждал ошибку")
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
+		t.Fatalf("временный файл остался: %v", m)
 	}
 }

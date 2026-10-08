@@ -39,6 +39,9 @@ type Desktop struct {
 
 	mu       sync.Mutex
 	quit     bool
+	hidden   bool // окно спрятано в трей или свёрнуто (страница не крутит кролика)
+	ready    chan struct{}
+	readyOne sync.Once
 	fallback bool // WebView2 не создалось — показываем в браузере
 	native   nativeState
 }
@@ -54,7 +57,21 @@ func New(cfg Config) *Desktop {
 	if cfg.Title == "" {
 		cfg.Title = "Albion Journal"
 	}
-	return &Desktop{cfg: cfg}
+	return &Desktop{cfg: cfg, hidden: cfg.Hidden, ready: make(chan struct{})}
+}
+
+// Ready закрывается, когда окно создано (или решено показывать в
+// браузере): до этого показывать и закрывать нечего.
+func (d *Desktop) Ready() <-chan struct{} { return d.ready }
+
+func (d *Desktop) markReady() { d.readyOne.Do(func() { close(d.ready) }) }
+
+// Hidden — окно спрятано в трей или свёрнуто. Страница берёт это из
+// /api/state, а при смене ей сообщают сразу (window.ajVisible).
+func (d *Desktop) Hidden() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.hidden
 }
 
 // Fallback — окно открыто в браузере, а не во встроенном WebView2.
