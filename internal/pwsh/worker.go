@@ -189,12 +189,24 @@ func (w *Worker) Do(ctx context.Context, req Request) ([]byte, error) {
 		out, err = itemsOut(body)
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			// Отменил вызывающий: убить (поздний ответ не должен попасть
+			// следующему запросу), но это не беда рабочего.
+			w.mu.Lock()
+			if w.p == p {
+				w.killLocked()
+			}
+			w.mu.Unlock()
+			return nil, ctx.Err()
+		}
 		w.fail(p, req.Cmd, err)
 		return nil, err
 	}
-	w.mu.Lock()
-	w.fails = 0
-	w.mu.Unlock()
+	if ErrorMsg(out) == "" {
+		w.mu.Lock()
+		w.fails = 0
+		w.mu.Unlock()
+	}
 	return out, nil
 }
 
@@ -263,6 +275,18 @@ func (w *Worker) failLocked(what string, err error, tail string) {
 	w.logf("%s — убит, пересоздам не раньше чем через %v (пока разовый PowerShell)", msg, w.restartGap)
 }
 
+// scriptFail — рабочий ответил ошибкой, а разовый справился.
+func (w *Worker) scriptFail(cmd, msg string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	tail := ""
+	if w.p != nil {
+		tail = w.p.Tail()
+		w.killLocked()
+	}
+	w.failLocked(cmd, fmt.Errorf("ошибка скрипта %q, разовый справился", msg), tail)
+}
+
 func (w *Worker) killLocked() {
 	if w.p == nil {
 		return
@@ -297,10 +321,23 @@ func readLines(r io.Reader, out chan<- string, stop <-chan struct{}) {
 func (w *Worker) Call(ctx context.Context, req Request, oneShot func() ([]byte, error)) (out []byte, how string, err error) {
 	out, err = w.Do(ctx, req)
 	if err == nil {
-		if m := ErrorMsg(out); m != "" {
-			err = errors.New(m)
+		m := ErrorMsg(out)
+		if m == "" {
+			return out, "рабочий", nil
 		}
-		return out, "рабочий", err
+		// Ошибка скрипта в рабочем: код рабочего новый, а разовый скрипт
+		// проверен — пусть попробует он. Справился — виноват рабочий
+		// (убить и считать: после MaxStartFails раз только разовый);
+		// нет — ошибка общая (например, AUMID не принят), рабочий живёт.
+		if ctx.Err() != nil {
+			return out, "рабочий", errors.New(m)
+		}
+		o2, err2 := oneShot()
+		if err2 == nil && ErrorMsg(o2) == "" {
+			w.scriptFail(req.Cmd, m)
+			return o2, "разовый", nil
+		}
+		return out, "рабочий", errors.New(m)
 	}
 	if ctx.Err() != nil {
 		return nil, "рабочий", ctx.Err()
@@ -344,6 +381,18 @@ func Warm(logf func(string, ...any)) {
 	go sharedWorker().Warm()
 }
 
+// SetLog — журнал общего рабочего (и без Warm: рабочего может поднять
+// первый запрос).
+func SetLog(logf func(string, ...any)) {
+	logMu.Lock()
+	sharedLog = logf
+	logMu.Unlock()
+}
+
+// Live — общий рабочий запущен и готов: OCR дёшев, языки можно
+// распознавать по одному.
+func Live() bool { return sharedWorker().Live() }
+
 // Stop — убить общего рабочего (выход программы; объект задания тоже
 // гасит его, даже при аварийном выходе).
 func Stop() { sharedWorker().Stop() }
@@ -352,4 +401,11 @@ func Stop() { sharedWorker().Stop() }
 // со скриптом script и переменными env.
 func Call(ctx context.Context, req Request, script string, env []string) ([]byte, string, error) {
 	return sharedWorker().Call(ctx, req, func() ([]byte, error) { return RunScript(ctx, script, env) })
+}
+
+// Live — рабочий запущен и готов (не запускается, не выключен).
+func (w *Worker) Live() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.p != nil
 }

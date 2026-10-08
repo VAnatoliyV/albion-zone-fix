@@ -307,3 +307,67 @@ func TestDoubtfulShot(t *testing.T) {
 		t.Fatal(weak.Matches[0].Closeness)
 	}
 }
+
+// I1: первый язык уверен по сходству (≥ 0.9), но сомнителен по отрыву от
+// второго кандидата — нужен и второй язык.
+func TestRunnerDoubtfulFirstTriesSecond(t *testing.T) {
+	d := NewDict([]Zone{{Name: "Soros-Axaesum", Code: "A", Road: true}, {Name: "Soros-Axaesun", Code: "B", Road: true}})
+	en := []string{"Road of Avalon to", "Soros-Axaesu", "7/7", "Closes in 5 h 53 m"}
+	ru := []string{"Road of Avalon to", "Soros-Axaesum", "7/7", "Closes in 5 h 53 m"}
+	if !Sure(d, map[string][]string{"ru": ru}, []string{"ru"}, time.Unix(0, 0)) {
+		t.Fatal("точное чтение должно быть уверенным")
+	}
+	r1, _ := Choose(d, map[string][]string{"en-US": en}, []string{"en-US"}, time.Unix(0, 0))
+	if !r1.Portal || r1.Matches[0].Closeness < SureCloseness || !r1.Doubtful() {
+		t.Fatalf("подбор теста: %+v", r1.Matches)
+	}
+	var calls []string
+	r := NewRunner(RunnerConfig{
+		Capture: func(string) (string, error) { return "", nil },
+		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
+			calls = append(calls, strings.Join(langs, ","))
+			out := map[string][]string{}
+			for _, l := range langs {
+				out[l] = map[string][]string{"en-US": en, "ru": ru}[l]
+			}
+			return out, nil
+		},
+		Pick: func([]string) []string { return []string{"ru", "en-US"} },
+		Dict: d,
+	})
+	r.lastLang = "en-US"
+	s := r.Run(context.Background())
+	if strings.Join(calls, "|") != "en-US|ru" || s.Result.Lang != "ru" || s.Result.Doubtful() {
+		t.Fatalf("%v %+v", calls, s.Result)
+	}
+}
+
+// I2: рабочего PowerShell нет — все языки одним вызовом (один разовый
+// PowerShell на нажатие, как в 1.0.3).
+func TestRunnerOneCallWhenWorkerDown(t *testing.T) {
+	d := dict(t)
+	ru := []string{"Путь Авалона в", "Soros-Axaesun", "7/7", "Закроется через 5 ч 53 м"}
+	var calls []string
+	live := false
+	r := NewRunner(RunnerConfig{
+		Capture: func(string) (string, error) { return "", nil },
+		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
+			calls = append(calls, strings.Join(langs, ","))
+			return map[string][]string{"ru": ru, "en-US": {"Nyrb"}}, nil
+		},
+		Pick: func([]string) []string { return []string{"ru", "en-US"} },
+		Live: func() bool { return live },
+		Dict: d,
+	})
+	r.lastLang = "en-US"
+	r.Run(context.Background())
+	if strings.Join(calls, "|") != "ru,en-US" {
+		t.Fatalf("рабочего нет: %v", calls)
+	}
+	live, calls = true, nil
+	r.lastLang = "en-US"
+	r.Run(context.Background())
+	if strings.Join(calls, "|") != "en-US|ru" {
+		t.Fatalf("рабочий есть: %v", calls)
+	}
+}

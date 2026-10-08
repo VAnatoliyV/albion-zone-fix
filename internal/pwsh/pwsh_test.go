@@ -259,10 +259,11 @@ func TestWorkerOK(t *testing.T) {
 	if f.starts.Load() != 1 {
 		t.Fatalf("запусков %d", f.starts.Load())
 	}
-	// Ошибка внутри скрипта — не беда рабочего: разовый не нужен.
+	// Ошибка внутри скрипта, и разовый ошибается так же — ошибка общая,
+	// рабочий не виноват.
 	oneShot := 0
-	_, how, err := w.Call(context.Background(), Request{Cmd: "toast"}, func() ([]byte, error) { oneShot++; return nil, nil })
-	if how != "рабочий" || err == nil || err.Error() != "AUMID" || oneShot != 0 || f.starts.Load() != 1 {
+	_, how, err := w.Call(context.Background(), Request{Cmd: "toast"}, func() ([]byte, error) { oneShot++; return nil, errors.New("exit status 1") })
+	if how != "рабочий" || err == nil || err.Error() != "AUMID" || oneShot != 1 || f.starts.Load() != 1 || !w.Live() {
 		t.Fatal(how, err, oneShot)
 	}
 	w.Stop()
@@ -362,4 +363,73 @@ func TestWorkerStartFails(t *testing.T) {
 		t.Fatal(how, f.starts.Load())
 	}
 	w.Stop()
+}
+
+// I3: ошибка скрипта внутри рабочего — этот запрос делает разовый скрипт;
+// справился разовый — это беда рабочего (убить, считать), и после
+// MaxStartFails таких раз — только разовый. Разовый тоже не справился
+// (например, AUMID не принят) — отдаём ошибку рабочего, рабочий живёт.
+func TestWorkerScriptErrorFallsBack(t *testing.T) {
+	f := &fakeShell{ready: okReady, handle: func(id int, r Request) string {
+		return reply(id, `{"items":[{"kind":"error","msg":"Method invocation failed"}]}`)
+	}}
+	w, logs, now := testWorker(f)
+	good := func() ([]byte, error) { return []byte("{\"kind\":\"ocr\",\"lang\":\"ru\",\"lines\":[\"x\"]}\n"), nil }
+	bad := func() ([]byte, error) { return []byte("AUMID\n"), errors.New("exit status 1") }
+
+	out, how, err := w.Call(context.Background(), Request{Cmd: "toast"}, bad)
+	if how != "рабочий" || err == nil || err.Error() != "Method invocation failed" || f.starts.Load() != 1 {
+		t.Fatal(how, err, f.starts.Load())
+	}
+	if _, how, _ := w.Call(context.Background(), Request{Cmd: "toast"}, bad); how != "рабочий" || f.starts.Load() != 1 {
+		t.Fatal("ошибка общая для обоих путей — рабочий не виноват", how, f.starts.Load())
+	}
+	for i := 0; i < MaxStartFails; i++ {
+		out, how, err = w.Call(context.Background(), Request{Cmd: "ocr", Langs: []string{"ru"}}, good)
+		if how != "разовый" || err != nil || len(parse(out).Lines["ru"]) != 1 {
+			t.Fatalf("%d: %s %v %q", i, how, err, out)
+		}
+		*now = now.Add(RestartGap)
+	}
+	n := f.starts.Load()
+	if n != MaxStartFails {
+		t.Fatalf("запусков %d", n)
+	}
+	*now = now.Add(time.Hour)
+	if _, how, _ := w.Call(context.Background(), Request{Cmd: "ocr"}, good); how != "разовый" || f.starts.Load() != n {
+		t.Fatalf("после %d ошибок — только разовый: %s, запусков %d", MaxStartFails, how, f.starts.Load())
+	}
+	if !strings.Contains(strings.Join(*logs, "\n"), "разовый справился") {
+		t.Errorf("%q", *logs)
+	}
+}
+
+// Отмена запроса вызывающим — не беда рабочего (M4); Live — рабочий готов.
+func TestWorkerCancelAndLive(t *testing.T) {
+	f := &fakeShell{ready: okReady, handle: func(id int, r Request) string {
+		if r.Cmd == "hang" {
+			return ""
+		}
+		return reply(id, `{"items":[]}`)
+	}}
+	w, _, _ := testWorker(f)
+	if w.Live() {
+		t.Fatal("ещё не запущен")
+	}
+	w.Warm()
+	if !w.Live() {
+		t.Fatal("запущен")
+	}
+	for i := 0; i < MaxStartFails+1; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		w.Do(ctx, Request{Cmd: "hang"})
+		cancel()
+	}
+	if _, err := w.Do(context.Background(), Request{Cmd: "langs"}); err != nil {
+		t.Fatalf("отмены не считаются неудачами: %v", err)
+	}
+	w.Stop()
+	if w.Live() {
+		t.Fatal("остановлен")
+	}
 }

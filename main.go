@@ -217,6 +217,7 @@ func main() {
 	notify.Init(data, desktop.Icon, cardLog)
 	// Рабочий PowerShell для OCR и уведомлений — заранее, чтобы первое
 	// нажатие не ждало запуска (карточка или уведомления включены).
+	pwsh.SetLog(cardLog)
 	if set := a.Settings(); hotkey.Normalize(set.ZoneKey) != hotkey.Off || set.ZoneNotify || set.BlackWarn {
 		pwsh.Warm(cardLog)
 	}
@@ -232,6 +233,7 @@ func main() {
 			return fmt.Sprintf("курсор %v, dpi %d, рамка %v, для OCR %v", info.Cursor, info.DPI, info.Rect, info.Out), err
 		},
 		Recognize: ocr.Recognize,
+		Live:      pwsh.Live,
 		Languages: ocr.Languages,
 		Pick:      ocr.Pick,
 		Hint:      ocr.Hint,

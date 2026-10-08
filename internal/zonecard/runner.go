@@ -45,6 +45,10 @@ type RunnerConfig struct {
 	Now       func() time.Time
 	Done      func(Shot)
 	Logf      func(string, ...any)
+	// Live — рабочий PowerShell жив (OCR дёшев). false — каждый вызов OCR
+	// стал бы отдельным разовым PowerShell (~1 с), поэтому все языки одним
+	// вызовом, как в 1.0.3. nil — считать живым.
+	Live func() bool
 	// Gap — сколько не принимать новое нажатие после конца прошлого
 	// (дребезг кнопки и автоповтор F-клавиши).
 	Gap time.Duration
@@ -180,6 +184,9 @@ func (r *Runner) run(ctx context.Context, at time.Time) Shot {
 	// Сначала язык, на котором тултип нашёлся в прошлый раз; второй — только
 	// если на первом нет уверенно опознанного тултипа (тогда язык выберет
 	// Choose по оценке).
+	if r.cfg.Live != nil && !r.cfg.Live() {
+		last = "" // рабочего нет: один разовый PowerShell на все языки
+	}
 	first, rest := LangPlan(try, last)
 	t1 := time.Now()
 	used := strings.Join(first, ", ")
@@ -250,8 +257,9 @@ func LangPlan(try []string, last string) (first, rest []string) {
 }
 
 // Sure — на языках langs уже есть тултип портала, опознанный не хуже
-// SureCloseness: остальные языки можно не распознавать.
+// SureCloseness и не сомнительный (Result.Doubtful: и по отрыву от второго
+// кандидата): остальные языки можно не распознавать.
 func Sure(d *Dict, byLang map[string][]string, langs []string, at time.Time) bool {
 	r, err := Choose(d, byLang, langs, at)
-	return err == nil && r.Portal && len(r.Matches) > 0 && r.Matches[0].Closeness >= SureCloseness
+	return err == nil && r.Portal && len(r.Matches) > 0 && r.Matches[0].Closeness >= SureCloseness && !r.Doubtful()
 }
