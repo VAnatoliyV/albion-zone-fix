@@ -6,6 +6,7 @@ import (
 
 	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/photon"
 	"albionzonefix/internal/zonecard"
 )
 
@@ -50,6 +51,7 @@ func TestMistsWithoutJoinIsNotAPass(t *testing.T) {
 	// Ушёл в Туманы: ChangeCluster, CONNECT к новому серверу, Join нет.
 	ccAt(a, t0.Add(10*time.Second), srvA)
 	connectAt(a, t0.Add(10500*time.Millisecond), srvB)
+	replyAt(a, t0.Add(11*time.Second), srvB)
 	// Пока < 3 с — место прежнее (обычный переход ещё грузится).
 	a.Tick(t0.Add(12 * time.Second))
 	if a.HereCode() != "5001" {
@@ -136,29 +138,45 @@ func TestQuickTransitionsArePasses(t *testing.T) {
 	}
 }
 
-// Переход без ChangeCluster (по CONNECT): два новых сервера без Join между
-// ними — не проход; Туманы на том же сервере — второй уход через 30+ с.
+func replyAt(a *App, t time.Time, addr string) {
+	a.Feed(game.Packet{T: t, Addr: addr, Payload: pkt(photon.MsgEvent, 1, []byte{0})})
+}
+
+// Переход без ChangeCluster (по CONNECT): побывали на новом сервере (он
+// ответил) и без Join ушли на следующий — не проход. Новый сервер молчал
+// и клиент сменил цель — тот же переход, проход. ChangeCluster без CONNECT
+// и Join забывается, а подтверждённый Join — один уход.
 func TestTwoLeavesWithoutChangeClusterOrConnect(t *testing.T) {
 	a, m, _ := newMapApp(t)
 	t0 := time.Unix(5000, 0)
 	joinAt(a, t0, srvA, "TNL-001")
 	connectAt(a, t0.Add(10*time.Second), srvB)
+	replyAt(a, t0.Add(10500*time.Millisecond), srvB)
 	connectAt(a, t0.Add(70*time.Second), srvC)
 	joinAt(a, t0.Add(72*time.Second), srvC, "TNL-002")
 	if len(m.offered) != 0 {
 		t.Fatalf("два ухода — не проход: %+v", m.offered)
 	}
+	// Смена цели: B молчит, клиент идёт на A.
 	ccAt(a, t0.Add(100*time.Second), srvC)
-	ccAt(a, t0.Add(200*time.Second), srvC) // Туманы на том же сервере
-	joinAt(a, t0.Add(202*time.Second), srvC, "TNL-003")
-	if len(m.offered) != 0 {
-		t.Fatalf("уход через 30+ с — второй уход: %+v", m.offered)
+	connectAt(a, t0.Add(101*time.Second), srvB)
+	connectAt(a, t0.Add(105*time.Second), srvA)
+	joinAt(a, t0.Add(107*time.Second), srvA, "TNL-003")
+	if len(m.offered) != 1 || m.offered[0].From != "TNL-002" || m.offered[0].To != "TNL-003" {
+		t.Fatalf("смена цели — тот же переход: %+v", m.offered)
+	}
+	// Отменённый ChangeCluster, потом переход на том же сервере.
+	ccAt(a, t0.Add(200*time.Second), srvA)
+	ccAt(a, t0.Add(300*time.Second), srvA)
+	joinAt(a, t0.Add(302*time.Second), srvA, "TNL-004")
+	if len(m.offered) != 2 || m.offered[1].From != "TNL-003" {
+		t.Fatalf("проход: %+v", m.offered)
 	}
 	// Переподключение к тому же серверу — не уход.
-	connectAt(a, t0.Add(300*time.Second), srvC)
-	ccAt(a, t0.Add(400*time.Second), srvC)
-	joinAt(a, t0.Add(402*time.Second), srvC, "TNL-004")
-	if len(m.offered) != 1 || m.offered[0].From != "TNL-003" {
+	connectAt(a, t0.Add(400*time.Second), srvA)
+	ccAt(a, t0.Add(500*time.Second), srvA)
+	joinAt(a, t0.Add(502*time.Second), srvA, "TNL-005")
+	if len(m.offered) != 3 || m.offered[2].From != "TNL-004" {
 		t.Fatalf("проход: %+v", m.offered)
 	}
 }
@@ -170,16 +188,23 @@ func TestLeaveCounter(t *testing.T) {
 	cases := []struct {
 		name string
 		evs  []game.Ev
+		join float64
 		want int
 	}{
-		{"обычный", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(1.5, game.Connect, "b")}, 1},
-		{"без CONNECT", []game.Ev{ev(1, game.ChangeCluster, "a")}, 1},
+		{"обычный", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(1.5, game.Connect, "b")}, 3, 1},
+		{"без CONNECT", []game.Ev{ev(1, game.ChangeCluster, "a")}, 3, 1},
+		{"отменённый ChangeCluster", []game.Ev{ev(1, game.ChangeCluster, "a")}, 100, 0},
 		{"повторы", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(2, game.ChangeCluster, "a"), ev(2.5, game.Connect, "b"),
-			ev(3, game.Connect, "b"), ev(3.5, game.ChangeCluster, "a"), ev(20, game.Connect, "b")}, 1},
-		{"Туманы на новом сервере", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(1.5, game.Connect, "b"), ev(90, game.ChangeCluster, "b"), ev(91, game.Connect, "c")}, 2},
-		{"два новых сервера", []game.Ev{ev(1, game.Connect, "b"), ev(2, game.Connect, "c")}, 2},
-		{"Туманы на том же сервере", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(40, game.ChangeCluster, "a")}, 2},
-		{"переподключение", []game.Ev{ev(1, game.Connect, "a")}, 0},
+			ev(3, game.Connect, "b"), ev(3.5, game.ChangeCluster, "a"), ev(20, game.Connect, "b")}, 22, 1},
+		{"долгие повторы", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(2, game.Connect, "b"), ev(20, game.ChangeCluster, "a"),
+			ev(40, game.ChangeCluster, "a"), ev(60, game.ChangeCluster, "a")}, 62, 1},
+		{"Туманы на новом сервере", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(1.5, game.Connect, "b"), ev(2, game.Reply, "b"),
+			ev(90, game.ChangeCluster, "b"), ev(91, game.Connect, "c")}, 93, 2},
+		{"Туманы, выход на том же сервере", []game.Ev{ev(1, game.ChangeCluster, "a"), ev(1.5, game.Connect, "b"),
+			ev(90, game.ChangeCluster, "b")}, 92, 2},
+		{"два новых сервера", []game.Ev{ev(1, game.Connect, "b"), ev(1.2, game.Reply, "b"), ev(2, game.Connect, "c")}, 3, 2},
+		{"смена цели", []game.Ev{ev(1, game.Connect, "b"), ev(2, game.Connect, "c")}, 3, 1},
+		{"переподключение", []game.Ev{ev(1, game.Connect, "a")}, 3, 0},
 	}
 	for _, c := range cases {
 		l := leaveCounter{}
@@ -187,18 +212,47 @@ func TestLeaveCounter(t *testing.T) {
 		for _, e := range c.evs {
 			l.on(e)
 		}
-		if got := l.on(game.Ev{T: at(100), Kind: game.Join, Server: "z"}); got != c.want {
+		if got := l.on(game.Ev{T: at(c.join), Kind: game.Join, Server: "z"}); got != c.want {
 			t.Errorf("%s: уходов %d, ждали %d", c.name, got, c.want)
 		}
 		if l.n != 0 || l.away(at(1000)) {
 			t.Errorf("%s: Join не обнулил счёт", c.name)
 		}
 	}
-	// Место неизвестно ровно через awayAfter после первого ухода.
+	// Место неизвестно через awayAfter после первого подтверждённого ухода;
+	// неподтверждённый ChangeCluster место не трогает.
 	l := leaveCounter{}
 	l.on(game.Ev{T: t0, Kind: game.Join, Server: "a"})
 	l.on(ev(1, game.ChangeCluster, "a"))
+	if l.away(at(5)) {
+		t.Fatal("ChangeCluster без подтверждения")
+	}
+	l.on(ev(2, game.Connect, "b"))
 	if l.away(at(3.9)) || !l.away(at(4)) {
 		t.Fatal("awayAfter")
+	}
+}
+
+// ChangeCluster без CONNECT и Join (отменён, отказ) — не уход: место не
+// становится неизвестным, следующий настоящий переход — проход.
+func TestRefusedChangeClusterIsForgotten(t *testing.T) {
+	a, m, _ := newMapApp(t)
+	t0 := time.Unix(5000, 0)
+	joinAt(a, t0, srvA, "TNL-001")
+	ccAt(a, t0.Add(10*time.Second), srvA)
+	for s := 11; s <= 40; s++ {
+		a.Tick(t0.Add(time.Duration(s) * time.Second))
+	}
+	if a.HereCode() != "TNL-001" {
+		t.Fatalf("отменённый уход сбросил место: %q", a.HereCode())
+	}
+	if d := a.SetCard(shotFor(t, portal164, t0.Add(40*time.Second)), zonecard.Default()); d != "портал TNL-001 → TNL-164 отправляю" {
+		t.Fatal(d)
+	}
+	ccAt(a, t0.Add(60*time.Second), srvA)
+	connectAt(a, t0.Add(61*time.Second), srvB)
+	joinAt(a, t0.Add(63*time.Second), srvB, "TNL-002")
+	if len(m.offered) != 1 || m.offered[0] != (avalon.Pass{From: "TNL-001", To: "TNL-002", Region: "europe"}) {
+		t.Fatalf("проход после отменённого ухода потерян: %+v", m.offered)
 	}
 }

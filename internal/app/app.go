@@ -227,7 +227,7 @@ func (a *App) HereCode() string {
 // placeLocked — где игрок на момент now: nil — неизвестно (входа не видели
 // или ушли из локации и Join нет дольше awayAfter). Зовётся под a.mu.
 func (a *App) placeLocked(now time.Time) *avalon.Place {
-	if a.here == nil || a.here.Zone == "" || a.away || a.leaves.away(now) {
+	if a.here == nil || a.here.Zone == "" || a.leaves.away(now) {
 		return nil
 	}
 	h := *a.here
