@@ -30,7 +30,9 @@ func TestCardSendsTooltipAndShowsStatus(t *testing.T) {
 	t0 := time.Unix(5000, 0)
 
 	// Где игрок, ещё не знаем — не шлём, честно говорим почему.
-	a.SetCard(shotFor(t, portal164, t0), zonecard.Default())
+	if d := a.SetCard(shotFor(t, portal164, t0), zonecard.Default()); d != "не отправлено (noPlace)" {
+		t.Fatal(d)
+	}
 	c := a.State().Card
 	if len(m.tips) != 0 || c.MapWhy != zonecard.WhyNoPlace || c.Zone == nil || c.Zone.Code != "TNL-164" || c.Size != 7 ||
 		!c.ClosesAt.Equal(t0.Add(5*time.Hour+53*time.Minute)) || c.OCRHint != "noRu" || !c.OCRChecked {
@@ -38,7 +40,9 @@ func TestCardSendsTooltipAndShowsStatus(t *testing.T) {
 	}
 
 	joinAt(a, t0, eu, "TNL-001")
-	a.SetCard(shotFor(t, portal164, t0.Add(time.Second)), zonecard.Default())
+	if d := a.SetCard(shotFor(t, portal164, t0.Add(time.Second)), zonecard.Default()); d != "портал TNL-001 → TNL-164 отправляю" {
+		t.Fatal(d)
+	}
 	if len(m.tips) != 1 || m.tips[0].From != "TNL-001" || m.tips[0].To != "TNL-164" || m.tips[0].Region != "europe" {
 		t.Fatalf("%+v", m.tips)
 	}
@@ -51,13 +55,17 @@ func TestCardSendsTooltipAndShowsStatus(t *testing.T) {
 	s := a.Settings()
 	s.MapSend = false
 	a.SetSettings(s)
-	a.SetCard(shotFor(t, portal164, t0.Add(2*time.Second)), zonecard.Default())
+	if d := a.SetCard(shotFor(t, portal164, t0.Add(2*time.Second)), zonecard.Default()); d != "не отправлено (off)" {
+		t.Fatal(d)
+	}
 	if len(m.tips) != 1 || a.State().Card.MapWhy != "off" || a.State().Card.Map != nil {
 		t.Fatalf("%+v", a.State().Card)
 	}
 
 	// Ошибка снимка — карточка с кодом беды.
-	a.SetCard(zonecard.Shot{Kind: zonecard.ErrKindNoTooltip}, zonecard.Default())
+	if d := a.SetCard(zonecard.Shot{Kind: zonecard.ErrKindNoTooltip}, zonecard.Default()); d != "не отправлено (noTooltip)" {
+		t.Fatal(d)
+	}
 	if c := a.State().Card; c.Error != zonecard.ErrKindNoTooltip || c.Zone != nil {
 		t.Fatalf("%+v", c)
 	}

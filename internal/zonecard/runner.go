@@ -3,6 +3,8 @@ package zonecard
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,6 +26,10 @@ type Shot struct {
 	Arg     string
 	Took    time.Duration
 	Capture string // что снято (для журнала)
+	// Замер для журнала: снимок, распознавание и на каких языках (по
+	// порядку вызовов: «en-US», «en-US, ru» — второй язык понадобился).
+	CaptureTook, OCRTook time.Duration
+	OCRLangs             string
 }
 
 // RunnerConfig — что нужно снимающему (на Windows — снимок GDI и OCR через
@@ -55,6 +61,7 @@ type Runner struct {
 	checked  bool     // языки проверены
 	hint     string   // чего не хватает (ocr.Hint*), "" — всё есть
 	checkErr string
+	lastLang string // язык OCR, на котором в прошлый раз нашёлся тултип
 }
 
 // NewRunner готовит снимающего.
@@ -135,12 +142,14 @@ func (r *Runner) Run(ctx context.Context) Shot {
 	start := r.cfg.Now()
 	s := r.run(ctx, start)
 	s.Took = r.cfg.Now().Sub(start)
+	took := fmt.Sprintf("за %v (снимок %v, OCR %v: %s)", s.Took.Round(time.Millisecond),
+		s.CaptureTook.Round(time.Millisecond), s.OCRTook.Round(time.Millisecond), s.OCRLangs)
 	if s.Kind == "" {
 		z := s.Result.Zone()
-		r.cfg.Logf("карточка зоны: %q → %s (%s, %.2f, %s) за %v; %s", s.Result.Tooltip.Read, z.Name, z.Code,
-			s.Result.Matches[0].Closeness, s.Result.Lang, s.Took.Round(time.Millisecond), s.Capture)
+		r.cfg.Logf("карточка зоны: %q → %s (%s, %.2f, %s) %s; %s", s.Result.Tooltip.Read, z.Name, z.Code,
+			s.Result.Matches[0].Closeness, s.Result.Lang, took, s.Capture)
 	} else {
-		r.cfg.Logf("карточка зоны: %s %s за %v; %s", s.Kind, s.Arg, s.Took.Round(time.Millisecond), s.Capture)
+		r.cfg.Logf("карточка зоны: %s %s %s; %s", s.Kind, s.Arg, took, s.Capture)
 	}
 	return s
 }
@@ -159,21 +168,90 @@ func (r *Runner) run(ctx context.Context, at time.Time) Shot {
 	if r.cfg.Pick != nil {
 		try = r.cfg.Pick(langs)
 	}
+	t0 := time.Now()
 	info, err := r.cfg.Capture(r.cfg.Path)
+	capTook := time.Since(t0)
 	if err != nil {
-		return Shot{Kind: ErrKindCapture, Arg: err.Error(), Capture: info}
+		return Shot{Kind: ErrKindCapture, Arg: err.Error(), Capture: info, CaptureTook: capTook}
 	}
-	byLang, err := r.cfg.Recognize(ctx, r.cfg.Path, try)
+	r.mu.Lock()
+	last := r.lastLang
+	r.mu.Unlock()
+	// Сначала язык, на котором тултип нашёлся в прошлый раз; второй — только
+	// если на первом нет уверенно опознанного тултипа (тогда язык выберет
+	// Choose по оценке).
+	first, rest := LangPlan(try, last)
+	t1 := time.Now()
+	used := strings.Join(first, ", ")
+	byLang, err := r.cfg.Recognize(ctx, r.cfg.Path, first)
+	if len(rest) > 0 && !Sure(r.cfg.Dict, byLang, first, at) {
+		more, err2 := r.cfg.Recognize(ctx, r.cfg.Path, rest)
+		used += "; " + strings.Join(rest, ", ")
+		if byLang == nil {
+			byLang = map[string][]string{}
+		}
+		for k, v := range more {
+			byLang[k] = v
+		}
+		if err2 != nil {
+			err = err2
+		}
+	}
+	s := Shot{Capture: info, CaptureTook: capTook, OCRTook: time.Since(t1), OCRLangs: used}
 	if err != nil && len(byLang) == 0 {
-		return Shot{Kind: ErrKindOCR, Arg: err.Error(), Capture: info}
+		s.Kind, s.Arg = ErrKindOCR, err.Error()
+		return s
 	}
-	res, err := Choose(r.cfg.Dict, byLang, try, at)
+	res, err := Choose(r.cfg.Dict, byLang, append(append([]string(nil), first...), rest...), at)
 	if err != nil {
 		var u UnknownError
 		if errors.As(err, &u) {
-			return Shot{Kind: ErrKindUnknown, Arg: u.Read, Capture: info}
+			s.Kind, s.Arg = ErrKindUnknown, u.Read
+			return s
 		}
-		return Shot{Kind: ErrKindNoTooltip, Capture: info}
+		s.Kind = ErrKindNoTooltip
+		return s
 	}
-	return Shot{Result: res, Capture: info}
+	if res.Portal {
+		r.mu.Lock()
+		r.lastLang = res.Lang
+		r.mu.Unlock()
+	}
+	s.Result = res
+	return s
+}
+
+// SureCloseness — тултип опознан так уверенно, что второй язык OCR не нужен.
+// Английский клиент на русском движке читается хуже («Mawor Согде» → 0.64),
+// на своём — 1.00.
+const SureCloseness = 0.9
+
+// LangPlan — порядок распознавания: last (язык прошлого удачного тултипа)
+// отдельно первым, остальные — потом и только при надобности. last неизвестен
+// или не среди try — все языки сразу одним вызовом (как раньше).
+func LangPlan(try []string, last string) (first, rest []string) {
+	idx := -1
+	for i, l := range try {
+		if l == last {
+			idx = i
+			break
+		}
+	}
+	if last == "" || idx < 0 || len(try) < 2 {
+		return try, nil
+	}
+	first = []string{try[idx]}
+	for i, l := range try {
+		if i != idx {
+			rest = append(rest, l)
+		}
+	}
+	return first, rest
+}
+
+// Sure — на языках langs уже есть тултип портала, опознанный не хуже
+// SureCloseness: остальные языки можно не распознавать.
+func Sure(d *Dict, byLang map[string][]string, langs []string, at time.Time) bool {
+	r, err := Choose(d, byLang, langs, at)
+	return err == nil && r.Portal && len(r.Matches) > 0 && r.Matches[0].Closeness >= SureCloseness
 }

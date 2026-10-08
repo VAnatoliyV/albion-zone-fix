@@ -58,10 +58,6 @@ func TestPickAndHint(t *testing.T) {
 }
 
 func TestStdinAndScript(t *testing.T) {
-	in := Stdin("a\r\nb")
-	if in != "a\nb\n\n" {
-		t.Fatalf("%q", in)
-	}
 	// Ввод PowerShell читает в кодировке консоли: в скрипте только ASCII.
 	for i, r := range Script {
 		if r > 127 {

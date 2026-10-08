@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
-	"albionzonefix/internal/ocr"
+	"albionzonefix/internal/pwsh"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -19,7 +20,7 @@ var (
 	mu    sync.Mutex
 	appID = PowerShellAppID
 	logf  = func(string, ...any) {}
-	// Уведомления по одному: два PowerShell сразу — лишняя нагрузка посреди игры.
+	// Уведомления по одному (рабочий PowerShell и так берёт запросы по одному).
 	queue = make(chan [3]string, 4)
 	start sync.Once
 )
@@ -77,10 +78,17 @@ func show(title, subtitle, body string) {
 	id := appID
 	mu.Unlock()
 	x := XML(title, subtitle, body)
+	t0 := time.Now()
+	how := ""
 	run := func(app string) error {
-		out, err := ocr.RunScript(context.Background(), Script, []string{"AJ_TOAST_XML=" + x, "AJ_TOAST_APP=" + app})
+		out, h, err := pwsh.Call(context.Background(), pwsh.Request{Cmd: "toast", App: app, XML: x},
+			Script, []string{"AJ_TOAST_XML=" + x, "AJ_TOAST_APP=" + app})
+		how = h
 		if err != nil {
-			return fmt.Errorf("%v %s", err, strings.TrimSpace(string(out)))
+			if h == "разовый" {
+				return fmt.Errorf("%v %s", err, strings.TrimSpace(string(out)))
+			}
+			return err
 		}
 		return nil
 	}
@@ -92,5 +100,7 @@ func show(title, subtitle, body string) {
 	}
 	if err != nil {
 		logf("уведомление не показано: %v", err)
+		return
 	}
+	logf("уведомление показано за %v (%s PowerShell)", time.Since(t0).Round(time.Millisecond), how)
 }

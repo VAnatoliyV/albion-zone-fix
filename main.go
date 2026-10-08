@@ -33,6 +33,7 @@ import (
 	"albionzonefix/internal/names"
 	"albionzonefix/internal/notify"
 	"albionzonefix/internal/ocr"
+	"albionzonefix/internal/pwsh"
 	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/record"
 	"albionzonefix/internal/screen"
@@ -214,6 +215,12 @@ func main() {
 		fmt.Fprintf(logw, "[карточка] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
 	}
 	notify.Init(data, desktop.Icon, cardLog)
+	// Рабочий PowerShell для OCR и уведомлений — заранее, чтобы первое
+	// нажатие не ждало запуска (карточка или уведомления включены).
+	if set := a.Settings(); hotkey.Normalize(set.ZoneKey) != hotkey.Off || set.ZoneNotify || set.BlackWarn {
+		pwsh.Warm(cardLog)
+	}
+	defer pwsh.Stop()
 	dict := zonecard.Default()
 	if dict == nil {
 		cardLog("справочник зон не прочитался")
@@ -232,7 +239,18 @@ func main() {
 		Gap:       400 * time.Millisecond,
 		Logf:      cardLog,
 		Done: func(sh zonecard.Shot) {
-			a.SetCard(sh, dict)
+			cardLog("карта: %s", a.SetCard(sh, dict))
+			if zonecard.Doubtful(sh) {
+				// Сомнительное опознание — снимок отдельно, чтобы тестер прислал его.
+				src := filepath.Join(data, screen.FileName)
+				if b, err := os.ReadFile(src); err == nil {
+					if err := os.WriteFile(filepath.Join(data, zonecard.DoubtFile), b, 0644); err != nil {
+						cardLog("снимок сомнительной карточки не сохранён: %v", err)
+					} else {
+						cardLog("снимок сомнительной карточки: %s", zonecard.DoubtFile)
+					}
+				}
+			}
 			set := a.Settings()
 			z := sh.Result.Zone()
 			if sh.Kind != "" || z == nil || !set.ZoneNotify {

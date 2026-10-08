@@ -212,3 +212,98 @@ func TestRunner(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestLangPlan(t *testing.T) {
+	try := []string{"ru", "en-US"}
+	cases := []struct {
+		last        string
+		first, rest string
+	}{
+		{"", "ru,en-US", ""},      // язык неизвестен — оба сразу, как раньше
+		{"en-US", "en-US", "ru"},  // прошлый удачный — первым
+		{"ru", "ru", "en-US"},     //
+		{"de-DE", "ru,en-US", ""}, // не среди пробуемых
+	}
+	for _, c := range cases {
+		f, r := LangPlan(try, c.last)
+		if strings.Join(f, ",") != c.first || strings.Join(r, ",") != c.rest {
+			t.Errorf("%q: %v %v", c.last, f, r)
+		}
+	}
+	if f, r := LangPlan([]string{"en-US"}, "en-US"); len(f) != 1 || r != nil {
+		t.Error(f, r)
+	}
+}
+
+// Английский клиент: русский движок читает название хуже. Первое нажатие —
+// оба языка, лучший по оценке (en-US); дальше en-US первым, и русский не
+// нужен, пока английский уверен. Без тултипа — второй язык тоже пробуем.
+func TestRunnerLangOrder(t *testing.T) {
+	d := dict(t)
+	en := []string{"Road of Avalon to", "Soros-Axaesum", "7/7", "Closes in 5 h 53 m"}
+	ru := []string{"Road of Avalon to", "Sxrxs-Axxxsxm", "7/7", "Closes in 5 h 53 m"}
+	screen := map[string][]string{"ru": ru, "en-US": en}
+	var calls []string
+	r := NewRunner(RunnerConfig{
+		Path:    "/tmp/x.png",
+		Capture: func(string) (string, error) { return "", nil },
+		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
+			calls = append(calls, strings.Join(langs, ","))
+			out := map[string][]string{}
+			for _, l := range langs {
+				out[l] = screen[l]
+			}
+			return out, nil
+		},
+		Pick: func([]string) []string { return []string{"ru", "en-US"} },
+		Dict: d,
+	})
+	s := r.Run(context.Background())
+	if s.Kind != "" || s.Result.Lang != "en-US" || s.Result.Matches[0].Closeness < SureCloseness || strings.Join(calls, "|") != "ru,en-US" {
+		t.Fatalf("%+v %v", s.Result, calls)
+	}
+	calls = nil
+	s = r.Run(context.Background())
+	if s.Kind != "" || s.Result.Lang != "en-US" || strings.Join(calls, "|") != "en-US" || s.OCRLangs != "en-US" {
+		t.Fatalf("%+v %v %q", s.Result, calls, s.OCRLangs)
+	}
+	// Не портал: на первом языке тултипа нет — пробуем и второй.
+	screen = map[string][]string{"ru": {"Инвентарь"}, "en-US": {"Inventory"}}
+	calls = nil
+	if s = r.Run(context.Background()); s.Kind != ErrKindNoTooltip || strings.Join(calls, "|") != "en-US|ru" || s.OCRLangs != "en-US; ru" {
+		t.Fatalf("%+v %v", s, calls)
+	}
+	// Русский клиент: на английском тултип не уверен — второй язык, и
+	// выбирается лучший по оценке; дальше русский первым.
+	ruOK := []string{"Путь Авалона в", "Soros-Axaesum", "7/7", "Закроется через 5 ч 53 м"}
+	screen = map[string][]string{"ru": ruOK, "en-US": {"Nyrb Agaroha b", "Sxrxs-Axxxsxm"}}
+	calls = nil
+	if s = r.Run(context.Background()); s.Kind != "" || s.Result.Lang != "ru" || strings.Join(calls, "|") != "en-US|ru" {
+		t.Fatalf("%+v %v", s.Result, calls)
+	}
+	calls = nil
+	if s = r.Run(context.Background()); s.Result.Lang != "ru" || strings.Join(calls, "|") != "ru" {
+		t.Fatalf("%+v %v", s.Result, calls)
+	}
+	// Ошибка первого вызова не мешает второму.
+	screen = map[string][]string{"en-US": en}
+	r.cfg.Recognize = func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
+		if langs[0] == "ru" {
+			return nil, errors.New("сбой")
+		}
+		return map[string][]string{"en-US": en}, nil
+	}
+	if s = r.Run(context.Background()); s.Kind != "" || s.Result.Lang != "en-US" {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestDoubtfulShot(t *testing.T) {
+	d := dict(t)
+	sure := Result{Tooltip: Tooltip{Read: "Soros-Axaesum"}, Matches: d.Similar("Soros-Axaesum", 3), Portal: true}
+	weak := Result{Tooltip: Tooltip{Read: "Mawor Согде"}, Matches: d.Similar("Mawor Согде", 3), Portal: true}
+	if Doubtful(Shot{Result: sure}) || !Doubtful(Shot{Result: weak}) || !Doubtful(Shot{Kind: ErrKindUnknown}) ||
+		Doubtful(Shot{Kind: ErrKindNoTooltip}) || Doubtful(Shot{Result: Result{Matches: weak.Matches}}) {
+		t.Fatal(weak.Matches[0].Closeness)
+	}
+}

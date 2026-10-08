@@ -47,3 +47,17 @@ func ByButton(r Result, here *avalon.Place, d *Dict) (avalon.Tip, string) {
 	return avalon.Tip{From: here.Zone, To: to.Code, ClosesAt: int64(math.Round(closes)),
 		Size: r.Tooltip.Size, Region: here.Region}, ""
 }
+
+// DoubtFile — копия снимка сомнительной карточки в каталоге данных
+// (перезаписывается): тестер присылает её, если зона опознана неуверенно.
+const DoubtFile = "zone-capture-doubt.png"
+
+// Doubtful — карточка сомнительная: тултип прочитан, а зона не узнана
+// (ErrKindUnknown) или узнана неуверенно (Result.Doubtful, на карту не
+// идёт — WhyDoubt). Тогда снимок копируется в DoubtFile.
+func Doubtful(s Shot) bool {
+	if s.Kind == ErrKindUnknown {
+		return true
+	}
+	return s.Kind == "" && s.Result.Portal && s.Result.Doubtful()
+}

@@ -9,7 +9,8 @@
 // ограничивает. Параметры — через переменные среды.
 //
 // Здесь — скрипт и разбор его вывода (проверяется на маке); запуск — в
-// ocr_windows.go.
+// ocr_windows.go: обычно в рабочем PowerShell (internal/pwsh, тот же вывод),
+// а этот разовый скрипт — запасной путь.
 package ocr
 
 import (
@@ -18,12 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"time"
 )
-
-// Timeout — сколько ждём PowerShell: запуск с загрузкой WinRT — 1–2 с,
-// распознавание двух языков — доли секунды. Дольше — процесс убивается.
-const Timeout = 15 * time.Second
 
 // ErrUnsupported — OCR есть только на Windows.
 var ErrUnsupported = errors.New("распознавание текста есть только в Windows")
@@ -76,14 +72,6 @@ try {
   exit 1
 }
 `
-
-// Stdin — скрипт для `powershell -Command -`. PowerShell читает ввод
-// построчно, как с клавиатуры: многострочная конструкция (try/catch)
-// завершается пустой строкой, поэтому в конце их две. Ввод читается в
-// кодировке консоли (OEM), поэтому скрипты — только ASCII (тест).
-func Stdin(script string) string {
-	return strings.ReplaceAll(script, "\r\n", "\n") + "\n\n"
-}
 
 // Output — разобранный вывод скрипта.
 type Output struct {

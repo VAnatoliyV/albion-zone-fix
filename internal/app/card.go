@@ -68,8 +68,11 @@ func (a *App) AttachCard(info CardInfo) {
 
 // SetCard — итог нажатия: запоминает карточку, шлёт портал на карту (по
 // правилам zonecard.ByButton) и запоминает, куда человек собрался (для
-// риска по вылетам).
-func (a *App) SetCard(s zonecard.Shot, d *zonecard.Dict) {
+// риска по вылетам). Отдаёт решение о карте для журнала: «портал A → B
+// отправляю» или «не отправлено (<код>)» — код zonecard.Why*, "off",
+// zonecard.ErrKind* (карточка не вышла), "noPortal" (не тултип портала),
+// "noReporter".
+func (a *App) SetCard(s zonecard.Shot, d *zonecard.Dict) string {
 	set := a.settings.Get()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -80,18 +83,21 @@ func (a *App) SetCard(s zonecard.Shot, d *zonecard.Dict) {
 	c := &cardState{shot: s, at: now}
 	a.card = c
 	z := s.Result.Zone()
-	if s.Kind != "" || !s.Result.Portal || z == nil {
-		return
+	switch {
+	case s.Kind != "":
+		return "не отправлено (" + s.Kind + ")"
+	case !s.Result.Portal || z == nil:
+		return "не отправлено (noPortal)"
 	}
 	if a.here != nil && !s.Result.Doubtful() {
 		a.expect = &expectation{from: a.here.Zone, to: z.Code, at: now}
 	}
 	if !set.MapSend {
 		c.why = "off"
-		return
+		return "не отправлено (off)"
 	}
 	if a.mapRep == nil || d == nil {
-		return
+		return "не отправлено (noReporter)"
 	}
 	var here *avalon.Place
 	if a.here != nil {
@@ -101,10 +107,11 @@ func (a *App) SetCard(s zonecard.Shot, d *zonecard.Dict) {
 	tip, why := zonecard.ByButton(s.Result, here, d)
 	if why != "" {
 		c.why = why
-		return
+		return "не отправлено (" + why + ")"
 	}
 	c.tipTo = tip.To
 	a.mapRep.OfferTip(tip) // не блокирует
+	return "портал " + tip.From + " → " + tip.To + " отправляю"
 }
 
 // wantFor — куда шёл человек при вылете из from (по снимку портала).
