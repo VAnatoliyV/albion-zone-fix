@@ -30,6 +30,31 @@ const Repo = "VAnatoliyV/albion-zone-fix"
 // APIURL — последний выпуск.
 const APIURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 
+// PageURL — страница последнего выпуска: github.com перенаправляет её на
+// …/releases/tag/<тег>. Запасной путь, когда API не отвечает.
+const PageURL = "https://github.com/" + Repo + "/releases/latest"
+
+// releaseFromTagURL — выпуск по адресу тега (куда перенаправила PageURL):
+// версия из тега, вложения — по постоянным адресам …/releases/download/<тег>/.
+// base — адрес репозитория (https://github.com/<владелец>/<репо>).
+func releaseFromTagURL(tagURL, base string) (Release, error) {
+	const mark = "/releases/tag/"
+	i := strings.Index(tagURL, mark)
+	if i < 0 || !strings.HasPrefix(tagURL, base+mark) {
+		return Release{}, errors.New("перенаправление не на тег выпуска: " + tagURL)
+	}
+	tag, err := url.PathUnescape(tagURL[i+len(mark):])
+	if err != nil || tag == "" || strings.ContainsAny(tag, "/?#") {
+		return Release{}, errors.New("плохой тег в адресе: " + tagURL)
+	}
+	v := VersionFromTag(tag)
+	if v == "" || v[0] < '0' || v[0] > '9' {
+		return Release{}, errors.New("тег не похож на версию: " + tag)
+	}
+	dl := base + "/releases/download/" + url.PathEscape(tag) + "/"
+	return Release{Version: v, ZipURL: dl + ZipName, SigURL: dl + SigName}, nil
+}
+
 // Имена вложений выпуска.
 const (
 	ZipName = "AlbionJournal.zip"

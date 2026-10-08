@@ -67,6 +67,7 @@ type Config struct {
 
 	PublicKey ed25519.PublicKey // nil — PublicKey()
 	APIURL    string            // пусто — APIURL
+	PageURL   string            // пусто — PageURL (запасной путь без API)
 	Client    *http.Client      // nil — свой с таймаутами
 	Auto      func() bool       // «Обновлять автоматически»; nil — всегда да
 	Logf      func(string, ...any)
@@ -111,6 +112,9 @@ func New(c Config) *Updater {
 	}
 	if c.APIURL == "" {
 		c.APIURL = APIURL
+	}
+	if c.PageURL == "" {
+		c.PageURL = PageURL
 	}
 	if c.Client == nil {
 		c.Client = NewClient()
@@ -324,7 +328,57 @@ func (u *Updater) check() {
 	u.handle(rel)
 }
 
+// fetch узнаёт последний выпуск: сначала через API, а если API не ответило
+// (в России api.github.com бывает недоступен, а лимит 60 запросов в час
+// кончается у всех за одним IP провайдера) — по перенаправлению страницы
+// github.com/.../releases/latest на тег. Подпись проверяется одинаково, так
+// что запасной путь не слабее основного; нет только «что нового».
 func (u *Updater) fetch() (Release, error) {
+	rel, err := u.fetchAPI()
+	if err == nil {
+		return rel, nil
+	}
+	rel, err2 := u.fetchPage()
+	if err2 != nil {
+		return Release{}, fmt.Errorf("API: %v; страница выпуска: %v", err, err2)
+	}
+	u.c.Logf("API GitHub недоступно (%v), версия взята со страницы выпуска", err)
+	return rel, nil
+}
+
+func (u *Updater) fetchPage() (Release, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), NetTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.c.PageURL, nil)
+	if err != nil {
+		return Release{}, err
+	}
+	req.Header.Set("User-Agent", "AlbionJournal-Windows/"+u.c.Current)
+	cl := *u.c.Client
+	cl.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	r, err := cl.Do(req)
+	if err != nil {
+		return Release{}, err
+	}
+	r.Body.Close()
+	if r.StatusCode < 300 || r.StatusCode > 399 {
+		return Release{}, fmt.Errorf("HTTP %d вместо перенаправления", r.StatusCode)
+	}
+	loc, err := r.Location()
+	if err != nil {
+		return Release{}, err
+	}
+	rel, err := releaseFromTagURL(loc.String(), strings.TrimSuffix(u.c.PageURL, "/releases/latest"))
+	if err != nil {
+		return Release{}, err
+	}
+	if !u.c.AllowURL(rel.ZipURL) || !u.c.AllowURL(rel.SigURL) {
+		return Release{}, errors.New("ссылка выпуска не на github.com")
+	}
+	return rel, nil
+}
+
+func (u *Updater) fetchAPI() (Release, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), NetTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.c.APIURL, nil)

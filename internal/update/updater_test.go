@@ -22,6 +22,7 @@ type fakeGH struct {
 	sig      string
 	api, dl  atomic.Int32
 	noAssets bool
+	apiDown  bool // api.github.com не отвечает (лимит/блокировка)
 }
 
 // signed — версия, под которой подписан zip (обычно равна тегу).
@@ -44,6 +45,10 @@ func newGH(t *testing.T, k ed25519.PrivateKey, tag, signed string) *fakeGH {
 		switch r.URL.Path {
 		case "/api":
 			g.api.Add(1)
+			if g.apiDown {
+				http.Error(w, "rate limit", http.StatusForbidden)
+				return
+			}
 			var as []map[string]string
 			if !g.noAssets {
 				as = []map[string]string{
@@ -52,10 +57,12 @@ func newGH(t *testing.T, k ed25519.PrivateKey, tag, signed string) *fakeGH {
 				}
 			}
 			json.NewEncoder(w).Encode(map[string]any{"tag_name": g.tag, "body": "что нового", "assets": as})
-		case "/dl/" + ZipName:
+		case "/repo/releases/latest":
+			http.Redirect(w, r, g.srv.URL+"/repo/releases/tag/"+g.tag, http.StatusFound)
+		case "/repo/releases/download/" + g.tag + "/" + ZipName, "/dl/" + ZipName:
 			g.dl.Add(1)
 			w.Write(g.zip)
-		case "/dl/" + SigName:
+		case "/repo/releases/download/" + g.tag + "/" + SigName, "/dl/" + SigName:
 			w.Write([]byte(g.sig))
 		default:
 			http.NotFound(w, r)
@@ -81,7 +88,7 @@ func newHarness(t *testing.T, g *fakeGH, pub ed25519.PublicKey, current string) 
 	os.MkdirAll(h.prog, 0755)
 	h.u = New(Config{
 		Dir: filepath.Join(h.dir, "обновление"), Current: current, ProgramDir: h.prog, DataDir: h.dir, PID: 99,
-		PublicKey: pub, APIURL: g.srv.URL + "/api", Client: g.srv.Client(),
+		PublicKey: pub, APIURL: g.srv.URL + "/api", PageURL: g.srv.URL + "/repo/releases/latest", Client: g.srv.Client(),
 		AllowURL: func(s string) bool { return strings.HasPrefix(s, g.srv.URL+"/") },
 		Launch: func(exe string, args ...string) error {
 			h.launched = append(h.launched, append([]string{exe}, args...))
@@ -326,5 +333,31 @@ func TestUpdaterCleansAfterInstalled(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(h.dir, "обновление", zipFile)); !os.IsNotExist(err) {
 		t.Fatal("скачанный zip уже стоящей версии не убран")
+	}
+}
+
+func TestUpdaterFallsBackToReleasePageWhenAPIFails(t *testing.T) {
+	k := testKey(t)
+	g := newGH(t, k, "v1.0.5", "1.0.5")
+	g.apiDown = true
+	h := newHarness(t, g, k.Public().(ed25519.PublicKey), "1.0.4")
+	h.u.CheckSync()
+	s := h.u.Status()
+	if s.State != StateReady || s.Ready == nil || s.Ready.Version != "1.0.5" {
+		t.Fatalf("API недоступно, а запасной путь не сработал: %+v %v", s, h.logs)
+	}
+}
+
+func TestReleaseFromPageRedirect(t *testing.T) {
+	rel, err := releaseFromTagURL("https://github.com/VAnatoliyV/albion-zone-fix/releases/tag/v1.2.3", "https://github.com/VAnatoliyV/albion-zone-fix")
+	if err != nil || rel.Version != "1.2.3" ||
+		rel.ZipURL != "https://github.com/VAnatoliyV/albion-zone-fix/releases/download/v1.2.3/AlbionJournal.zip" ||
+		rel.SigURL != "https://github.com/VAnatoliyV/albion-zone-fix/releases/download/v1.2.3/AlbionJournal.zip.sig" {
+		t.Fatalf("%+v %v", rel, err)
+	}
+	for _, bad := range []string{"https://github.com/VAnatoliyV/albion-zone-fix/releases", "https://github.com/x/releases/tag/nightly", ""} {
+		if _, err := releaseFromTagURL(bad, "https://github.com/VAnatoliyV/albion-zone-fix"); err == nil {
+			t.Fatalf("принят %q", bad)
+		}
 	}
 }
