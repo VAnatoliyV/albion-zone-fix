@@ -33,6 +33,7 @@ import (
 	"albionzonefix/internal/names"
 	"albionzonefix/internal/notify"
 	"albionzonefix/internal/ocr"
+	"albionzonefix/internal/oldcopy"
 	"albionzonefix/internal/pwsh"
 	"albionzonefix/internal/receiver"
 	"albionzonefix/internal/record"
@@ -63,6 +64,8 @@ func main() {
 	applyData := flag.String("data", "", "для -apply-update: каталог данных")
 	applyPID := flag.Int("pid", 0, "для -apply-update: чьего выхода ждать")
 	applyRestart := flag.Bool("restart", false, "для -apply-update: запустить программу после установки")
+	findOld := flag.String("find-old", "", "для установщика: число старых копий вне этой папки установки (код выхода)")
+	removeOld := flag.String("remove-old", "", "для установщика: закрыть и удалить старые копии вне этой папки установки")
 	flag.Parse()
 
 	// Версия — до всего остального (без прав администратора, без окна и без
@@ -74,6 +77,14 @@ func main() {
 	if *apply != "" {
 		os.Exit(runApply(update.Plan{Src: *apply, Dest: *applyTarget, Prev: *applyPrev,
 			PID: *applyPID, Restart: *applyRestart, DataDir: *applyData}))
+	}
+	// Старые копии в других папках (распакованный zip) — для установщика,
+	// тоже до проверки второй копии: старая копия как раз и запущена.
+	if *findOld != "" {
+		os.Exit(runFindOld(*findOld))
+	}
+	if *removeOld != "" {
+		os.Exit(runRemoveOld(*removeOld))
 	}
 
 	exe, _ := os.Executable()
@@ -474,6 +485,41 @@ func main() {
 			logLine("обновление при выходе не поставлено: %v", err)
 		}
 	}
+}
+
+// oldLog — журнал программы для -find-old/-remove-old (пишет установщик,
+// своего окна нет). Закрыть — второе значение.
+func oldLog() (func(string, ...any), func()) {
+	data, err := datadir.Dir()
+	if err != nil {
+		return func(string, ...any) {}, func() {}
+	}
+	f, err := os.OpenFile(filepath.Join(data, "albion-journal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return func(string, ...any) {}, func() {}
+	}
+	return func(format string, args ...any) {
+		fmt.Fprintf(f, "[старая копия] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	}, func() { f.Close() }
+}
+
+// runFindOld: код выхода — число найденных старых копий (0 — нет).
+func runFindOld(inst string) int {
+	logf, done := oldLog()
+	defer done()
+	n := len(oldcopy.Find(inst, oldcopy.System(logf)))
+	logf("установщик (%s): старых копий %d", inst, n)
+	return min(n, 100)
+}
+
+// runRemoveOld закрывает и удаляет старые копии; 0 — все убраны.
+func runRemoveOld(inst string) int {
+	logf, done := oldLog()
+	defer done()
+	if failed := oldcopy.Remove(inst, oldcopy.System(logf), oldcopy.WinCloser{}, oldcopy.Retarget); failed > 0 {
+		return 1
+	}
+	return 0
 }
 
 // runApply — процесс установки обновления (запущен прежней копией из

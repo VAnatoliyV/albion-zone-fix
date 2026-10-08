@@ -13,3 +13,6 @@ func Sync(on bool) error {
 	}
 	return nil
 }
+
+// Retarget — вне Windows задачи нет.
+func Retarget(exe string) error { return ErrUnsupported }

@@ -90,3 +90,19 @@ func TestSyncOffElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUserOf(t *testing.T) {
+	task := Task{Exe: `C:\x\AlbionJournal.exe`, Dir: `C:\x`, UserID: `PC\Анатолий & Co`}
+	if got := UserOf(task.XML()); got != task.UserID {
+		t.Fatalf("UserOf: %q", got)
+	}
+	// Пользователь берётся из Principals, даже если в триггере другой.
+	x := `<Task><Triggers><LogonTrigger><UserId>S-1-5-21-1</UserId></LogonTrigger></Triggers>` +
+		`<Principals><Principal><UserId>S-1-5-21-2</UserId></Principal></Principals></Task>`
+	if got := UserOf(x); got != "S-1-5-21-2" {
+		t.Fatalf("UserOf principals: %q", got)
+	}
+	if UserOf("мусор") != "" || UserOf("<UserId>без конца") != "" {
+		t.Fatal("UserOf на мусоре")
+	}
+}

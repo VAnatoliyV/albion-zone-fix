@@ -120,19 +120,40 @@ func DeleteArgs() []string { return []string{"/Delete", "/TN", TaskName, "/F"} }
 // QueryArgs — аргументы schtasks для чтения задачи в XML.
 func QueryArgs() []string { return []string{"/Query", "/TN", TaskName, "/XML"} }
 
-// CommandOf достаёт из XML задачи путь к программе — чтобы понять, не
-// переехала ли папка с программой с тех пор, как задачу создали.
-func CommandOf(taskXML string) string {
-	i := strings.Index(taskXML, "<Command>")
-	j := strings.Index(taskXML, "</Command>")
-	if i < 0 || j < i {
+// UserOf достаёт из XML задачи, от чьего имени она запускается (UserId
+// раздела Principals, иначе первый UserId) — чтобы при переносе задачи на
+// другую папку не сменить пользователя (установщик мог поднять права через
+// другую учётную запись).
+func UserOf(taskXML string) string {
+	s := taskXML
+	if i := strings.Index(s, "<Principals>"); i >= 0 {
+		s = s[i:]
+	}
+	return tagText(s, "UserId")
+}
+
+// tagText — текст первого <tag>…</tag> (с разбором экранирования XML).
+func tagText(s, tag string) string {
+	i := strings.Index(s, "<"+tag+">")
+	if i < 0 {
+		return ""
+	}
+	s = s[i+len(tag)+2:]
+	j := strings.Index(s, "</"+tag+">")
+	if j < 0 {
 		return ""
 	}
 	var v struct {
 		S string `xml:",chardata"`
 	}
-	if xml.Unmarshal([]byte("<c>"+taskXML[i+len("<Command>"):j]+"</c>"), &v) != nil {
+	if xml.Unmarshal([]byte("<c>"+s[:j]+"</c>"), &v) != nil {
 		return ""
 	}
-	return strings.Trim(strings.TrimSpace(v.S), `"`)
+	return strings.TrimSpace(v.S)
+}
+
+// CommandOf достаёт из XML задачи путь к программе — чтобы понять, не
+// переехала ли папка с программой с тех пор, как задачу создали.
+func CommandOf(taskXML string) string {
+	return strings.Trim(tagText(taskXML, "Command"), `"`)
 }

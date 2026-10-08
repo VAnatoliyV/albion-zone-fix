@@ -73,6 +73,8 @@ LangString T_DESKTOP ${LANG_ENGLISH} "Create a desktop shortcut"
 LangString T_DESKTOP ${LANG_RUSSIAN} "Создать ярлык на рабочем столе"
 LangString T_CLOSE ${LANG_ENGLISH} "Albion Journal is running. Close it (tray icon -> Exit) and click Retry."
 LangString T_CLOSE ${LANG_RUSSIAN} "Albion Journal сейчас запущен. Закройте его (значок в трее -> Выход) и нажмите «Повторить»."
+LangString T_OLD ${LANG_ENGLISH} "Found an old copy of Albion Journal in another folder (for example, an unpacked archive in Downloads). Close it and delete its files? Settings, session and prices will be kept."
+LangString T_OLD ${LANG_RUSSIAN} "Найдена старая копия Albion Journal в другой папке (например, распакованный архив в «Загрузках»). Закрыть её и удалить её файлы? Настройки, сессия и цены сохранятся."
 LangString T_DATA ${LANG_ENGLISH} "Also delete settings and logs ($APPDATA\${APP})?$\r$\n$\r$\nChoose No to keep them."
 LangString T_DATA ${LANG_RUSSIAN} "Удалить также настройки и журналы ($APPDATA\${APP})?$\r$\n$\r$\nВыберите «Нет», чтобы оставить их."
 
@@ -146,6 +148,17 @@ Section "Install"
   File "${SRC}\LICENSES.txt"
   File /r "${SRC}\zapret"
   WriteUninstaller "$INSTDIR\uninstall.exe"
+
+  ; Старая копия в другой папке (распакованный zip): запущенная, она держит
+  ; знак «уже запущена», и новая показывает её окно. Ищет и убирает сама
+  ; программа (internal/oldcopy): код выхода -find-old — число найденных;
+  ; -remove-old ищет заново (пути через установщик не передаются).
+  StrCpy $0 0 ; не запустилась — как «не найдено»
+  ExecWait '"$INSTDIR\AlbionJournal.exe" -find-old "$INSTDIR"' $0
+  ${If} $0 > 0
+    MessageBox MB_YESNO|MB_ICONQUESTION "$(T_OLD)" /SD IDYES IDNO +2
+    ExecWait '"$INSTDIR\AlbionJournal.exe" -remove-old "$INSTDIR"' $0
+  ${EndIf}
 
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\AlbionJournal.exe"

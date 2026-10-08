@@ -45,7 +45,28 @@ func Enable() error {
 	if err != nil {
 		return err
 	}
-	t := Task{Exe: exe, Dir: filepath.Dir(exe), UserID: u.Username}
+	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: u.Username})
+}
+
+// Retarget переносит существующую задачу на другой exe (установщик убрал
+// старую копию, на которую она указывала) с тем же пользователем.
+func Retarget(exe string) error {
+	out, err := schtasks(QueryArgs()...)
+	if err != nil {
+		return err
+	}
+	uid := UserOf(out)
+	if uid == "" {
+		u, err := user.Current()
+		if err != nil {
+			return err
+		}
+		uid = u.Username
+	}
+	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: uid})
+}
+
+func create(t Task) error {
 	tmp, err := os.MkdirTemp("", "albion-journal-task-")
 	if err != nil {
 		return err
