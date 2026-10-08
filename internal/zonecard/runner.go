@@ -388,8 +388,18 @@ func (r *Runner) recognize(ctx context.Context, img string, first, rest []string
 
 // Good — итог, лучше которого повторами не добыть: тултип портала с
 // временем, название опознано без сомнений.
+// Название обычной зоны без портала (карта мира, город) — тоже готовый итог:
+// дочитывать нечего. У дороги Авалона «нет признака портала» значит, что
+// тултип прочитан не весь, — там повторы нужны.
 func Good(s Shot) bool {
-	return s.Kind == "" && s.Result.Portal && s.Result.Tooltip.Left > 0 && !s.Result.Doubtful()
+	if s.Kind != "" || s.Result.Doubtful() {
+		return false
+	}
+	if !s.Result.Portal {
+		z := s.Result.Zone()
+		return z != nil && !z.Road
+	}
+	return s.Result.Tooltip.Left > 0
 }
 
 // Quality — оценка итога для выбора среди повторов: удачное опознание

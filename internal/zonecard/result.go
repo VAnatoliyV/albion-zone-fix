@@ -35,8 +35,16 @@ func (r Result) Doubtful() bool {
 	if first < 0.82 {
 		return true
 	}
-	if len(r.Matches) > 1 && first-r.Matches[1].Closeness < 0.06 {
-		return true
+	// Соперник — только зона с другим названием: у города несколько кодов
+	// с одним именем (Brecilien 5000 и 5001), это не сомнение.
+	for _, m := range r.Matches[1:] {
+		if m.Zone != nil && r.Matches[0].Zone != nil && m.Zone.Name == r.Matches[0].Zone.Name {
+			continue
+		}
+		if first-m.Closeness < 0.06 {
+			return true
+		}
+		break
 	}
 	return false
 }

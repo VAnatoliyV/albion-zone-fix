@@ -500,3 +500,16 @@ func TestQualityNameOverTime(t *testing.T) {
 		t.Fatalf("уверенный без времени %.2f, сомнительный со временем %.2f", Quality(sure), Quality(doubt))
 	}
 }
+
+// Название обычной зоны (Брецилиен на карте мира) без портала — готовый итог:
+// повторы и варианты здесь только задерживают (жалоба тестера: +0,5–1 с).
+func TestRunnerCityNameIsFinal(t *testing.T) {
+	r, calls, sleeps := retryRunner(t, map[string][]string{"/d/zone-capture.png": {"Brecilien"}}, nil)
+	s := r.Run(context.Background())
+	if s.Kind != "" || s.Result.Portal || s.Result.Zone() == nil || s.Result.Zone().Road {
+		t.Fatalf("%+v", s)
+	}
+	if len(*calls) != 1 || len(*sleeps) != 0 {
+		t.Fatalf("лишние попытки: %v паузы %v", *calls, *sleeps)
+	}
+}
