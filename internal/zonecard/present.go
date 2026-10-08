@@ -220,7 +220,7 @@ func BuildPanel(lang string, z *Zone, r Result, o ToastOptions, now time.Time) P
 			tail = append(tail, i18n.Tf(lang, "zn.portal", r.Tooltip.Size))
 		}
 		if left, ok := r.LeftAt(now); ok {
-			tail = append(tail, i18n.Tf(lang, "zn.closes", Clock(lang, left)))
+			tail = append(tail, i18n.Tf(lang, "zn.closes", approx(r)+Clock(lang, left)))
 			p.Warn = left < warnLeft
 		}
 		p.Footer = strings.Join(tail, " · ")

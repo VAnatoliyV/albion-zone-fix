@@ -179,6 +179,12 @@ func Choose(d *Dict, byLang map[string][]string, order []string, at time.Time) (
 		if r.Portal {
 			s += 10 // тултип портала важнее строгого поиска по названию
 		}
+		if !r.Loose {
+			s += 4 // строгое опознание важнее нестрогого на другом языке
+		}
+		if r.Tooltip.TimeLoose {
+			s -= 0.5 // и строгое время — нестрогого
+		}
 		return s
 	}
 	for _, lang := range order {

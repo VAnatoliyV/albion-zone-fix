@@ -87,7 +87,7 @@ func TestTolerantTime(t *testing.T) {
 		{"Закроется через 7 ч 05 м", 7*h + 5*m},
 		{"Закроется для вашей группы через 4 м 18 с", 4*m + 18*s},
 		{"Closes in 49 m 27 s", 49*m + 27*s},
-		{"6 4 17 M", 6*h + 17*m},
+		{"Закроется через 6 4 17 M", 6*h + 17*m},
 		{"6 q 77 N", 0}, // минут больше 59 — не время
 	} {
 		if got := tolerantTime(c.line); got != c.want {
@@ -208,7 +208,7 @@ func TestTesterNamesFloor(t *testing.T) {
 }
 
 func TestWeakMarker(t *testing.T) {
-	for _, l := range [][]string{{"vrg•e•", "Авал"}, {"aval"}, {"nyTb"}, {"Путь"}} {
+	for _, l := range [][]string{{"vrg•e•", "Авал"}, {"aval"}, {"nyTb AeanoH"}, {"—лутьАволоно"}} {
 		if !WeakMarker(l) {
 			t.Errorf("нет слабого признака: %q", l)
 		}
@@ -224,13 +224,13 @@ func TestWeakMarker(t *testing.T) {
 func TestRunnerWeakMarkerTriesVariants(t *testing.T) {
 	r, calls, _ := retryRunner(t, map[string][]string{
 		"/d/zone-capture.png":     {"vrg•e•", "AeanoH"}, // обрывок «Авалон»
-		"/d/zone-capture-bin.png": {"Путь Авалона в", "Fleos-Aluttum", "Закроется через 6 ч 26 м"},
+		"/d/zone-capture-inv.png": {"Путь Авалона в", "Fleos-Aluttum", "Закроется через 6 ч 26 м"},
 	}, nil)
 	s := r.Run(context.Background())
-	if !Good(s) || s.Try != "1/3 порог" {
+	if !Good(s) || s.Try != "1/3 инверсия" {
 		t.Fatalf("%+v", s)
 	}
-	if strings.Join(*calls, "|") != "/d/zone-capture.png|/d/zone-capture-gray.png|/d/zone-capture-bin.png" {
+	if strings.Join(*calls, "|") != "/d/zone-capture.png|/d/zone-capture-gray.png|/d/zone-capture-inv.png" {
 		t.Fatalf("порядок: %v", *calls)
 	}
 }

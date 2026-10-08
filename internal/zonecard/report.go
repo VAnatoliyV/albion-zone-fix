@@ -22,7 +22,8 @@ const (
 // сколько осталось (округлено до секунды), size, server. here == nil —
 // входа в зону после запуска не видели. Пустое why — отправлять.
 func ByButton(r Result, here *avalon.Place, d *Dict) (avalon.Tip, string) {
-	if r.Tooltip.Left <= 0 {
+	if r.Tooltip.Left <= 0 || r.Tooltip.TimeLoose {
+		// Время не прочитано или прочитано только нестрого — не выдумываем.
 		return avalon.Tip{}, WhyNoTime
 	}
 	if here == nil || here.Zone == "" {

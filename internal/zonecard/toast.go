@@ -172,6 +172,14 @@ func Clock(lang string, d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
+// approx — «≈» перед временем, прочитанным только нестрого.
+func approx(r Result) string {
+	if r.Tooltip.TimeLoose {
+		return "≈"
+	}
+	return ""
+}
+
 // BuildToast — текст уведомления для зоны z и снимка r на момент now.
 func BuildToast(lang string, z *Zone, r Result, o ToastOptions, now time.Time) Toast {
 	var chests, res, other []string
@@ -198,7 +206,7 @@ func BuildToast(lang string, z *Zone, r Result, o ToastOptions, now time.Time) T
 			tail = append(tail, i18n.Tf(lang, "zn.portal", r.Tooltip.Size))
 		}
 		if left, ok := r.LeftAt(now); ok {
-			tail = append(tail, i18n.Tf(lang, "zn.closes", Clock(lang, left)))
+			tail = append(tail, i18n.Tf(lang, "zn.closes", approx(r)+Clock(lang, left)))
 		}
 		if len(tail) > 0 {
 			other = append(other, strings.Join(tail, " · "))

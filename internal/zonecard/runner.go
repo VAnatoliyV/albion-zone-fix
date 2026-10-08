@@ -78,8 +78,8 @@ type Shot struct {
 	// Read — что OCR прочитал по языкам (для журнала при неудаче).
 	Read map[string][]string
 	// Weak — в прочитанном есть обрывок признака тултипа (WeakMarker):
-	// тултип, похоже, был, только прочитан плохо.
-	Weak bool
+	// тултип, похоже, был, только прочитан плохо. Marker — признак есть.
+	Weak, Marker bool
 }
 
 // RunnerConfig — что нужно снимающему (на Windows — снимок GDI и OCR через
@@ -363,7 +363,10 @@ loop:
 				usedLangs = used
 			}
 			s.Capture, s.Image, s.Source = snap.Info, img, path
-			if keep(s, fmt.Sprintf("%d/%d %s", n, shots, varWord(v))) {
+			// Обрезка без признака тултипа — могла быть не та панель: её
+			// итог (хоть и «готовый» — название города) не последний.
+			cropMiss := v == VarColor && snap.Cropped && !s.Marker
+			if keep(s, fmt.Sprintf("%d/%d %s", n, shots, varWord(v))) && !(cropMiss && withVariants) {
 				break loop
 			}
 			if v == VarColor && withVariants {
@@ -410,6 +413,9 @@ func (r *Runner) recognize(ctx context.Context, img string, first, rest []string
 		if WeakMarker(lines) {
 			s.Weak = true
 		}
+		if HasMarker(lines) {
+			s.Marker = true
+		}
 	}
 	if err != nil && len(byLang) == 0 {
 		s.Kind, s.Arg = ErrKindOCR, err.Error()
@@ -442,7 +448,7 @@ func Good(s Shot) bool {
 		z := s.Result.Zone()
 		return z != nil && !z.Road
 	}
-	return s.Result.Tooltip.Left > 0
+	return s.Result.Tooltip.Left > 0 && !s.Result.Tooltip.TimeLoose
 }
 
 // Quality — оценка итога для выбора среди повторов: удачное опознание
@@ -456,6 +462,9 @@ func Quality(s Shot) float64 {
 		}
 		if s.Result.Tooltip.Left > 0 {
 			q += 20
+			if s.Result.Tooltip.TimeLoose {
+				q -= 10
+			}
 		}
 		if !s.Result.Doubtful() {
 			q += 30 // правильное имя важнее времени
@@ -483,10 +492,15 @@ func Quality(s Shot) float64 {
 // тултип скорее не дорисовался или мигнул: нужнее новый снимок.
 func nextVariants(s Shot, cropped bool) []string {
 	switch {
-	case partly(s) || (s.Kind == ErrKindNoTooltip && s.Weak):
-		return []string{VarGray, VarBin, VarInvert}
-	case cropped && s.Kind == ErrKindNoTooltip:
+	case cropped && !s.Marker:
+		// На обрезке нет признака — сначала вся рамка.
 		return []string{VarFull}
+	case partly(s) || (s.Kind == ErrKindNoTooltip && s.Weak):
+		v := []string{VarGray, VarInvert, VarBin}
+		if cropped {
+			v = append(v, VarFull)
+		}
+		return v
 	}
 	return nil
 }

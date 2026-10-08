@@ -112,6 +112,9 @@ func garbledMarker(line string, time bool) bool {
 		return false
 	}
 	joined := strings.Join(toks, "")
+	if notPortal(joined, latKey(line)) {
+		return false
+	}
 	// «Биом: Пути Авалона» (тултип зоны дорог и нестабильного пути) — не
 	// признак, даже если «Биом» ушёл в другую строку: «Пути», а не «Путь».
 	if biome(joined) {
@@ -131,17 +134,55 @@ func garbledMarker(line string, time bool) bool {
 	}
 	// «Авалона в» последним словом: предлог «в» английский движок пишет
 	// «B», «a» или «e».
+	// Слово должно кончаться на «Авалона» («…ьАвалона», «Жалоно»), а не
+	// «Аваланш», «Авалонский».
 	last := toks[len(toks)-1]
 	if len(toks) >= 2 && (last == "в" || last == "а") {
-		if fuzzyContains(toks[len(toks)-2], avalonTail, 2) {
+		if endsLike(toks[len(toks)-2], avalonTail, 2) {
 			return true
 		}
 	}
+	// С временем в снимке хватает и «Авалона» отдельным словом (последним
+	// или предпоследним) — с точностью до одной буквы, без суффикса.
 	if time {
-		for _, t := range toks {
-			if fuzzyContains(t, avalonTail, 1) && len([]rune(t)) <= len([]rune(avalonTail))+5 {
+		for i := max(0, len(toks)-2); i < len(toks); i++ {
+			if Levenshtein([]rune(toks[i]), []rune(avalonTail)) <= 1 {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// notPortal — фразы с «Авалоном», которые не портал: сундуки, стражи,
+// авалонские мобы и предметы.
+func notPortal(cyrJoined, lat string) bool {
+	for _, w := range []string{"сундук", "страж", "кпюч"} {
+		if strings.Contains(cyrJoined, w) {
+			return true
+		}
+	}
+	for _, w := range []string{"chest", "guard", "avalonian", "key"} {
+		if strings.Contains(lat, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// endsLike — слово tok кончается на что-то в пределах k правок от pat, и
+// последняя буква та же («…авапана», а не «…авапанш»).
+func endsLike(tok, pat string, k int) bool {
+	t, p := []rune(tok), []rune(pat)
+	if len(t) == 0 || t[len(t)-1] != p[len(p)-1] {
+		return false
+	}
+	for l := len(p) - k; l <= len(p)+k; l++ {
+		if l <= 0 || l > len(t) {
+			continue
+		}
+		if Levenshtein(t[len(t)-l:], p) <= k {
+			return true
 		}
 	}
 	return false
@@ -152,18 +193,29 @@ func biome(joined string) bool {
 	return strings.Contains(joined, "биам") || strings.HasSuffix(joined, "путиавапана")
 }
 
-// WeakMarker — в строках есть хотя бы обрывок признака («авал», «aval»,
-// «путь» после нормализации): тултип, скорее всего, под курсором, только
-// прочитан плохо — стоит дочитать вариантами картинки, а не переснимать.
+// WeakMarker — в строках есть хотя бы обрывок признака: слово, которое
+// начинается на «авал»/«aval», или «путь» вплотную к «авал»: тултип,
+// скорее всего, под курсором, только прочитан плохо — стоит дочитать
+// вариантами картинки, а не переснимать. «провал», «карнавал», «путь
+// домой» — не обрывок.
 func WeakMarker(lines []string) bool {
 	for _, l := range lines {
-		joined := strings.Join(cyrTokens(l), "")
-		if biome(joined) {
+		toks := cyrTokens(l)
+		joined := strings.Join(toks, "")
+		if biome(joined) || notPortal(joined, latKey(l)) {
 			continue
 		}
-		lat := latKey(l)
-		if strings.Contains(joined, "авап") || strings.Contains(joined, "путь") ||
-			strings.Contains(lat, "aval") || strings.Contains(lat, "roadof") {
+		for _, t := range toks {
+			if strings.HasPrefix(t, "авап") || strings.Contains(t, "путьав") {
+				return true
+			}
+		}
+		for _, w := range strings.FieldsFunc(strings.ToLower(l), func(r rune) bool { return !unicode.IsLetter(r) }) {
+			if strings.HasPrefix(w, "aval") {
+				return true
+			}
+		}
+		if strings.Contains(latKey(l), "roadofav") {
 			return true
 		}
 	}
@@ -224,8 +276,13 @@ func tolerantTime(line string) time.Duration {
 			toks[i] = "6"
 		}
 	}
-	// «6 4 17 M»: одиночная «4» между числами — это «ч».
-	for i := 1; i+2 < len(toks); i++ {
+	// Строка размера портала («7/7 N», «20/20 Н») — не время.
+	if reSize.MatchString(line) {
+		return 0
+	}
+	// «6 4 17 M»: одиночная «4» между числами — это «ч», но только в строке
+	// «Закроется через …» (иначе «3 4 5 M» стало бы 3 ч 5 м).
+	for i := 1; timeContext(line) && i+2 < len(toks); i++ {
 		if toks[i] == "4" && isNum(toks[i-1]) && isNum(toks[i+1]) && unitOf(toks[i+2]) == 'm' {
 			toks[i] = "ч"
 		}
@@ -270,6 +327,23 @@ func tolerantTime(line string) time.Duration {
 		}
 	}
 	return 0
+}
+
+// timeContext — строка «Закроется через …» / «Closes in …» (или значок
+// песочных часов перед временем).
+func timeContext(line string) bool {
+	low := strings.ToLower(line)
+	for _, w := range []string{"закро", "через", "closes", "close", "⏳", "⌛", "ⴟ"} {
+		if strings.Contains(low, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTimeLine — строка — это время (строгое или искажённое), а не название.
+func isTimeLine(line string) bool {
+	return timeLeft([]string{line}) > 0 || tolerantTime(line) > 0
 }
 
 func isNum(s string) bool {
@@ -320,6 +394,9 @@ func groupTime(ps []timePart) time.Duration {
 	}
 	if has['m'] && !has['h'] && !has['s'] && !has['d'] {
 		return 0 // одни минуты — скорее обрезанное «X ч NN м»
+	}
+	if has['s'] && !has['m'] && !has['h'] && !has['d'] {
+		return 0 // одни секунды — скорее обрезанное «X м NN с»
 	}
 	return time.Duration(sec) * time.Second
 }

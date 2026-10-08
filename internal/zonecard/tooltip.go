@@ -17,6 +17,9 @@ type Tooltip struct {
 	Size int `json:"size,omitempty"`
 	// Left — сколько порталу жить на момент снимка; 0 — не прочитано.
 	Left time.Duration `json:"left,omitempty"`
+	// TimeLoose — время прочитано только нестрого (tolerantTime): на
+	// карточке показываем, на карту не отправляем.
+	TimeLoose bool `json:"timeLoose,omitempty"`
 }
 
 // markers — признак, что перед нами портал дорог, а не случайный текст.
@@ -97,14 +100,24 @@ var prepositions = []string{" to ", " в "}
 
 // HasMarker — в строках есть признак тултипа портала (по нему выбирается
 // язык OCR, на котором тултип прочитан).
-func HasMarker(lines []string) bool {
-	withTime := anyTime(lines)
-	for _, l := range lines {
-		if markerIn(l, withTime) {
-			return true
+func HasMarker(lines []string) bool { return markerIndex(lines) >= 0 }
+
+// markerIndex — строка признака: сначала строгий признак на любой строке,
+// потом искажённый (garbledMarker; хвосту «Авалона» без предлога нужно
+// строгое время в снимке). -1 — нет.
+func markerIndex(lines []string) int {
+	for i, l := range lines {
+		if markerAt(l) {
+			return i
 		}
 	}
-	return false
+	withTime := timeLeft(lines) > 0
+	for i, l := range lines {
+		if markerIn(l, withTime) {
+			return i
+		}
+	}
+	return -1
 }
 
 // ParseTooltip разбирает строки с экрана. false — это не тултип портала.
@@ -115,14 +128,7 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 			clean = append(clean, l)
 		}
 	}
-	idx := -1
-	withTime := anyTime(clean)
-	for i, l := range clean {
-		if markerIn(l, withTime) {
-			idx = i
-			break
-		}
-	}
+	idx := markerIndex(clean)
 	if idx < 0 {
 		return Tooltip{}, false
 	}
@@ -141,34 +147,43 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 			break
 		}
 	}
+	after := idx + 1 // строка сразу после блока «признак + название»
 	if len([]rune(Clean(name))) < 4 && idx+1 < len(clean) {
+		// Строка времени — не название («6 q 17 N» после заголовка).
+		if isTimeLine(clean[idx+1]) {
+			return Tooltip{}, false
+		}
 		name = clean[idx+1]
+		after = idx + 2
 	}
 	name = Clean(name)
 	if len([]rune(name)) < 4 {
 		return Tooltip{}, false
 	}
-	left := timeLeft(clean)
-	if left == 0 {
-		// В тултипе — и время искажённое («6 q 17 N»).
-		left = tolerantLeft(clean)
+	t := Tooltip{Read: name, Size: portalSize(clean), Left: timeLeft(clean)}
+	if t.Left == 0 {
+		// В тултипе — и время искажённое («6 q 17 N»): только нестрого,
+		// на карту не идёт.
+		if t.Left = tolerantLeft(clean, after); t.Left > 0 {
+			t.TimeLoose = true
+		}
 	}
-	return Tooltip{Read: name, Size: portalSize(clean), Left: left}, true
+	return t, true
 }
 
-// tolerantLeft — время по искажённым строкам (tolerantTime); только для
-// строк тултипа, где признак уже найден.
-func tolerantLeft(lines []string) time.Duration {
-	for _, l := range lines {
+// tolerantLeft — время по искажённым строкам (tolerantTime): только строка
+// «Закроется через …» или строка after сразу после признака с названием.
+func tolerantLeft(lines []string, after int) time.Duration {
+	for i, l := range lines {
+		if i != after && !timeContext(l) {
+			continue
+		}
 		if d := tolerantTime(l); d > 0 {
 			return d
 		}
 	}
 	return 0
 }
-
-// anyTime — в строках есть время (строгое или искажённое).
-func anyTime(lines []string) bool { return timeLeft(lines) > 0 || tolerantLeft(lines) > 0 }
 
 // Clean убирает мусор распознавания: значок черепа, вопросительные знаки,
 // кавычки — всё, что не буква, не цифра, не дефис, не апостроф и не пробел.
