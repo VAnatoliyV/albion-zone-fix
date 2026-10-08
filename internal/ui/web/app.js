@@ -563,7 +563,7 @@ $('znSettings').onclick = () => openSettings();
 function applyLook() {
   if (!S) return;
   const st = S.settings;
-  const skin = st.skin === 'plain' ? 'plain' : 'pixel';
+  const skin = st.skin === 'pixel' ? 'pixel' : 'plain';
   if (document.documentElement.dataset.skin !== skin) document.documentElement.dataset.skin = skin;
   const still = !st.logoAnim || S.windowHidden || document.hidden;
   const src = still ? 'rabbit.png' : 'rabbit.gif';
@@ -580,7 +580,7 @@ function renderSettings() {
   if (!S) return;
   const st = S.settings;
   applyLook();
-  document.querySelectorAll('#skinTabs button').forEach(b => b.classList.toggle('on', b.dataset.skin === (st.skin === 'plain' ? 'plain' : 'pixel')));
+  document.querySelectorAll('#skinTabs button').forEach(b => b.classList.toggle('on', b.dataset.skin === (st.skin === 'pixel' ? 'pixel' : 'plain')));
   document.querySelectorAll('[data-set]').forEach(el => { el.checked = !!st[el.dataset.set]; });
   document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
   $('shareHint').textContent = t(st.shareADP ? 'set.shareOn' : 'set.shareOff');

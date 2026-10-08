@@ -56,9 +56,9 @@ type Settings struct {
 	// сервер молчит, и риск по истории в карточке портала.
 	BlackWarn bool `json:"blackWarn"`
 
-	// Skin — оформление страницы: SkinPixel (как сейчас, пиксельный шрифт и
-	// срезанные углы) или SkinPlain (системный шрифт, мягкие скругления),
-	// как Skin у мака.
+	// Skin — оформление страницы: SkinPlain (системный шрифт, мягкие
+	// скругления; по умолчанию) или SkinPixel (пиксельный шрифт и срезанные
+	// углы), как Skin у мака. В старом файле без ключа — обычное.
 	Skin string `json:"skin"`
 	// LogoAnim — живой кролик в шапке (logoAnim у мака); выключен — значок.
 	LogoAnim bool `json:"logoAnim"`
@@ -80,12 +80,12 @@ const (
 	SkinPlain = "plain"
 )
 
-// NormalizeSkin — знакомое оформление; всё прочее — пиксельное.
+// NormalizeSkin — знакомое оформление; всё прочее — обычное.
 func NormalizeSkin(s string) string {
-	if s == SkinPlain {
-		return SkinPlain
+	if s == SkinPixel {
+		return SkinPixel
 	}
-	return SkinPixel
+	return SkinPlain
 }
 
 // WatchGame — нужно ли следить за процессом игры.
@@ -95,7 +95,7 @@ func (s Settings) WatchGame() bool { return s.ShowWithGame || s.StartWithGame ||
 func Default() Settings {
 	return Settings{ShareADP: true, SessionStats: true, CollectOnStart: true, StopOnExit: true, AutoUpdate: true, MapSend: true,
 		ZoneKey: "xbutton1", ZoneNotify: true, NotifyChests: true, NotifyRes: true, NotifyDng: true, NotifyPortal: true,
-		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPixel, LogoAnim: true}
+		NotifyOrder: "chestsFirst", BlackWarn: true, Skin: SkinPlain, LogoAnim: true}
 }
 
 // Store читает и пишет настройки; безопасен из нескольких горутин.

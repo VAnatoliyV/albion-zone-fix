@@ -515,22 +515,22 @@ func TestPageSkinAndLogo(t *testing.T) {
 		return string(b)
 	}
 	p := page()
-	if !strings.Contains(p, `data-skin="pixel"`) || !strings.Contains(p, `src="rabbit.gif"`) || strings.Contains(p, "{{") {
-		t.Fatal("по умолчанию — пиксельное оформление и живой кролик")
+	if !strings.Contains(p, `data-skin="plain"`) || !strings.Contains(p, `src="rabbit.gif"`) || strings.Contains(p, "{{") {
+		t.Fatal("по умолчанию — обычное оформление и живой кролик")
 	}
-	if code, out := postJSON(t, e, `{"skin":"plain","logoAnim":false,"resetOnZone":true,"showWithGame":true,"startWithGame":true,"quitWithGame":true}`); code != 200 {
+	if code, out := postJSON(t, e, `{"skin":"pixel","logoAnim":false,"resetOnZone":true,"showWithGame":true,"startWithGame":true,"quitWithGame":true}`); code != 200 {
 		t.Fatalf("%d %v", code, out)
 	}
 	p = page()
-	if !strings.Contains(p, `data-skin="plain"`) || !strings.Contains(p, `src="rabbit.png"`) {
-		t.Fatal("обычное оформление и значок вместо гифки не подставлены")
+	if !strings.Contains(p, `data-skin="pixel"`) || !strings.Contains(p, `src="rabbit.png"`) {
+		t.Fatal("пиксельное оформление и значок вместо гифки не подставлены")
 	}
 	s := e.a.Settings()
 	if !s.ResetOnZone || !s.ShowWithGame || !s.StartWithGame || !s.QuitWithGame {
 		t.Fatalf("%+v", s)
 	}
-	if code, _ := postJSON(t, e, `{"skin":"<script>"}`); code != 200 || e.a.Settings().Skin != settings.SkinPixel {
-		t.Fatal("незнакомое оформление должно стать пиксельным")
+	if code, _ := postJSON(t, e, `{"skin":"<script>"}`); code != 200 || e.a.Settings().Skin != settings.SkinPlain {
+		t.Fatal("незнакомое оформление должно стать обычным")
 	}
 }
 

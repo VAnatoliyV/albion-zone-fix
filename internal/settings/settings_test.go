@@ -66,7 +66,7 @@ func TestStage5DefaultsLikeMac(t *testing.T) {
 	// Файл версии 1.0.1: полей этапа 5 нет — как у мака по умолчанию.
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"language":"ru"}`), 0644)
 	s := Open(dir).Get()
-	if s.Skin != SkinPixel || !s.LogoAnim {
+	if s.Skin != SkinPlain || !s.LogoAnim {
 		t.Fatalf("оформление: %+v", s)
 	}
 	if s.ResetOnZone || s.ShowWithGame || s.StartWithGame || s.QuitWithGame || s.WatchGame() {
@@ -78,17 +78,40 @@ func TestSkinSavedAndNormalized(t *testing.T) {
 	dir := t.TempDir()
 	st := Open(dir)
 	v := st.Get()
-	v.Skin, v.LogoAnim, v.QuitWithGame = SkinPlain, false, true
+	if v.Skin != SkinPlain {
+		t.Fatalf("новые настройки — обычное оформление: %q", v.Skin)
+	}
+	v.Skin, v.LogoAnim, v.QuitWithGame = SkinPixel, false, true
 	if err := st.Set(v); err != nil {
 		t.Fatal(err)
 	}
 	got := Open(dir).Get()
-	if got.Skin != SkinPlain || got.LogoAnim || !got.WatchGame() {
+	if got.Skin != SkinPixel || got.LogoAnim || !got.WatchGame() {
 		t.Fatalf("%+v", got)
 	}
-	for in, want := range map[string]string{"plain": SkinPlain, "pixel": SkinPixel, "": SkinPixel, "neon": SkinPixel} {
+	for in, want := range map[string]string{"plain": SkinPlain, "pixel": SkinPixel, "": SkinPlain, "neon": SkinPlain} {
 		if NormalizeSkin(in) != want {
 			t.Errorf("NormalizeSkin(%q)=%q", in, NormalizeSkin(in))
 		}
+	}
+}
+
+// Обычное оформление по умолчанию; уже выбранное пиксельное не трогаем.
+func TestSkinDefaultPlainKeepsSaved(t *testing.T) {
+	for body, want := range map[string]string{
+		``:                                 SkinPlain, // пустой файл — битый, берутся настройки по умолчанию
+		`{}`:                               SkinPlain,
+		`{"language":"ru"}`:                SkinPlain, // старый файл без ключа
+		`{"language":"ru","skin":"pixel"}`: SkinPixel,
+		`{"skin":"plain"}`:                 SkinPlain,
+	} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, FileName), []byte(body), 0644)
+		if got := Open(dir).Get().Skin; got != want {
+			t.Errorf("%q: %q, а надо %q", body, got, want)
+		}
+	}
+	if got := Open(t.TempDir()).Get().Skin; got != SkinPlain {
+		t.Errorf("нет файла: %q", got)
 	}
 }

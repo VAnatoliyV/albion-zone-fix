@@ -402,13 +402,13 @@ func TestSkinNormalizedOnSave(t *testing.T) {
 	s := a.Settings()
 	s.Skin = "neon"
 	a.SetSettings(s)
-	if a.Settings().Skin != settings.SkinPixel {
+	if a.Settings().Skin != settings.SkinPlain {
 		t.Fatalf("незнакомое оформление: %q", a.Settings().Skin)
 	}
-	s.Skin = settings.SkinPlain
+	s.Skin = settings.SkinPixel
 	a.SetSettings(s)
-	if New(dir, dir, nil).Settings().Skin != settings.SkinPlain {
-		t.Fatal("обычное оформление не сохранилось")
+	if New(dir, dir, nil).Settings().Skin != settings.SkinPixel {
+		t.Fatal("пиксельное оформление не сохранилось")
 	}
 }
 
