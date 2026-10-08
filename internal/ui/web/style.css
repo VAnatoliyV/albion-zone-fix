@@ -195,6 +195,10 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
 .lgitems { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text); font-size: 10px; align-items: center; }
 .lgitems span { display: inline-flex; align-items: center; gap: 4px; }
 #ntBox { margin-left: 40px; }
+.hint.gold { color: var(--gold); }
+/* кнопка карточки зоны: подпись текущей, «нажми кнопку…» — пока записываем */
+.keycap { font: 600 12px var(--pix); padding: 4px 9px; border: 1px solid var(--line2); background: var(--card2); color: var(--text); }
+.keycap.waiting { color: var(--gold); border-color: var(--gold); }
 
 /* живой кролик выключен — значок программы (как у мака) */
 .rabbit.still { height: 38px; image-rendering: auto; }
@@ -230,6 +234,7 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
 [data-skin="plain"] .tabs button { background: transparent; border-right: 0; border-radius: 6px; font-weight: 500; }
 [data-skin="plain"] .tabs button.on { background: #2E3644; color: var(--text); }
 [data-skin="plain"] select { border-radius: 6px; }
+[data-skin="plain"] .keycap { border-radius: 6px; font-weight: 500; }
 [data-skin="plain"] .alert { border-radius: 8px; }
 [data-skin="plain"] .ico { border-radius: 5px; }
 [data-skin="plain"] .cdpanel { border-radius: 5px; }

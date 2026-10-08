@@ -7,12 +7,16 @@
 //	go run ./tools/uidemo запись.azf      — переходы из настоящей записи
 //	go run ./tools/uidemo -fake -map 429  — ответ поддельного сервера карты (200, 429, 422, 0 — недоступен)
 //	go run ./tools/uidemo -fake -card ru  — карточка зоны по строкам тултипа с мака (ru, en, open, err)
+//	go run ./tools/uidemo -rec ctrl+q     — «Нажми кнопку…»: через 1,5 с подсказка про
+//	                                        модификатор, ещё через 1,5 с — эта кнопка
+//	                                        (timeout — ждать до таймаута, error — ошибка)
 //
 // Проходы по дорогам уходят только на поддельный сервер карты внутри демо,
 // на настоящий — никогда.
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"flag"
@@ -28,6 +32,7 @@ import (
 	"albionzonefix/internal/avalon"
 	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/hotkey"
 	"albionzonefix/internal/names"
 	"albionzonefix/internal/ownprices"
 	"albionzonefix/internal/photon"
@@ -53,6 +58,7 @@ func main() {
 	lang := flag.String("lang", "", "язык программы (ru, en, es)")
 	mapCode := flag.Int("map", 200, "ответ поддельного сервера карты: 200, 429, 422; 0 — недоступен")
 	card := flag.String("card", "", "карточка зоны: ru, en, open (обычная зона) или err")
+	rec := flag.String("rec", "mbutton", "что «нажмут» при записи кнопки карточки: кнопка, timeout или error")
 	flag.Parse()
 
 	dir, _ := os.MkdirTemp("", "aj-ui")
@@ -121,6 +127,7 @@ func main() {
 		OpenURL:     func(u string) { fmt.Println("открыть:", u) },
 		OpenFolder:  func(d string) { fmt.Println("папка:", d) },
 		OpenMap:     func() { fmt.Println("окно карты:", avalon.MapURL(a.HereCode())) },
+		RecordKey:   fakeRecord(*rec),
 	})
 	if err != nil {
 		fmt.Println(err)
@@ -128,6 +135,39 @@ func main() {
 	}
 	fmt.Println(srv.URL)
 	select {}
+}
+
+// fakeRecord — запись кнопки без хуков: подсказка про модификатор, потом
+// кнопка (или таймаут, или ошибка); отмена со страницы — сразу.
+func fakeRecord(what string) func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error) {
+	return func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error) {
+		wait := func(d time.Duration) error {
+			select {
+			case <-time.After(d):
+				return nil
+			case <-ctx.Done():
+				return hotkey.ErrCancel
+			}
+		}
+		if err := wait(1500 * time.Millisecond); err != nil {
+			return "", err
+		}
+		hint("needMod")
+		switch what {
+		case "timeout":
+			if err := wait(timeout - 1500*time.Millisecond); err != nil {
+				return "", err
+			}
+			return "", hotkey.ErrTimeout
+		case "error":
+			return "", fmt.Errorf("SetWindowsHookEx: доступ запрещён")
+		}
+		if err := wait(1500 * time.Millisecond); err != nil {
+			return "", err
+		}
+		fmt.Println("запись кнопки:", what)
+		return what, nil
+	}
 }
 
 func writeFakes(dir string) {

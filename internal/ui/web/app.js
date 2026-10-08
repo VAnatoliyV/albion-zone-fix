@@ -450,11 +450,25 @@ function clockLeft(sec) {
   return m + ':' + String(s).padStart(2, '0');
 }
 
+// Подпись кнопки карточки: мышь — словами, клавиша — «Ctrl+Q», «F7».
+const KEY_MODS = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win' };
+const KEY_NAMES = { pageup: 'Page Up', pagedown: 'Page Down', scrolllock: 'Scroll Lock', capslock: 'Caps Lock', numlock: 'Num Lock',
+  insert: 'Insert', delete: 'Delete', home: 'Home', end: 'End', pause: 'Pause', esc: 'Esc', space: 'Space', enter: 'Enter',
+  tab: 'Tab', backspace: 'Backspace', left: '←', right: '→', up: '↑', down: '↓',
+  vkba: ';', vkbb: '=', vkbc: ',', vkbd: '-', vkbe: '.', vkbf: '/', vkc0: '`', vkdb: '[', vkdc: '\\', vkdd: ']', vkde: "'" };
 function keyLabel(k) {
   if (k === 'xbutton1') return t('key.mouse4');
   if (k === 'xbutton2') return t('key.mouse5');
+  if (k === 'mbutton') return t('key.mouse3');
   if (k === 'off') return t('key.off');
-  return String(k || '').toUpperCase();
+  let s = String(k || '');
+  let last = '';
+  if (s.endsWith('num+')) { last = 'num+'; s = s.slice(0, -4); } else { const i = s.lastIndexOf('+'); last = s.slice(i + 1); s = i < 0 ? '' : s.slice(0, i + 1); }
+  const mods = s.split('+').filter(Boolean).map(m => KEY_MODS[m] || m);
+  let name = KEY_NAMES[last];
+  if (!name && /^num./.test(last)) name = 'Num ' + last.slice(3);
+  if (!name) name = last.toUpperCase();
+  return mods.concat(name).join('+');
 }
 
 const cdRow = (label, html) => `<div class="cdrow"><div class="cdlabel">${esc(label)}</div><div class="cdval">${html}</div></div>`;
@@ -584,9 +598,7 @@ function renderSettings() {
   document.querySelectorAll('[data-set]').forEach(el => { el.checked = !!st[el.dataset.set]; });
   document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
   $('shareHint').textContent = t(st.shareADP ? 'set.shareOn' : 'set.shareOff');
-  const keys = ['xbutton1', 'xbutton2', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'off'];
-  setHTML($('zoneKey'), keys.map(k => `<option value="${k}">${esc(keyLabel(k))}</option>`).join(''));
-  $('zoneKey').value = st.zoneKey || 'xbutton1';
+  renderKeyRec();
   $('ntBox').hidden = !st.zoneNotify;
   document.querySelectorAll('#ntOrder button').forEach(b => b.classList.toggle('on', b.dataset.order === (st.notifyOrder || 'chestsFirst')));
   $('dataDir').textContent = S.dataDir || '';
@@ -605,7 +617,12 @@ function openSettings() { renderSettings(); $('setErr').hidden = true; $('settin
 $('gear').onclick = openSettings;
 $('setClose').onclick = () => { $('settings').hidden = true; };
 $('settings').addEventListener('click', e => { if (e.target.id === 'settings') $('settings').hidden = true; });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') $('settings').hidden = true; });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Во время записи Esc — отмена записи (хук программы тоже её видит), а не закрытие настроек.
+  if (KR.active) post('/api/hotkey/cancel', {}).then(pollKeyRec);
+  else $('settings').hidden = true;
+});
 document.querySelectorAll('[data-set]').forEach(el => {
   el.addEventListener('change', async () => { await saveSettings({ [el.dataset.set]: el.checked }); refresh(); });
 });
@@ -622,7 +639,50 @@ $('skinTabs').addEventListener('click', async e => {
   if (b) await saveSettings({ skin: b.dataset.skin });
 });
 $('openData').onclick = () => post('/api/open', { what: 'data' });
-$('zoneKey').addEventListener('change', async () => { await saveSettings({ zoneKey: $('zoneKey').value }); refresh(); });
+
+// Кнопка карточки — как на маке: «Назначить» и следующее нажатие. Ловит
+// программа своими хуками (WebView2 съел бы боковые кнопки как «назад»),
+// страница только спрашивает, чем кончилось.
+const KR = { active: false, hint: '', res: '', err: '', seq: 0, timer: 0 };
+function renderKeyRec() {
+  if (!S) return;
+  const key = S.settings.zoneKey || 'xbutton1';
+  $('zoneKey').textContent = KR.active ? t('key.waiting') : keyLabel(key);
+  $('zoneKey').classList.toggle('waiting', KR.active);
+  $('zoneKeyRec').textContent = KR.active ? t('key.cancel') : t('key.set');
+  $('zoneKeyOff').hidden = KR.active || key === 'off';
+  const done = KR.res === 'timeout' ? t('key.timeout') : KR.res === 'error' ? t('key.failed', KR.err || t('err.generic'))
+    : KR.res === 'unsupported' ? t('key.unsupported') : '';
+  const msg = KR.active ? (KR.hint === 'needMod' ? t('key.needMod') : t('key.recHint')) : done;
+  $('zoneKeyMsg').hidden = !msg;
+  $('zoneKeyMsg').textContent = msg;
+  $('zoneKeyMsg').classList.toggle('gold', KR.active ? KR.hint === 'needMod' : !!done);
+}
+async function pollKeyRec() {
+  clearTimeout(KR.timer);
+  let st;
+  try { st = await getJSON('/api/hotkey/record'); } catch (e) { KR.timer = setTimeout(pollKeyRec, 500); return; }
+  if (st.seq !== KR.seq) st = { active: false, result: '' };
+  KR.active = !!st.active;
+  KR.hint = st.hint || '';
+  if (KR.active) KR.timer = setTimeout(pollKeyRec, 250);
+  else {
+    KR.res = st.result || ''; KR.err = st.error || '';
+    if (st.result === 'ok' && S) S.settings.zoneKey = st.key;
+    refresh();
+  }
+  renderKeyRec();
+}
+$('zoneKeyRec').onclick = async () => {
+  if (KR.active) { await post('/api/hotkey/cancel', {}); return pollKeyRec(); }
+  KR.res = KR.err = '';
+  const { ok, j } = await post('/api/hotkey/record', {}, true);
+  if (!ok) { KR.res = 'error'; KR.err = j.error || ''; return renderKeyRec(); }
+  KR.seq = j.seq; KR.active = true; KR.hint = '';
+  renderKeyRec();
+  pollKeyRec();
+};
+$('zoneKeyOff').onclick = async () => { KR.res = ''; await saveSettings({ zoneKey: 'off' }); refresh(); };
 $('ntOrder').addEventListener('click', async e => {
   const b = e.target.closest('button');
   if (b) await saveSettings({ notifyOrder: b.dataset.order });

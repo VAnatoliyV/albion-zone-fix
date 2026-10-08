@@ -65,6 +65,9 @@ type Options struct {
 	OnUpdateRestart func() error
 	// SupportInfo — текст «Скопировать сведения для поддержки».
 	SupportInfo func() string
+	// RecordKey — ждать нажатие для кнопки карточки (hotkey.Record без
+	// журнала); nil — записи нет.
+	RecordKey func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error)
 	// WindowHidden — окно спрятано в трей или свёрнуто (кролик стоит);
 	// nil — окна нет (браузер сам скажет через document.hidden).
 	WindowHidden func() bool
@@ -85,6 +88,7 @@ type Server struct {
 	o   Options
 	srv *http.Server
 	ln  net.Listener
+	rec keyRec
 }
 
 // PageState — всё, что страница берёт раз в две секунды.
@@ -173,6 +177,9 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) { s.json(w, s.a.Settings()) })
 	mux.HandleFunc("POST /api/settings", s.setSettings)
+	mux.HandleFunc("GET /api/hotkey/record", func(w http.ResponseWriter, r *http.Request) { s.json(w, s.keyRecState()) })
+	mux.HandleFunc("POST /api/hotkey/record", s.startKeyRec)
+	mux.HandleFunc("POST /api/hotkey/cancel", s.cancelKeyRec)
 	mux.HandleFunc("GET /api/own", func(w http.ResponseWriter, r *http.Request) {
 		s.json(w, ownprices.Read(filepath.Join(s.o.DataDir, ownprices.FileName)))
 	})

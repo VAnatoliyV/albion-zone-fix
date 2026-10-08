@@ -43,13 +43,13 @@ type env struct {
 	maps   int
 }
 
-func start(t *testing.T) *env {
+func start(t *testing.T, opts ...func(*Options)) *env {
 	t.Helper()
 	dir := t.TempDir()
 	e := &env{dir: dir, col: &fakeCol{}}
 	e.a = app.New(dir, dir, nil)
 	e.a.AttachCollector(e.col)
-	srv, err := Start(e.a, Options{
+	o := Options{
 		DataDir: dir, LogPath: filepath.Join(dir, "log"), SessionFile: filepath.Join(dir, collector.SessionFileName),
 		ReceiverAddr: "127.0.0.1:1", // никто не слушает
 		Lang:         func() string { return "ru-RU" },
@@ -58,7 +58,11 @@ func start(t *testing.T) *env {
 		OpenFolder:   func(d string) { e.opened = append(e.opened, d) },
 		OnShow:       func() { e.shown++ },
 		OpenMap:      func() { e.maps++ },
-	})
+	}
+	for _, f := range opts {
+		f(&o)
+	}
+	srv, err := Start(e.a, o)
 	if err != nil {
 		t.Fatal(err)
 	}

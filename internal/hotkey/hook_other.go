@@ -2,6 +2,11 @@
 
 package hotkey
 
+import (
+	"context"
+	"time"
+)
+
 // Hook — на маке хуков нет.
 type Hook struct{}
 
@@ -10,3 +15,8 @@ func Start(k Key, fire func(), logf func(string, ...any)) (*Hook, error) { retur
 
 // Stop — нечего снимать.
 func (h *Hook) Stop() {}
+
+// Record — на маке записывать нечем.
+func Record(ctx context.Context, timeout time.Duration, hint func(string), logf func(string, ...any)) (Key, error) {
+	return "", ErrUnsupported
+}

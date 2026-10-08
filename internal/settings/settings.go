@@ -40,8 +40,8 @@ type Settings struct {
 	// бан). Создаётся при первой отправке; страница его не меняет.
 	MapInstall string `json:"mapInstall,omitempty"`
 
-	// ZoneKey — кнопка карточки зоны: xbutton1 (мышь 4), xbutton2, f1…f12
-	// или off (internal/hotkey).
+	// ZoneKey — кнопка карточки зоны: xbutton1 (мышь 4), xbutton2, mbutton,
+	// клавиша вида f7 или ctrl+q, или off (internal/hotkey).
 	ZoneKey string `json:"zoneKey"`
 	// ZoneNotify — показывать карточку ещё и уведомлением Windows.
 	ZoneNotify bool `json:"zoneNotify"`

@@ -323,6 +323,10 @@ func main() {
 			logLine("автозапуск: %v", cur.StartWithWindows)
 			return nil
 		},
+		RecordKey: func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error) {
+			k, err := hotkey.Record(ctx, timeout, hint, cardLog)
+			return string(k), err
+		},
 		OnShow: func() {
 			if d := dp.Load(); d != nil {
 				d.Show()
