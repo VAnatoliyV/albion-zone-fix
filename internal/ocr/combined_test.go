@@ -294,3 +294,86 @@ func TestCombinedPanic(t *testing.T) {
 		t.Errorf("паника загрузки: %v %v", got, err)
 	}
 }
+
+type hangReader struct{ release chan struct{} }
+
+func (h *hangReader) Load(string) error { return nil }
+func (h *hangReader) Version() string   { return "hang" }
+func (h *hangReader) Read(*image.RGBA, string) ([]paddle.Text, error) {
+	<-h.release
+	return []paddle.Text{{Text: "поздно"}}, nil
+}
+
+// recognizeWithin — Recognize, но тест падает, а не висит.
+func recognizeWithin(t *testing.T, cb *Combined, d time.Duration) map[string][]string {
+	t.Helper()
+	ch := make(chan map[string][]string, 1)
+	go func() {
+		got, _ := cb.Recognize(context.Background(), "p", []string{"ru-RU"})
+		ch <- got
+	}()
+	select {
+	case got := <-ch:
+		return got
+	case <-time.After(d):
+		t.Fatal("распознавание зависло — кнопка осталась бы занятой")
+	}
+	return nil
+}
+
+// Зависшее распознавание или загрузка не держат нажатие: запасной Windows OCR.
+func TestCombinedTimeouts(t *testing.T) {
+	img := darkImg()
+	win := func(context.Context, string, []string) (map[string][]string, error) {
+		return map[string][]string{"ru-RU": {"w"}}, nil
+	}
+	native := func(string) (*image.RGBA, bool, error) { return img, true, nil }
+	var log []string
+	logf := func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }
+
+	h := &hangReader{release: make(chan struct{})}
+	defer close(h.release)
+	cb := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return h, nil },
+		Native: native, Windows: win, Logf: logf, ReadTimeout: 50 * time.Millisecond}
+	if got := recognizeWithin(t, cb, 2*time.Second); got["ru-RU"][0] != "w" {
+		t.Errorf("зависшее распознавание: %v", got)
+	}
+	if all := strings.Join(log, "\n"); !strings.Contains(all, "не ответило") {
+		t.Errorf("журнал: %s", all)
+	}
+
+	stall := make(chan struct{})
+	defer close(stall)
+	cb2 := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { <-stall; return h, nil },
+		Native: native, Windows: win, Logf: logf, LoadWait: 50 * time.Millisecond}
+	go cb2.Warm()
+	if got := recognizeWithin(t, cb2, 2*time.Second); got["ru-RU"][0] != "w" {
+		t.Errorf("зависшая загрузка: %v", got)
+	}
+}
+
+// Файлы есть, а загрузка не вышла — подсказка про языки Windows OCR снова
+// видна, и Runner узнаёт об этом (Unavailable).
+func TestCombinedHintAfterLoadFailure(t *testing.T) {
+	called := 0
+	cb := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return nil, errors.New("нет VCRUNTIME140_1.dll") },
+		Unavailable: func() { called++ }}
+	if cb.Hint(nil) != "" {
+		t.Error("до загрузки файлы есть — подсказки нет")
+	}
+	cb.Warm()
+	if h := cb.Hint(nil); h != HintNone {
+		t.Errorf("после неудачной загрузки подсказка %q", h)
+	}
+	if p := cb.Pick([]string{"de-DE"}); len(p) != 0 {
+		t.Errorf("после неудачной загрузки языки %v", p)
+	}
+	if called != 1 {
+		t.Errorf("Unavailable позвали %d раз", called)
+	}
+	ok := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return &fakeReader{}, nil }}
+	ok.Warm()
+	if ok.Hint(nil) != "" || len(ok.Pick(nil)) != 2 {
+		t.Error("после удачной загрузки")
+	}
+}

@@ -284,9 +284,6 @@ func main() {
 		Windows: ocr.Recognize,
 		Logf:    cardLog,
 	}
-	if hotkey.Normalize(a.Settings().ZoneKey) != hotkey.Off {
-		go textOCR.Warm()
-	}
 	runner := zonecard.NewRunner(zonecard.RunnerConfig{
 		Path: filepath.Join(data, screen.FileName),
 		Capture: func(path string) (zonecard.Snap, error) {
@@ -358,6 +355,13 @@ func main() {
 		return runner.Busy(), langs, hint, checked
 	})
 	go runner.CheckLanguages(context.Background())
+	// Своё распознавание не загрузилось или сломалось — языки Windows OCR
+	// снова важны: проверить заново, чтобы подсказка «установите язык»
+	// была видна.
+	textOCR.Unavailable = func() { go runner.CheckLanguages(context.Background()) }
+	if hotkey.Normalize(a.Settings().ZoneKey) != hotkey.Off {
+		go textOCR.Warm()
+	}
 	var (
 		hookMu  sync.Mutex
 		hook    *hotkey.Hook
