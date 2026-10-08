@@ -86,7 +86,7 @@ func TestArgs(t *testing.T) {
 }
 
 func TestSyncOffElsewhere(t *testing.T) {
-	if err := Sync(false); err != nil {
+	if err := Sync(Off); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -104,5 +104,44 @@ func TestUserOf(t *testing.T) {
 	}
 	if UserOf("мусор") != "" || UserOf("<UserId>без конца") != "" {
 		t.Fatal("UserOf на мусоре")
+	}
+}
+
+// Задача сторожа: тот же exe, аргумент -watch-game; режим читается обратно.
+func TestWatchTaskXML(t *testing.T) {
+	for _, m := range []Mode{App, Watch} {
+		task := Task{Exe: `C:\x\AlbionJournal.exe`, Dir: `C:\x`, UserID: `PC\u`, Args: m.Args()}
+		x := task.XML()
+		if ModeOf(ArgsOf(x)) != m {
+			t.Fatalf("%v: аргументы %q", m, ArgsOf(x))
+		}
+		if CommandOf(x) != task.Exe {
+			t.Fatalf("%v: CommandOf %q", m, CommandOf(x))
+		}
+	}
+	if App.Args() != "-autostart" || Watch.Args() != "-watch-game" {
+		t.Fatal(App.Args(), Watch.Args())
+	}
+	// Старая задача без аргументов сторожа — программа.
+	if ModeOf("") != App || ModeOf(" -autostart ") != App || ModeOf(" -watch-game ") != Watch {
+		t.Fatal("ModeOf")
+	}
+	if strings.Join(RunArgs(), " ") != "/Run /TN Albion Journal" {
+		t.Fatal(RunArgs())
+	}
+}
+
+// Запуск с Windows важнее сторожа: двух процессов при входе не бывает.
+func TestModeFor(t *testing.T) {
+	cases := []struct {
+		win, watch bool
+		want       Mode
+	}{
+		{false, false, Off}, {true, false, App}, {true, true, App}, {false, true, Watch},
+	}
+	for _, c := range cases {
+		if got := ModeFor(c.win, c.watch); got != c.want {
+			t.Errorf("ModeFor(%v, %v) = %v, ждал %v", c.win, c.watch, got, c.want)
+		}
 	}
 }

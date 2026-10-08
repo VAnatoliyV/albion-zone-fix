@@ -165,3 +165,30 @@ func TestRunFeedsWatcher(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// Программу поднял сторож: игра уже идёт, но первый снимок — запуск.
+func TestRunJustStarted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	got := make(chan Event, 4)
+	go Run(ctx, Config{
+		Every:       time.Millisecond,
+		JustStarted: true,
+		Options:     func() Options { return Options{Show: true} },
+		Running:     func() (bool, error) { return true, nil },
+		On:          func(e Event) { got <- e },
+	})
+	select {
+	case e := <-got:
+		if e != Started {
+			t.Fatalf("первое событие %v", e)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("запуск не замечен")
+	}
+	select {
+	case e := <-got:
+		t.Fatalf("лишнее событие %v", e)
+	case <-time.After(20 * time.Millisecond):
+	}
+}

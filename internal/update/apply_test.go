@@ -31,6 +31,7 @@ func read(t *testing.T, root, name string) string {
 
 type fakeEnv struct {
 	waited, stopped int
+	watchStopped    int
 	unblocked       []string
 	started         []string
 	log             []string
@@ -40,6 +41,7 @@ func (f *fakeEnv) env(exitOK bool) Env {
 	return Env{
 		WaitExit:     func(pid int, d time.Duration) bool { f.waited++; return exitOK },
 		StopReceiver: func() { f.stopped++ },
+		StopWatch:    func() { f.watchStopped++ },
 		Unblock:      func(p string) { f.unblocked = append(f.unblocked, filepath.Base(p)) },
 		Start:        func(exe string) error { f.started = append(f.started, exe); return nil },
 		Logf:         func(format string, a ...any) { f.log = append(f.log, format) },
@@ -169,5 +171,30 @@ func TestPlanArgs(t *testing.T) {
 	want := `-apply-update|C:\a b\src|-target|D:\AJ|-prev|C:\p|-pid|7|-data|C:\data|-restart`
 	if got != want {
 		t.Fatalf("%s", got)
+	}
+}
+
+// Сторож игры (тот же exe) закрывается до замены файлов; программа не
+// закрылась — сторожа не трогаем.
+func TestApplyStopsWatchBeforeReplace(t *testing.T) {
+	p := fixture(t)
+	f := &fakeEnv{}
+	e := f.env(true)
+	e.StopWatch = func() {
+		f.watchStopped++
+		if read(t, p.Dest, "AlbionJournal.exe") != "1.0.0" {
+			t.Fatal("сторож закрыт уже после замены exe")
+		}
+	}
+	if err := Apply(p, e); err != nil {
+		t.Fatal(err)
+	}
+	if f.watchStopped != 1 {
+		t.Fatalf("сторож закрыт %d раз", f.watchStopped)
+	}
+	f2 := &fakeEnv{}
+	Apply(fixture(t), f2.env(false))
+	if f2.watchStopped != 0 {
+		t.Fatal("сторож закрыт, хотя установка отложена")
 	}
 }

@@ -128,6 +128,11 @@ type Config struct {
 	Options func() Options       // текущие настройки; все выключены — не следим
 	Running func() (bool, error) // есть ли игра; nil — Running пакета
 	On      func(Event)          // запуск или закрытие игры
+	// JustStarted — программу поднял сторож игры (internal/gameguard): игра
+	// только что запустилась, поэтому первый снимок с игрой — это запуск,
+	// а не точка отсчёта (показать окно и начать сбор, как если бы
+	// программа сама его заметила).
+	JustStarted bool
 }
 
 // Run следит, пока не отменят ctx. Ошибка снимка — снимок пропускается.
@@ -139,6 +144,9 @@ func Run(ctx context.Context, c Config) {
 		c.Running = Running
 	}
 	var w Watcher
+	if c.JustStarted {
+		w.known = true
+	}
 	t := time.NewTicker(c.Every)
 	defer t.Stop()
 	for {

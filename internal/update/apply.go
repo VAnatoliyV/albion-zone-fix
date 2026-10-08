@@ -45,6 +45,9 @@ type Env struct {
 	WaitExit func(pid int, d time.Duration) bool
 	// StopReceiver гасит наш acp-prices.exe (по pid-файлу, чужой не трогает).
 	StopReceiver func()
+	// StopWatch закрывает сторожа игры (internal/gameguard): он — тот же
+	// AlbionJournal.exe и держал бы файл, который сейчас заменят.
+	StopWatch func()
 	// Unblock снимает с файла Mark-of-the-Web (поток Zone.Identifier).
 	Unblock func(path string)
 	// Start запускает программу после установки.
@@ -77,6 +80,9 @@ func Apply(p Plan, e Env) error {
 	}
 	if e.StopReceiver != nil {
 		e.StopReceiver()
+	}
+	if e.StopWatch != nil {
+		e.StopWatch()
 	}
 	err := replace(p, cp, e.Unblock, logf)
 	if err != nil {

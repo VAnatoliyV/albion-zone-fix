@@ -158,7 +158,7 @@ var Table = map[string][3]string{
 	"set.showGame":        {"Открывать программу при запуске Albion", "Open the app when Albion starts", "Abrir la app al iniciar Albion"},
 	"set.showGameHint":    {"Через несколько секунд после запуска игры окно программы выходит вперёд — один раз на запуск.", "A few seconds after the game starts, the app window comes to the front — once per launch.", "Unos segundos después de iniciar el juego, la ventana de la app pasa al frente, una vez por inicio."},
 	"set.withGame":        {"Включать сбор при запуске Albion", "Start collecting when Albion opens", "Recolectar al abrir Albion"},
-	"set.withGameHint":    {"Работает, только пока программа запущена: закрытая о старте игры не узнает. Для этого выше есть «Запускать вместе с Windows».", "Works only while the app is running: a closed app cannot notice the game starting. See «Start with Windows» above.", "Solo funciona con la app abierta: cerrada no puede notar el inicio del juego. Arriba está «Iniciar con Windows»."},
+	"set.withGameHint":    {"Работает и когда программа закрыта: остаётся маленький сторож (почти без памяти).", "Works even when the app is closed: a tiny watcher stays behind (almost no memory).", "Funciona también con la app cerrada: queda un pequeño vigilante (casi sin memoria)."},
 	"set.quitGame":        {"Закрываться вместе с Albion", "Quit with Albion", "Cerrar con Albion"},
 	"set.quitGameHint":    {"Закроешь игру — программа закроется следом.", "Close the game and the app closes after it.", "Al cerrar el juego, la app se cierra también."},
 	"sec.collect":         {"СБОР ЦЕН И СЧЁТЧИК", "PRICES AND TRACKER", "PRECIOS Y CONTADOR"},

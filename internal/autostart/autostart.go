@@ -30,6 +30,58 @@ const TaskName = "Albion Journal"
 // показывается, программа сразу уходит в трей.
 const Flag = "-autostart"
 
+// WatchFlag — ключ запуска сторожа игры (internal/gameguard): при входе в
+// Windows задача поднимает не программу, а маленького сторожа, если
+// «Запускать вместе с Windows» выключен, а «вместе с игрой» включено.
+const WatchFlag = "-watch-game"
+
+// Mode — что задача запускает при входе в Windows.
+type Mode int
+
+const (
+	Off   Mode = iota // задачи нет
+	App               // программа (-autostart)
+	Watch             // сторож игры (-watch-game)
+)
+
+func (m Mode) String() string {
+	switch m {
+	case App:
+		return "программа"
+	case Watch:
+		return "сторож игры"
+	}
+	return "выключен"
+}
+
+// Args — аргументы программы в задаче.
+func (m Mode) Args() string {
+	if m == Watch {
+		return WatchFlag
+	}
+	return Flag
+}
+
+// ModeFor — задача по настройкам. Запуск с Windows важнее сторожа: поднятая
+// программа сама следит за игрой, второй процесс ни к чему.
+func ModeFor(withWindows, watchGame bool) Mode {
+	switch {
+	case withWindows:
+		return App
+	case watchGame:
+		return Watch
+	}
+	return Off
+}
+
+// ModeOf — режим существующей задачи по её аргументам.
+func ModeOf(args string) Mode {
+	if strings.TrimSpace(args) == WatchFlag {
+		return Watch
+	}
+	return App
+}
+
 // ErrUnsupported — автозапуск есть только в Windows.
 var ErrUnsupported = errors.New("автозапуск есть только в Windows")
 
@@ -38,6 +90,7 @@ type Task struct {
 	Exe    string // полный путь к AlbionJournal.exe
 	Dir    string // рабочая папка (папка программы)
 	UserID string // DOMAIN\user — чей вход в систему запускает задачу
+	Args   string // аргументы; пусто — Flag (программа в трей)
 }
 
 func esc(s string) string {
@@ -48,6 +101,10 @@ func esc(s string) string {
 
 // XML — описание задачи для schtasks /Create /XML.
 func (t Task) XML() string {
+	args := t.Args
+	if args == "" {
+		args = Flag
+	}
 	return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -89,7 +146,7 @@ func (t Task) XML() string {
   <Actions Context="Author">
     <Exec>
       <Command>` + esc(t.Exe) + `</Command>
-      <Arguments>` + Flag + `</Arguments>
+      <Arguments>` + esc(args) + `</Arguments>
       <WorkingDirectory>` + esc(t.Dir) + `</WorkingDirectory>
     </Exec>
   </Actions>
@@ -116,6 +173,10 @@ func CreateArgs(xmlPath string) []string {
 
 // DeleteArgs — аргументы schtasks для удаления задачи.
 func DeleteArgs() []string { return []string{"/Delete", "/TN", TaskName, "/F"} }
+
+// RunArgs — аргументы schtasks для запуска задачи сейчас (с её правами:
+// так сторож без прав администратора поднимает программу без окна UAC).
+func RunArgs() []string { return []string{"/Run", "/TN", TaskName} }
 
 // QueryArgs — аргументы schtasks для чтения задачи в XML.
 func QueryArgs() []string { return []string{"/Query", "/TN", TaskName, "/XML"} }
@@ -157,3 +218,6 @@ func tagText(s, tag string) string {
 func CommandOf(taskXML string) string {
 	return strings.Trim(tagText(taskXML, "Command"), `"`)
 }
+
+// ArgsOf — аргументы программы из XML задачи.
+func ArgsOf(taskXML string) string { return tagText(taskXML, "Arguments") }

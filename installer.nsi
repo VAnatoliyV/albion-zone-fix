@@ -86,8 +86,18 @@ LangString T_DATA ${LANG_RUSSIAN} "Удалить также настройки 
 ; начинается с папки установки (путь передаём переменной среды, без шаблонов).
 ; 64-битные процессы видны через WMI из любой разрядности PowerShell.
 !macro CloseApp ID
+  StrCpy $R9 1
   again_${ID}:
   IfFileExists "$INSTDIR\AlbionJournal.exe" 0 closed_${ID}
+  ; Сторож игры (internal/gameguard) — тот же exe с -watch-game: он держит
+  ; файл, хотя программа закрыта. Закрываем его каждый круг: программа,
+  ; закрытая по нашей просьбе, оставляет сторожа заново. Код 0 — сторож
+  ; был (после установки поднимем снова, $R9), 1 — не было; старые версии
+  ; ключа не знают (код 2) — у них и сторожа нет.
+  ExecWait '"$INSTDIR\AlbionJournal.exe" -stop-watch' $0
+  ${If} $0 == 0
+    StrCpy $R9 0
+  ${EndIf}
   ClearErrors
   FileOpen $0 "$INSTDIR\AlbionJournal.exe" a
   IfErrors busy_${ID}
@@ -184,6 +194,13 @@ Section "Install"
   WriteRegDWORD HKLM "${UNKEY}" "NoRepair" 1
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   WriteRegDWORD HKLM "${UNKEY}" "EstimatedSize" $0
+
+  ; Сторож игры был до установки — поднять снова (уже новым exe). Нужен ли
+  ; он, сторож решит сам по настройкам; запуск программы с последней
+  ; страницы его тут же закроет.
+  ${If} $R9 == 0
+    Exec '"$INSTDIR\AlbionJournal.exe" -watch-game'
+  ${EndIf}
 SectionEnd
 
 Function un.onInit
@@ -194,7 +211,8 @@ Section "Uninstall"
   SetShellVarContext all
   !insertmacro CloseApp uninst
 
-  ; Автозапуск (задача Планировщика); если её нет — schtasks ругнётся, это не страшно.
+  ; Автозапуск (задача Планировщика: программа или сторож игры, -watch-game);
+  ; если её нет — schtasks ругнётся, это не страшно. Сторожа закрыл CloseApp.
   nsExec::Exec `"$SYSDIR\schtasks.exe" /Delete /TN "${TASK}" /F`
   Pop $0
 

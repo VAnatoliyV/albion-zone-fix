@@ -26,17 +26,29 @@ func schtasks(args ...string) (string, error) {
 
 // Installed — есть ли задача и на какую программу она указывает.
 func Installed() (exe string, ok bool) {
+	exe, _, ok = Current()
+	return exe, ok
+}
+
+// Current — есть ли задача, на какую программу и что запускает.
+func Current() (exe string, mode Mode, ok bool) {
 	out, err := schtasks(QueryArgs()...)
 	if err != nil {
-		return "", false
+		return "", Off, false
 	}
-	return CommandOf(out), true
+	return CommandOf(out), ModeOf(ArgsOf(out)), true
+}
+
+// Run запускает задачу сейчас (её права — наивысшие доступные).
+func Run() error {
+	_, err := schtasks(RunArgs()...)
+	return err
 }
 
 // Enable создаёт (или пересоздаёт) задачу на текущую программу. XML
 // кладём в свежую временную папку и сразу удаляем: в папке данных ему
 // делать нечего.
-func Enable() error {
+func Enable(m Mode) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -45,11 +57,12 @@ func Enable() error {
 	if err != nil {
 		return err
 	}
-	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: u.Username})
+	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: u.Username, Args: m.Args()})
 }
 
 // Retarget переносит существующую задачу на другой exe (установщик убрал
-// старую копию, на которую она указывала) с тем же пользователем.
+// старую копию, на которую она указывала) с тем же пользователем и теми
+// же аргументами (программа или сторож).
 func Retarget(exe string) error {
 	out, err := schtasks(QueryArgs()...)
 	if err != nil {
@@ -63,7 +76,7 @@ func Retarget(exe string) error {
 		}
 		uid = u.Username
 	}
-	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: uid})
+	return create(Task{Exe: exe, Dir: filepath.Dir(exe), UserID: uid, Args: ModeOf(ArgsOf(out)).Args()})
 }
 
 func create(t Task) error {
@@ -89,15 +102,16 @@ func Disable() error {
 	return err
 }
 
-// Sync приводит задачу к настройке: включено — задача есть и указывает на
-// этот exe (папку с программой могли перенести); выключено — задачи нет.
-func Sync(on bool) error {
-	if !on {
+// Sync приводит задачу к настройке: Off — задачи нет; иначе задача есть,
+// указывает на этот exe (папку с программой могли перенести) и запускает
+// то, что нужно (программу или сторожа игры).
+func Sync(m Mode) error {
+	if m == Off {
 		return Disable()
 	}
 	exe, _ := os.Executable()
-	if cur, ok := Installed(); ok && strings.EqualFold(cur, exe) {
+	if cur, mode, ok := Current(); ok && strings.EqualFold(cur, exe) && mode == m {
 		return nil
 	}
-	return Enable()
+	return Enable(m)
 }

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -27,6 +28,7 @@ import (
 	"albionzonefix/internal/datadir"
 	"albionzonefix/internal/desktop"
 	"albionzonefix/internal/game"
+	"albionzonefix/internal/gameguard"
 	"albionzonefix/internal/gamewatch"
 	"albionzonefix/internal/hotkey"
 	"albionzonefix/internal/i18n"
@@ -67,6 +69,9 @@ func main() {
 	applyRestart := flag.Bool("restart", false, "для -apply-update: запустить программу после установки")
 	findOld := flag.String("find-old", "", "для установщика: число старых копий вне этой папки установки (код выхода)")
 	removeOld := flag.String("remove-old", "", "для установщика: закрыть и удалить старые копии вне этой папки установки")
+	watchGame := flag.Bool(gameguard.Flag, false, "сторож игры: поднять программу, когда запустится Albion (без окна)")
+	fromWatch := flag.Bool(gameguard.FromFlag, false, "программу поднял сторож игры: игра только что запустилась")
+	stopGuard := flag.Bool(gameguard.StopFlag, false, "для установщика: закрыть сторожа игры (код 0 — закрыт, 1 — не было)")
 	flag.Parse()
 
 	// Версия — до всего остального (без прав администратора, без окна и без
@@ -87,8 +92,16 @@ func main() {
 	if *removeOld != "" {
 		os.Exit(runRemoveOld(*removeOld))
 	}
+	if *stopGuard {
+		os.Exit(runStopWatch())
+	}
 
 	exe, _ := os.Executable()
+	// Сторож игры — до проверки второй копии и прав: у него свой знак одной
+	// копии, а программу он поднимает сам (internal/gameguard).
+	if *watchGame {
+		os.Exit(runWatch(exe))
+	}
 	dir := filepath.Dir(exe)
 	if *replay != "" {
 		os.Exit(runReplay(*replay))
@@ -134,6 +147,19 @@ func main() {
 	logLine("запуск Albion Journal %s, данные: %s", version, data)
 	if dataErr != nil {
 		logLine("нет каталога данных, пишу рядом с программой: %v", dataErr)
+	}
+	// Сторож игры больше не нужен: программа следит сама. Закрыть до
+	// всего остального, чтобы он не поднял вторую копию.
+	if was, ok := gameguard.StopRunning(3 * time.Second); was {
+		logLine("сторож игры закрыт (%v)", ok)
+	}
+	// Подняла задача Планировщика по просьбе сторожа без прав — тоже «игра
+	// только что запустилась».
+	if !*fromWatch && gameguard.TakeMarker(data, time.Now()) {
+		*fromWatch = true
+	}
+	if *fromWatch {
+		logLine("подняла сторож игры: игра только что запустилась")
 	}
 
 	binDir := filepath.Join(dir, "zapret", "bin")
@@ -196,7 +222,7 @@ func main() {
 	defer shutdown()
 
 	go func() {
-		if err := autostart.Sync(a.Settings().StartWithWindows); err != nil {
+		if err := autostart.Sync(gameguard.TaskMode(a.Settings())); err != nil {
 			logLine("автозапуск: %v", err)
 		}
 	}()
@@ -358,16 +384,24 @@ func main() {
 				d.Relabel()
 			}
 			setKey(hotkey.Normalize(a.Settings().ZoneKey))
-			if old.StartWithWindows == cur.StartWithWindows {
+			// Задача при входе: программа, сторож игры или ничего.
+			oldMode, mode := gameguard.TaskMode(old), gameguard.TaskMode(cur)
+			if oldMode == mode {
 				return nil
 			}
-			if err := autostart.Sync(cur.StartWithWindows); err != nil {
-				logLine("автозапуск: %v", err)
-				cur.StartWithWindows = old.StartWithWindows
-				a.SetSettings(cur)
-				return err
+			if err := autostart.Sync(mode); err != nil {
+				logLine("автозапуск (%v): %v", mode, err)
+				// Откатываем только «Запускать вместе с Windows»: без задачи
+				// сторожа «вместе с игрой» всё равно работает, пока программа
+				// запущена, и после выхода (сторожа поднимает она сама).
+				if old.StartWithWindows != cur.StartWithWindows {
+					cur.StartWithWindows = old.StartWithWindows
+					a.SetSettings(cur)
+					return err
+				}
+				return nil
 			}
-			logLine("автозапуск: %v", cur.StartWithWindows)
+			logLine("автозапуск: %v", mode)
 			return nil
 		},
 		RecordKey: func(ctx context.Context, timeout time.Duration, hint func(string)) (string, error) {
@@ -454,7 +488,8 @@ func main() {
 			return
 		}
 		gamewatch.Run(watchCtx, gamewatch.Config{
-			Options: func() gamewatch.Options { return gameOpts(a.Settings()) },
+			JustStarted: *fromWatch,
+			Options:     func() gamewatch.Options { return gameOpts(a.Settings()) },
 			On: func(e gamewatch.Event) {
 				act := gamewatch.Decide(e, gameOpts(a.Settings()), a.Collecting())
 				logLine("сторож игры: %v (показать %v, сбор %v, выход %v)", e, act.Show, act.Collect, act.Quit)
@@ -519,6 +554,102 @@ func main() {
 			logLine("обновление при выходе не поставлено: %v", err)
 		}
 	}
+	// «Вместе с игрой» работает и у закрытой программы: остаётся сторож.
+	// Ставится обновление — его поднимет установщик (сторож — тот же exe).
+	if gameguard.OnExit(a.Settings(), ending.Load(), upd.Installing()) {
+		if err := update.StartDetached(exe, "-"+gameguard.Flag); err != nil {
+			logLine("сторож игры не запущен: %v", err)
+		} else {
+			logLine("остаётся сторож игры")
+		}
+	}
+}
+
+// fileLog — журнал программы для служебных режимов без окна (установщик,
+// сторож игры). Закрыть — второе значение.
+func fileLog(data, prefix string) (func(string, ...any), func()) {
+	if data == "" {
+		return func(string, ...any) {}, func() {}
+	}
+	f, err := os.OpenFile(filepath.Join(data, "albion-journal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return func(string, ...any) {}, func() {}
+	}
+	return func(format string, args ...any) {
+		fmt.Fprintf(f, "%s %s %s\n", prefix, time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	}, func() { f.Close() }
+}
+
+// savedSettings — настройки из файла, без записи умолчаний (служебным
+// режимам создавать файл настроек незачем). ok=false — файла нет.
+func savedSettings(data string) (settings.Settings, bool) {
+	if _, err := os.Stat(filepath.Join(data, settings.FileName)); err != nil {
+		return settings.Settings{}, false
+	}
+	return settings.Open(data).Get(), true
+}
+
+// runWatch — сторож игры (-watch-game): ждёт запуска Albion, поднимает
+// программу и выходит. Без окна, WebView2, WinDivert и PowerShell.
+func runWatch(exe string) int {
+	debug.SetGCPercent(25) // памяти — минимум: куча у сторожа крошечная
+	data, err := datadir.Dir()
+	if err != nil {
+		data = filepath.Dir(exe)
+	}
+	logf, done := fileLog(data, "[сторож]")
+	defer done()
+	admin := isAdmin()
+	logf("сторож игры %s: запуск (администратор %v)", version, admin)
+	r := gameguard.Serve(gameguard.Env{
+		Acquire: gameguard.Acquire,
+		Wanted: func() bool {
+			s, ok := savedSettings(data)
+			return ok && gameguard.Wanted(s)
+		},
+		Marker:  func() bool { return gameguard.TakeMarker(data, time.Now()) },
+		Running: gamewatch.Running,
+		Launch: func(fromMarker bool) error {
+			task := false
+			if !admin {
+				_, _, task = autostart.Current()
+			}
+			way := gameguard.HowToLaunch(admin, fromMarker, task)
+			logf("поднимаю программу %v", way)
+			if way == gameguard.ViaTask {
+				if err := gameguard.WriteMarker(data, time.Now()); err != nil {
+					return err
+				}
+				return autostart.Run()
+			}
+			// Ask: программа без прав сама попросит их (окно UAC) — иначе
+			// никак: задачи нет или и она прав не дала.
+			return update.StartDetached(exe, gameguard.LaunchArgs()...)
+		},
+		Logf: logf,
+	})
+	logf("сторож игры: выход — %v", r)
+	if r == gameguard.Failed {
+		return 1
+	}
+	return 0
+}
+
+// runStopWatch — закрыть сторожа игры (-stop-watch, для установщика).
+func runStopWatch() int {
+	data, _ := datadir.Dir()
+	logf, done := fileLog(data, "[сторож]")
+	defer done()
+	was, ok := gameguard.StopRunning(5 * time.Second)
+	switch {
+	case !was:
+		return 1
+	case !ok:
+		logf("установщик: сторож игры не закрылся")
+		return 2
+	}
+	logf("установщик: сторож игры закрыт")
+	return 0
 }
 
 // oldLog — журнал программы для -find-old/-remove-old (пишет установщик,
@@ -528,13 +659,7 @@ func oldLog() (func(string, ...any), func()) {
 	if err != nil {
 		return func(string, ...any) {}, func() {}
 	}
-	f, err := os.OpenFile(filepath.Join(data, "albion-journal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return func(string, ...any) {}, func() {}
-	}
-	return func(format string, args ...any) {
-		fmt.Fprintf(f, "[старая копия] %s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
-	}, func() { f.Close() }
+	return fileLog(data, "[старая копия]")
 }
 
 // runFindOld: код выхода — 100 + число найденных старых копий (100 — нет).
@@ -582,10 +707,26 @@ func runApply(p update.Plan) int {
 		WaitExit: update.WaitExit,
 		// Только наш приёмник из этой папки (pid-файл + путь exe), чужой не трогаем.
 		StopReceiver: func() { receiver.NewManager(filepath.Join(p.Dest, receiver.ExeName), p.DataDir, logw).Stop() },
-		Unblock:      update.Unblock,
-		Start:        func(exe string) error { return update.StartDetached(exe) },
-		Logf:         logf,
+		StopWatch: func() {
+			if was, ok := gameguard.StopRunning(5 * time.Second); was {
+				logf("сторож игры закрыт перед установкой (%v)", ok)
+			}
+		},
+		Unblock: update.Unblock,
+		Start:   func(exe string) error { return update.StartDetached(exe) },
+		Logf:    logf,
 	})
+	// Без перезапуска программы (обновление при выходе) — вернуть сторожа
+	// игры, которого программа ради установки не оставила.
+	if !p.Restart {
+		if s, ok := savedSettings(p.DataDir); ok && gameguard.Wanted(s) {
+			if serr := update.StartDetached(filepath.Join(p.Dest, update.MainExe), "-"+gameguard.Flag); serr != nil {
+				logf("сторож игры не запущен: %v", serr)
+			} else {
+				logf("сторож игры снова на месте")
+			}
+		}
+	}
 	if err != nil {
 		return 1
 	}
