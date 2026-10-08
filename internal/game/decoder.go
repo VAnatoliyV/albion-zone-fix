@@ -111,7 +111,11 @@ func (d *Decoder) onResponse(code byte, rc int16, _ string, params map[byte]inte
 	// Вход в локацию вне справочника (Туманы, данж, логово…) — тоже вход:
 	// Join с пустой Location значит «где игрок — неизвестно». Иначе карта
 	// склеит «город → Туманы → дорога» в несуществующий проход «город → дорога».
-	s, _ := params[8].(string)
+	// Поля 8 нет вовсе — это не вход в локацию: пропускаем, как раньше.
+	s, ok := params[8].(string)
+	if !ok {
+		return
+	}
 	d.out(Ev{T: d.cur.T, Kind: Join, Server: d.cur.Addr, Location: NormalizeLocation(s)})
 }
 

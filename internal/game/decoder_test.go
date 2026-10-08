@@ -78,9 +78,10 @@ func TestDecoderJoinUnknownLocation(t *testing.T) {
 	var got []Ev
 	d := NewDecoder(func(e Ev) { got = append(got, e) })
 	d.Feed(Packet{T: time.Unix(3, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "@@мусор")})
+	// Ответ без поля 8 — не вход в неизвестную локацию, пропускаем.
 	d.Feed(Packet{T: time.Unix(4, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "")})
-	if len(got) != 2 || got[0].Kind != Join || got[0].Location != "" || got[1].Kind != Join || got[1].Location != "" {
-		t.Fatalf("ждали два Join без места, получили %+v", got)
+	if len(got) != 1 || got[0].Kind != Join || got[0].Location != "" {
+		t.Fatalf("ждали один Join без места, получили %+v", got)
 	}
 }
 

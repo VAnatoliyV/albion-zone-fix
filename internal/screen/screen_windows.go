@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -136,6 +137,7 @@ func CaptureAroundCursor(path string) (Info, error) {
 	pix, err := grab(r)
 	info.Tries = 1
 	if err != nil {
+		time.Sleep(40 * time.Millisecond) // сбой при смене режима игры — не сразу
 		pix, err = grab(r)
 		info.Tries = 2
 	}
@@ -144,7 +146,8 @@ func CaptureAroundCursor(path string) (Info, error) {
 	}
 	info.Empty = stale.Check(pix, r.Dx(), r.Dy())
 	info.Scale = Factor(r.Dx(), r.Dy())
-	img := Upscale(FromBGRA(pix, r.Dx(), r.Dy()), info.Scale)
+	raw := FromBGRA(pix, r.Dx(), r.Dy())
+	img := Upscale(raw, info.Scale)
 	if img.Bounds().Dx() == r.Dx() {
 		info.Scale = 1
 	}
@@ -152,7 +155,7 @@ func CaptureAroundCursor(path string) (Info, error) {
 	if err := SavePNG(path, img); err != nil {
 		return info, err
 	}
-	Remember(path, img)
+	Remember(path, raw)
 	return info, nil
 }
 

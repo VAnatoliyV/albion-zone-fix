@@ -61,11 +61,13 @@ type Shot struct {
 	CaptureTook, OCRTook time.Duration
 	OCRLangs             string
 	// Image — картинка, по которой вышел итог (при повторах — не обязательно
-	// Path). Try — какой снимок и вариант дал итог («2/3 серый»), Tries —
-	// все попытки по порядку для журнала.
-	Image string
-	Try   string
-	Tries []string
+	// Path), Source — цветной снимок, из которого она сделана. Try — какой
+	// снимок и вариант дал итог («2/3 серый»), Tries — все попытки по
+	// порядку для журнала.
+	Image  string
+	Source string
+	Try    string
+	Tries  []string
 }
 
 // RunnerConfig — что нужно снимающему (на Windows — снимок GDI и OCR через
@@ -282,20 +284,31 @@ loop:
 			}
 			continue
 		}
+		if snap.Empty == EmptySame && n > 1 {
+			// Повтор совпал с прошлым снимком этого же нажатия — статичная
+			// сцена (BitBlt курсор не снимает), а не застывшая игра.
+			snap.Empty = ""
+		}
 		if snap.Empty != "" {
 			empty = snap.Empty
 			r.cfg.Logf("карточка зоны: снимок пустой (%s; полноэкранный режим?) %s", snap.Empty, snap.Info)
 			if snap.Empty == EmptyBlack {
 				// Чёрный — распознавать нечего.
-				if keep(Shot{Kind: ErrKindBlank, Arg: EmptyBlack, Capture: snap.Info, Image: path}, fmt.Sprintf("%d/%d", n, shots)) {
+				if keep(Shot{Kind: ErrKindBlank, Arg: EmptyBlack, Capture: snap.Info, Image: path, Source: path}, fmt.Sprintf("%d/%d", n, shots)) {
 					break
 				}
 				continue
 			}
 		}
+		colorPartly := false
 		for _, v := range variants {
 			if v != VarColor && over() {
 				break loop
+			}
+			if v != VarColor && !colorPartly {
+				// Тултипа на цветном нет — скорее не дорисовался или мигнул:
+				// нужнее новый снимок, чем варианты этой картинки.
+				break
 			}
 			img := path
 			if v != VarColor {
@@ -311,7 +324,10 @@ loop:
 			if usedLangs == "" {
 				usedLangs = used
 			}
-			s.Capture, s.Image = snap.Info, img
+			s.Capture, s.Image, s.Source = snap.Info, img, path
+			if v == VarColor {
+				colorPartly = partly(s)
+			}
 			if keep(s, fmt.Sprintf("%d/%d %s", n, shots, varWord(v))) {
 				break loop
 			}
@@ -389,7 +405,7 @@ func Quality(s Shot) float64 {
 			q += 20
 		}
 		if !s.Result.Doubtful() {
-			q += 20
+			q += 30 // правильное имя важнее времени
 		}
 		if len(s.Result.Matches) > 0 {
 			q += 10 * s.Result.Matches[0].Closeness
@@ -405,6 +421,17 @@ func Quality(s Shot) float64 {
 		return 10
 	}
 	return 0
+}
+
+// partly — на цветной картинке тултип найден хотя бы отчасти: имя без
+// признака портала, без времени, сомнительно или зона не узнана. Тогда
+// варианты картинки могут дочитать текст; без тултипа нужнее новый снимок.
+func partly(s Shot) bool {
+	switch shotWord(s) {
+	case "noPortal", "noTime", "doubt", ErrKindUnknown:
+		return true
+	}
+	return false
 }
 
 // shotWord — итог попытки одним словом для журнала (как в «карта: …»).

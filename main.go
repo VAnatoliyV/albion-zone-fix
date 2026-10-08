@@ -269,10 +269,11 @@ func main() {
 			cardLog("карта: %s", a.SetCard(sh, dict))
 			if zonecard.Doubtful(sh) {
 				// Сомнительное опознание — снимок отдельно, чтобы тестер прислал его
-				// (тот, по которому вышел итог: при повторах — не обязательно первый).
+				// (цветной снимок, по которому вышел итог: при повторах — не
+				// обязательно первый; вариант — серый/инверсия — рядом в папке).
 				src := filepath.Join(data, screen.FileName)
-				if sh.Image != "" {
-					src = sh.Image
+				if sh.Source != "" {
+					src = sh.Source
 				}
 				if b, err := os.ReadFile(src); err == nil {
 					if err := os.WriteFile(filepath.Join(data, zonecard.DoubtFile), b, 0644); err != nil {

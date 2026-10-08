@@ -84,10 +84,17 @@ func TestFrameByMonitorHeight(t *testing.T) {
 }
 
 func TestFactorAndUpscale3(t *testing.T) {
-	cases := [][3]int{{594, 454, 3}, {600, 400, 3}, {792, 605, 2}, {1188, 907, 2}, {1400, 900, 1}, {0, 0, 1}}
+	// Первый (цветной) проход — ×2, как раньше: быстрее; ×3 — только варианты.
+	cases := [][3]int{{594, 454, 2}, {600, 400, 2}, {792, 605, 2}, {1188, 907, 2}, {1400, 900, 1}, {0, 0, 1}}
 	for _, c := range cases {
 		if k := Factor(c[0], c[1]); k != c[2] {
 			t.Errorf("%dx%d: %d, ждали %d", c[0], c[1], k, c[2])
+		}
+	}
+	vcases := [][3]int{{600, 454, 3}, {792, 605, 2}, {1400, 900, 1}}
+	for _, c := range vcases {
+		if k := VariantFactor(c[0], c[1]); k != c[2] {
+			t.Errorf("вариант %dx%d: %d, ждали %d", c[0], c[1], k, c[2])
 		}
 	}
 	src := FromBGRA([]byte{255, 0, 0, 7, 0, 0, 255, 7}, 2, 1)
@@ -155,7 +162,8 @@ func TestGrayVariants(t *testing.T) {
 	if err := SavePNG(p, src); err != nil {
 		t.Fatal(err)
 	}
-	// Из файла (в памяти другого снимка нет) и из памяти.
+	// Из файла (в памяти другого снимка нет) и из памяти: в памяти —
+	// исходная рамка без увеличения, вариант увеличивается сам (×3).
 	for _, remember := range []bool{false, true} {
 		if remember {
 			Remember(p, src)
@@ -170,8 +178,15 @@ func TestGrayVariants(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r, _, _, _ := m.At(4, 0).RGBA(); r != 0 {
-			t.Error("вариант в файле:", m.At(4, 0))
+		k := 1
+		if remember {
+			k = 3
+		}
+		if m.Bounds().Dx() != 10*k {
+			t.Error("размер варианта:", m.Bounds(), remember)
+		}
+		if r, _, _, _ := m.At(4*k+k/2, 0).RGBA(); r != 0 {
+			t.Error("вариант в файле:", m.At(4*k+k/2, 0))
 		}
 	}
 	if Variant(p, filepath.Join(dir, "x.png"), "bogus") == nil {

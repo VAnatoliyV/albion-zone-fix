@@ -70,24 +70,29 @@ func Frame(cx, cy, dpi int, mon image.Rectangle) image.Rectangle {
 	return Around(cx, cy, w, h, mon)
 }
 
-// OCRSide — к этому размеру по длинной стороне увеличиваем снимок: мелкий
-// текст тултипа (14–16 пикселей при 1080p) OCR Windows читает хуже
-// крупного, а слишком большая картинка распознаётся дольше.
+// OCRSide — к этому размеру по длинной стороне увеличиваем варианты
+// картинки (серый, инверсия) при повторах: мелкий текст тултипа (14–16
+// пикселей при 1080p) OCR Windows читает хуже крупного, а слишком большая
+// картинка распознаётся дольше. Первый, цветной проход — ×2, как раньше.
 const OCRSide = 1800
 
-// Factor — во сколько раз увеличить картинку w×h для OCR: 3 или 2, пока
-// длинная сторона не больше OCRSide (×2 — пока не больше MaxOCR), иначе 1.
+// Factor — во сколько раз увеличить снимок w×h для первого (цветного)
+// прохода OCR: ×2, пока влезает в MaxOCR, иначе 1.
 func Factor(w, h int) int {
 	side := max(w, h)
-	switch {
-	case side <= 0:
-		return 1
-	case 3*side <= OCRSide:
-		return 3
-	case 2*side <= MaxOCR:
+	if side > 0 && 2*side <= MaxOCR {
 		return 2
 	}
 	return 1
+}
+
+// VariantFactor — увеличение вариантов: ×3, пока длинная сторона не больше
+// OCRSide, иначе как Factor.
+func VariantFactor(w, h int) int {
+	if side := max(w, h); side > 0 && 3*side <= OCRSide {
+		return 3
+	}
+	return Factor(w, h)
 }
 
 // Upscale2 увеличивает картинку вдвое (билинейно). Мелкий текст тултипа
@@ -103,12 +108,30 @@ func Upscale(src *image.RGBA, k int) *image.RGBA {
 	if k < 2 || w == 0 || h == 0 || k*w > MaxOCR || k*h > MaxOCR {
 		return src
 	}
-	kf := float64(k)
 	dst := image.NewRGBA(image.Rect(0, 0, k*w, k*h))
-	at := func(x, y int) []uint8 {
+	upscalePix(src.Pix[src.PixOffset(b.Min.X, b.Min.Y):], src.Stride, w, h, 4, k, dst.Pix)
+	return dst
+}
+
+// UpscaleGray — то же для серой картинки.
+func UpscaleGray(src *image.Gray, k int) *image.Gray {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if k < 2 || w == 0 || h == 0 || k*w > MaxOCR || k*h > MaxOCR {
+		return src
+	}
+	dst := image.NewGray(image.Rect(0, 0, k*w, k*h))
+	upscalePix(src.Pix[src.PixOffset(b.Min.X, b.Min.Y):], src.Stride, w, h, 1, k, dst.Pix)
+	return dst
+}
+
+// upscalePix — билинейное увеличение в k раз: ch каналов на пиксель,
+// строки исходника через stride, назначение плотное (k*w*ch на строку).
+func upscalePix(src []uint8, stride, w, h, ch, k int, dst []uint8) {
+	kf := float64(k)
+	at := func(x, y int) int {
 		x, y = min(max(x, 0), w-1), min(max(y, 0), h-1)
-		i := src.PixOffset(b.Min.X+x, b.Min.Y+y)
-		return src.Pix[i : i+4]
+		return y*stride + x*ch
 	}
 	for y := 0; y < k*h; y++ {
 		// центр пикселя назначения в координатах исходника
@@ -125,16 +148,15 @@ func Upscale(src *image.RGBA, k int) *image.RGBA {
 				x0 = -1
 			}
 			wx := fx - float64(x0)
-			p00, p10, p01, p11 := at(x0, y0), at(x0+1, y0), at(x0, y0+1), at(x0+1, y0+1)
-			o := dst.PixOffset(x, y)
-			for c := 0; c < 4; c++ {
-				top := float64(p00[c])*(1-wx) + float64(p10[c])*wx
-				bot := float64(p01[c])*(1-wx) + float64(p11[c])*wx
-				dst.Pix[o+c] = uint8(top*(1-wy) + bot*wy + 0.5)
+			i00, i10, i01, i11 := at(x0, y0), at(x0+1, y0), at(x0, y0+1), at(x0+1, y0+1)
+			o := (y*k*w + x) * ch
+			for c := 0; c < ch; c++ {
+				top := float64(src[i00+c])*(1-wx) + float64(src[i10+c])*wx
+				bot := float64(src[i01+c])*(1-wx) + float64(src[i11+c])*wx
+				dst[o+c] = uint8(top*(1-wy) + bot*wy + 0.5)
 			}
 		}
 	}
-	return dst
 }
 
 // SavePNG пишет картинку через временный файл.
@@ -282,14 +304,16 @@ func Gray(src *image.RGBA, invert bool) *image.Gray {
 	return dst
 }
 
-// Последний снимок в памяти: варианты делаются из него без чтения PNG.
+// Последний снимок в памяти — исходная рамка без увеличения: варианты
+// делаются из неё без чтения PNG (серый считается на малой картинке и
+// потом увеличивается ×VariantFactor).
 var (
 	lastMu   sync.Mutex
 	lastPath string
 	lastImg  *image.RGBA
 )
 
-// Remember — снимок img записан в path (для Variant).
+// Remember — снимок рамки raw (без увеличения) записан в path (для Variant).
 func Remember(path string, img *image.RGBA) {
 	lastMu.Lock()
 	lastPath, lastImg = path, img
@@ -307,19 +331,21 @@ func Variant(src, dst, kind string) error {
 		img = nil
 	}
 	lastMu.Unlock()
-	if img == nil {
-		f, err := os.Open(src)
-		if err != nil {
-			return err
-		}
-		m, err := png.Decode(f)
-		f.Close()
-		if err != nil {
-			return err
-		}
-		img = toRGBA(m)
+	if img != nil {
+		b := img.Bounds()
+		return SavePNG(dst, UpscaleGray(Gray(img, kind == VarInvert), VariantFactor(b.Dx(), b.Dy())))
 	}
-	return SavePNG(dst, Gray(img, kind == VarInvert))
+	// В памяти нет — из файла (он уже увеличен).
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	m, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	return SavePNG(dst, Gray(toRGBA(m), kind == VarInvert))
 }
 
 func toRGBA(m image.Image) *image.RGBA {

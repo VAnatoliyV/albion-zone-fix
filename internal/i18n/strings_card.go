@@ -63,6 +63,7 @@ var cardTable = map[string][3]string{
 	"zn.ocrFailed":  {"Распознавание текста не вышло: %s", "Text recognition failed: %s", "Falló el reconocimiento de texto: %s"},
 	"zn.unknown":    {"Не узнал зону: «%s»", "Zone not recognised: “%s”", "Zona no reconocida: «%s»"},
 	"zn.blank":      {"Снимок пустой — похоже, игра в полноэкранном режиме. Переключи игру в «окно без рамки».", "The capture is empty — the game seems to be in fullscreen mode. Switch the game to borderless window.", "La captura está vacía: parece que el juego está en pantalla completa. Cambia el juego a ventana sin bordes."},
+	"zn.blankShort": {"Переключи игру в окно без рамки", "Switch the game to borderless window", "Cambia el juego a ventana sin bordes"},
 	"zn.blankTitle": {"Карточка зоны: снимок пустой", "Zone card: empty capture", "Tarjeta de zona: captura vacía"},
 	"zn.noRef":      {"Справочник зон не прочитался", "Zone reference failed to load", "No se pudo leer el catálogo de zonas"},
 	"zn.doubt":      {"Похоже на эту, но уверенности нет — рядом %s", "Looks like this one, but not sure — %s is close", "Parece esta, pero sin certeza — %s está cerca"},

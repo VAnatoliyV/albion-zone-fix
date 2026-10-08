@@ -408,14 +408,15 @@ func TestRunnerRetryUntilGood(t *testing.T) {
 	if s.Kind != "" || s.Result.Zone().Code != "TNL-164" || s.Try != "2/3 цвет" || s.Image != "/d/zone-capture-2.png" {
 		t.Fatalf("%+v", s)
 	}
-	want := "/d/zone-capture.png|/d/zone-capture-gray.png|/d/zone-capture-inv.png|/d/zone-capture-2.png"
+	// Тултипа нет — сразу новый снимок, варианты картинки без тултипа не нужны.
+	want := "/d/zone-capture.png|/d/zone-capture-2.png"
 	if strings.Join(*calls, "|") != want {
 		t.Fatalf("порядок: %v", *calls)
 	}
 	if len(*sleeps) != 1 || (*sleeps)[0] <= 0 || (*sleeps)[0] > RetryGap {
 		t.Fatalf("пауза между снимками: %v", *sleeps)
 	}
-	if len(s.Tries) != 4 || s.Tries[0] != "1/3 цвет noTooltip" || s.Tries[3] != "2/3 цвет ok" {
+	if len(s.Tries) != 2 || s.Tries[0] != "1/3 цвет noTooltip" || s.Tries[1] != "2/3 цвет ok" {
 		t.Fatalf("журнал попыток: %v", s.Tries)
 	}
 }
@@ -427,10 +428,14 @@ func TestRunnerVariantWinsAndBestKept(t *testing.T) {
 	if !Good(s) || s.Try != "1/3 серый" || len(*calls) != 2 {
 		t.Fatalf("%+v %v", s, *calls)
 	}
+	// Для разбора — цветной снимок, по которому сделан вариант.
+	if s.Image != "/d/zone-capture-gray.png" || s.Source != "/d/zone-capture.png" {
+		t.Fatalf("картинки: %q %q", s.Image, s.Source)
+	}
 	// Хорошего нет нигде: лучший — портал без времени, а не просто название.
-	r, calls, _ = retryRunner(t, map[string][]string{"/d/zone-capture.png": tipName, "/d/zone-capture-2-inv.png": tipNoTime}, nil)
+	r, calls, _ = retryRunner(t, map[string][]string{"/d/zone-capture.png": tipName, "/d/zone-capture-inv.png": tipNoTime}, nil)
 	s = r.Run(context.Background())
-	if s.Kind != "" || !s.Result.Portal || s.Result.Tooltip.Left != 0 || s.Try != "2/3 инверсия" {
+	if s.Kind != "" || !s.Result.Portal || s.Result.Tooltip.Left != 0 || s.Try != "1/3 инверсия" {
 		t.Fatalf("%+v", s)
 	}
 	if len(*calls) == 0 || len(*calls) > 9 {
@@ -448,10 +453,17 @@ func TestRunnerBlankCapture(t *testing.T) {
 	if s.Kind != ErrKindBlank || s.Arg != EmptyBlack || len(*calls) != 0 {
 		t.Fatalf("чёрный снимок не распознаём: %+v %v", s, *calls)
 	}
-	// Застывший кадр: распознаём, но без итога — подсказка про режим игры.
-	r, _, _ = retryRunner(t, nil, map[string]string{"/d/zone-capture-2.png": EmptySame})
+	// Застывший кадр (как прошлое нажатие): распознаём, но без итога —
+	// подсказка про режим игры.
+	r, _, _ = retryRunner(t, nil, map[string]string{"/d/zone-capture.png": EmptySame})
 	if s = r.Run(context.Background()); s.Kind != ErrKindBlank || s.Arg != EmptySame {
 		t.Fatalf("%+v", s)
+	}
+	// Повтор внутри нажатия совпал с прошлым снимком — статичная сцена, а не
+	// полноэкранный режим: подсказки нет.
+	r, _, _ = retryRunner(t, nil, map[string]string{"/d/zone-capture-2.png": EmptySame, "/d/zone-capture-3.png": EmptySame})
+	if s = r.Run(context.Background()); s.Kind != ErrKindNoTooltip {
+		t.Fatalf("повтор внутри нажатия — не застывший кадр: %+v", s)
 	}
 	// Застывший, но прочитан — итог как есть.
 	r, _, _ = retryRunner(t, map[string][]string{"/d/zone-capture.png": tipFull}, map[string]string{"/d/zone-capture.png": EmptySame})
@@ -472,5 +484,19 @@ func TestRunnerNoRetryWithoutWorker(t *testing.T) {
 	r.Run(context.Background())
 	if strings.Join(*calls, "|") != "/d/zone-capture.png|/d/zone-capture-2.png|/d/zone-capture-3.png" {
 		t.Fatal(*calls)
+	}
+}
+
+// Правильное имя важнее времени: уверенный портал без времени лучше
+// сомнительного со временем, даже если у сомнительного сходство выше.
+func TestQualityNameOverTime(t *testing.T) {
+	d := NewDict([]Zone{{Name: "Soros-Axaesum", Code: "A", Road: true}, {Name: "Soros-Axaesun", Code: "B", Road: true}, {Name: "Qiient-Al-Vynsis", Code: "C", Road: true}})
+	doubt := Shot{Result: Result{Portal: true, Tooltip: Tooltip{Left: time.Hour}, Matches: d.Similar("Soros-Axaesu", 3)}}
+	sure := Shot{Result: Result{Portal: true, Matches: d.Similar("Qiient-Al-Vxnsxs", 3)}}
+	if !doubt.Result.Doubtful() || sure.Result.Doubtful() || sure.Result.Matches[0].Closeness >= doubt.Result.Matches[0].Closeness {
+		t.Fatalf("подбор теста: %+v %+v", doubt.Result.Matches, sure.Result.Matches)
+	}
+	if Quality(sure) <= Quality(doubt) {
+		t.Fatalf("уверенный без времени %.2f, сомнительный со временем %.2f", Quality(sure), Quality(doubt))
 	}
 }

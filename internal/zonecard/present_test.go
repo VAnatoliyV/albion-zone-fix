@@ -73,10 +73,19 @@ func TestPresentNothingOnFailedShot(t *testing.T) {
 	if p := Present("ru", Shot{}, s, time.Now(), true); p.Toast != nil || p.Panel != nil {
 		t.Fatalf("зона не узнана: %+v", p)
 	}
-	// Пустой снимок (полноэкранная игра) — подсказка уведомлением.
+	// Пустой снимок (полноэкранная игра) — подсказка тем же способом, что
+	// и карточка: панелью при «панели», уведомлением при «уведомлении».
+	if p := Present("ru", Shot{Kind: ErrKindBlank, Arg: EmptyBlack}, s, time.Now(), true); p.Toast != nil || p.Panel == nil ||
+		!strings.Contains(p.Panel.Footer, "без рамки") {
+		t.Fatalf("пустой снимок, панель: %+v", p)
+	}
+	if p := Present("ru", Shot{Kind: ErrKindBlank, Arg: EmptyBlack}, s, time.Now(), false); p.Toast == nil || p.Panel != nil {
+		t.Fatalf("пустой снимок, панель сломана: %+v", p)
+	}
+	s.ZoneShow = settings.ShowNotify
 	if p := Present("ru", Shot{Kind: ErrKindBlank, Arg: EmptyBlack}, s, time.Now(), true); p.Toast == nil || p.Panel != nil ||
 		!strings.Contains(p.Toast.Body, "без рамки") {
-		t.Fatalf("пустой снимок: %+v", p)
+		t.Fatalf("пустой снимок, уведомление: %+v", p)
 	}
 	s.ZoneShow = settings.ShowOff
 	if p := Present("ru", Shot{Kind: ErrKindBlank}, s, time.Now(), true); p.Toast != nil {
