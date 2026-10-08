@@ -67,9 +67,20 @@ func TestDecoderIgnoresGarbageAndOtherOps(t *testing.T) {
 	d := NewDecoder(func(e Ev) { got = append(got, e) })
 	d.Feed(Packet{T: time.Unix(1, 0), Addr: "1.1.1.1:5055", Payload: []byte{1, 2, 3}})
 	d.Feed(Packet{T: time.Unix(2, 0), Out: true, Addr: "1.1.1.1:5055", Payload: pkt(photon.MsgRequest, 1, params(77, ""))})
-	d.Feed(Packet{T: time.Unix(3, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "@@мусор")})
 	if len(got) != 0 {
 		t.Fatalf("ждали тишину, получили %+v", got)
+	}
+}
+
+// Вход в локацию вне справочника (Туманы) — Join с пустой Location:
+// место становится неизвестным, а не остаётся прежним.
+func TestDecoderJoinUnknownLocation(t *testing.T) {
+	var got []Ev
+	d := NewDecoder(func(e Ev) { got = append(got, e) })
+	d.Feed(Packet{T: time.Unix(3, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "@@мусор")})
+	d.Feed(Packet{T: time.Unix(4, 0), Addr: "1.1.1.1:5055", Payload: response(OpJoin, "")})
+	if len(got) != 2 || got[0].Kind != Join || got[0].Location != "" || got[1].Kind != Join || got[1].Location != "" {
+		t.Fatalf("ждали два Join без места, получили %+v", got)
 	}
 }
 

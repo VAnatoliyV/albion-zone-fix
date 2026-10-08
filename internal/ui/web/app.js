@@ -402,6 +402,10 @@ function renderZone() {
     $('znName').textContent = '—';
     $('znSub').textContent = s.packets ? t('zn.waitJoin') : t('zn.wait');
     $('znRegion').hidden = true;
+  } else if (!h.code) {
+    $('znName').textContent = t('zn.lost');
+    $('znSub').textContent = t('zn.lostSub') + '  ·  ' + t('zn.since', ago(Date.parse(h.since) / 1000));
+    $('znRegion').hidden = true;
   } else {
     $('znName').textContent = h.name || h.code;
     const parts = [h.code];

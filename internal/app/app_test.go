@@ -341,6 +341,40 @@ func TestPassesFromLiveJoins(t *testing.T) {
 	}
 }
 
+// Город → Туманы (код вне справочника) → дорога: прохода «город → дорога»
+// нет, вход на дорогу — первый; на вкладке «Зона» в Туманах — «не знаю где».
+func TestNoPassAcrossUnknownZone(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	m := &fakeMap{}
+	var zones []string
+	a.AttachMap(m, func(c string) { zones = append(zones, c) })
+	t0 := time.Unix(5000, 0)
+	joinAt(a, t0, eu, "5001")
+	joinAt(a, t0.Add(time.Minute), eu, "MIST-SOLO-ЧТО-ТО")
+	if a.HereCode() != "" {
+		t.Fatalf("в Туманах место должно быть неизвестно: %q", a.HereCode())
+	}
+	if st := a.State(); st.Here == nil || st.Here.Code != "" || st.Here.Known {
+		t.Fatalf("вкладка «Зона» в Туманах: %+v", st.Here)
+	}
+	joinAt(a, t0.Add(2*time.Minute), eu, "TNL-213")
+	if len(m.offered) != 0 || len(m.noted) != 0 {
+		t.Fatalf("проход через Туманы склеен: %+v %v", m.offered, m.noted)
+	}
+	if a.HereCode() != "TNL-213" {
+		t.Fatalf("после Туманов: %q", a.HereCode())
+	}
+	// Дальше по дорогам — снова проходы.
+	joinAt(a, t0.Add(3*time.Minute), eu, "TNL-001")
+	if len(m.offered) != 1 || m.offered[0].From != "TNL-213" {
+		t.Fatalf("проход после Туманов: %+v", m.offered)
+	}
+	if len(zones) != 4 || zones[1] != "" {
+		t.Fatalf("подсветка: %v", zones)
+	}
+}
+
 func TestPassNotEuropeAndSettingOff(t *testing.T) {
 	dir := t.TempDir()
 	a := New(dir, dir, nil)

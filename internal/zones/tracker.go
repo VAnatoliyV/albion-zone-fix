@@ -45,6 +45,8 @@ type Tracker struct {
 
 	cur       string // код локации, где сейчас (пусто — не знаем)
 	curServer string // игровой сервер, с которым идёт игра
+	curLost   bool   // вошли в локацию вне справочника (Туманы): cur пуст, но вход был
+	fromLost  bool   // то же для from
 
 	start   time.Time // начало перехода (нулевое — перехода нет)
 	from    string
@@ -89,7 +91,7 @@ func round1(x float64) float64 { return math.Round(x*10) / 10 }
 func (t *Tracker) inGame() bool { return t.cur != "" || t.curServer != "" }
 
 func (t *Tracker) begin(at time.Time) {
-	t.start, t.from, t.target, t.replied = at, t.cur, "", false
+	t.start, t.from, t.fromLost, t.target, t.replied = at, t.cur, t.curLost, "", false
 	t.connectT, t.warned = time.Time{}, false
 }
 
@@ -137,14 +139,25 @@ func (t *Tracker) On(e game.Ev) {
 			if t.replied {
 				replySec = round1(t.replyT.Sub(t.start).Seconds())
 			}
-			tr := Transition{T: e.T, From: t.from, To: e.Location, FromName: t.name(t.from), ToName: t.name(e.Location),
+			toName := t.name(e.Location)
+			if e.Location == "" {
+				toName = UnknownName // Туманы и прочее вне справочника
+			}
+			tr := Transition{T: e.T, From: t.from, To: e.Location, FromName: t.fromName(), ToName: toName,
 				Server: e.Server, LoadSec: round1(e.T.Sub(t.start).Seconds()), AliveSec: -1, OK: true,
 				Replied: true, ReplySec: replySec, Strategy: t.strategy()}
 			t.waiting, t.joinT = &tr, e.T
 			t.start = time.Time{}
 		}
-		t.cur, t.curServer = e.Location, e.Server
+		t.cur, t.curServer, t.curLost = e.Location, e.Server, e.Location == ""
 	}
+}
+
+func (t *Tracker) fromName() string {
+	if t.from == "" && t.fromLost {
+		return UnknownName
+	}
+	return t.name(t.from)
 }
 
 func (t *Tracker) fail(at time.Time) {
@@ -159,11 +172,11 @@ func (t *Tracker) fail(at time.Time) {
 	if t.replied {
 		replySec = round1(t.replyT.Sub(t.start).Seconds())
 	}
-	t.done(Transition{T: at, From: t.from, FromName: t.name(t.from), Server: t.target,
+	t.done(Transition{T: at, From: t.from, FromName: t.fromName(), Server: t.target,
 		LoadSec: round1(at.Sub(t.start).Seconds()), AliveSec: -1, OK: false, Fail: msg,
 		Replied: t.replied, ReplySec: replySec, Strategy: t.strategy()})
 	// после вылета игра заново входит через сервер входа: начинаем с чистого листа
-	t.start, t.target, t.replied, t.cur, t.curServer = time.Time{}, "", false, "", ""
+	t.start, t.target, t.replied, t.cur, t.curServer, t.curLost = time.Time{}, "", false, "", "", false
 }
 
 func (t *Tracker) flushWaiting(alive float64) {
@@ -197,6 +210,10 @@ type ZoneStat struct {
 	AvgAlive float64 `json:"avgAlive"`
 }
 
+// UnknownName — имя для успешного входа в локацию вне справочника
+// (Туманы, данж, логово): код игры не распознан, но вход был.
+const UnknownName = "неизвестная локация (Туманы?)"
+
 // Worst — худшие локации: сначала по вылетам, потом по среднему времени.
 // withBypass выбирает переходы с включённым обходом (strategy != "off").
 // Вылеты без известной цели собираются под пустым кодом «?».
@@ -212,7 +229,9 @@ func Worst(trs []Transition, withBypass bool) []ZoneStat {
 			continue
 		}
 		key, name := tr.To, tr.ToName
-		if key == "" {
+		if key == "" && tr.OK {
+			key, name = "-", UnknownName
+		} else if key == "" {
 			key, name = "?", "вылет при переходе"
 			if tr.FromName != "" {
 				name += ", из " + tr.FromName

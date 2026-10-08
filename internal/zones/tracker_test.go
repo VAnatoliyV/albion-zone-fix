@@ -202,3 +202,30 @@ func TestStallWarning(t *testing.T) {
 	var d2 []Transition
 	newT(&d2).CheckStall(at(100))
 }
+
+// Вход в Туманы (локация вне справочника, Join с пустой Location) — обычный
+// успешный переход, не вылет через 30 с; из Туманов дальше — тоже переход.
+func TestTransitionThroughUnknownZone(t *testing.T) {
+	var done []Transition
+	tr := newT(&done)
+	tr.On(game.Ev{T: at(0), Kind: game.Join, Server: "a:5056", Location: "0000"})
+	tr.On(game.Ev{T: at(10), Kind: game.ChangeCluster, Server: "a:5056"})
+	tr.On(game.Ev{T: at(13), Kind: game.Join, Server: "b:5056", Location: ""})
+	tr.On(game.Ev{T: at(14), Kind: game.Incoming, Server: "b:5056"})
+	tr.Tick(at(60))
+	if len(done) != 1 || !done[0].OK || done[0].To != "" || done[0].ToName != UnknownName || done[0].From != "0000" {
+		t.Fatalf("вход в Туманы: %+v", done)
+	}
+	tr.On(game.Ev{T: at(100), Kind: game.ChangeCluster, Server: "b:5056"})
+	tr.On(game.Ev{T: at(103), Kind: game.Join, Server: "c:5056", Location: "4002"})
+	tr.Tick(at(200))
+	if len(done) != 2 || !done[1].OK || done[1].From != "" || done[1].FromName != UnknownName || done[1].To != "4002" {
+		t.Fatalf("выход из Туманов: %+v", done)
+	}
+	w := Worst(done, false)
+	for _, s := range w {
+		if s.Zone == "?" {
+			t.Fatalf("вход в Туманы посчитан вылетом: %+v", w)
+		}
+	}
+}

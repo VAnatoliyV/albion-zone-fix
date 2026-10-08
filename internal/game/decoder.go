@@ -30,7 +30,7 @@ type Kind int
 
 const (
 	ChangeCluster Kind = iota + 1 // клиент уходит из локации
-	Join                          // сервер впустил в локацию
+	Join                          // сервер впустил в локацию; Location "" — в неизвестную (Туманы и т.п.)
 	Incoming                      // любое событие с сервера (для «когда ожило»)
 	Connect                       // клиент открывает соединение с игровым сервером (Photon CONNECT)
 	Disconnect                    // клиент сам закрыл соединение с игровым сервером
@@ -108,10 +108,11 @@ func (d *Decoder) onResponse(code byte, rc int16, _ string, params map[byte]inte
 	if rc != 0 || opOf(code, params) != OpJoin {
 		return
 	}
+	// Вход в локацию вне справочника (Туманы, данж, логово…) — тоже вход:
+	// Join с пустой Location значит «где игрок — неизвестно». Иначе карта
+	// склеит «город → Туманы → дорога» в несуществующий проход «город → дорога».
 	s, _ := params[8].(string)
-	if loc := NormalizeLocation(s); loc != "" {
-		d.out(Ev{T: d.cur.T, Kind: Join, Server: d.cur.Addr, Location: loc})
-	}
+	d.out(Ev{T: d.cur.T, Kind: Join, Server: d.cur.Addr, Location: NormalizeLocation(s)})
 }
 
 func (d *Decoder) onEvent(_ byte, _ map[byte]interface{}) {

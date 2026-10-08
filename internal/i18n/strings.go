@@ -111,6 +111,8 @@ var Table = map[string][3]string{
 	"zn.here":       {"ТЕКУЩАЯ ЗОНА", "CURRENT ZONE", "ZONA ACTUAL"},
 	"zn.wait":       {"Запусти игру — зона появится, как только войдёшь в игру или перейдёшь в другую локацию.", "Start the game — the zone shows up once you log in or move to another location.", "Inicia el juego: la zona aparecerá en cuanto entres o cambies de ubicación."},
 	"zn.waitJoin":   {"Игра видна. Перейди в другую локацию — программа узнает, где ты.", "The game is visible. Move to another location and the app will know where you are.", "El juego se ve. Cambia de ubicación y la app sabrá dónde estás."},
+	"zn.lost":       {"Не знаю, где ты", "Not sure where you are", "No sé dónde estás"},
+	"zn.lostSub":    {"Локация вне справочника (Туманы, данж…). Перейди в известную зону — программа узнает, где ты; проход отсюда на карту не отправится.", "A location outside the list (Mists, a dungeon…). Move to a known zone and the app will know where you are; this hop won't be sent to the map.", "Ubicación fuera de la lista (Brumas, mazmorra…). Pasa a una zona conocida y la app sabrá dónde estás; este paso no se enviará al mapa."},
 	"zn.tier":       {"Т%s", "T%s", "T%s"},
 	"zn.since":      {"вход %s", "entered %s", "entraste %s"},
 	"zn.server":     {"сервер: %s", "server: %s", "servidor: %s"},
