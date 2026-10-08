@@ -22,6 +22,7 @@ var (
 	pGetDC                        = user32.NewProc("GetDC")
 	pReleaseDC                    = user32.NewProc("ReleaseDC")
 	pMonitorFromPoint             = user32.NewProc("MonitorFromPoint")
+	pGetMonitorInfoW              = user32.NewProc("GetMonitorInfoW")
 	pGetDpiForMonitor             = shcore.NewProc("GetDpiForMonitor")
 	pCreateCompatibleDC           = gdi32.NewProc("CreateCompatibleDC")
 	pCreateCompatibleBitmap       = gdi32.NewProc("CreateCompatibleBitmap")
@@ -58,19 +59,30 @@ type bitmapInfoHeader struct {
 	ClrImportant  uint32
 }
 
+type monitorInfo struct {
+	Size    uint32
+	Monitor struct{ Left, Top, Right, Bottom int32 }
+	Work    struct{ Left, Top, Right, Bottom int32 }
+	Flags   uint32
+}
+
 type bitmapInfo struct {
 	Header bitmapInfoHeader
 	Colors [4]byte
 }
 
-// CaptureAroundCursor снимает область вокруг курсора (600×400 точек с учётом
-// масштаба монитора), увеличивает для OCR и пишет PNG в path.
+// stale — отпечаток прошлого снимка (застывший кадр полноэкранной игры).
+var stale Stale
+
+// CaptureAroundCursor снимает рамку вокруг курсора (Frame: по высоте
+// монитора, не меньше 600×400 точек с учётом масштаба), увеличивает для OCR
+// и пишет PNG в path.
 //
 // Масштаб: на время снимка поток переводится в режим «по монитору» (V2) —
 // тогда курсор, границы экрана и BitBlt в настоящих пикселях, а окно
 // программы (WebView2) своё поведение не меняет. Игра в «эксклюзивном»
-// полноэкранном режиме может сниматься чёрной — тогда нужен режим «окно без
-// рамки» (проверяет тестер).
+// полноэкранном режиме может сниматься чёрной или застывшей — это видно в
+// Info.Empty (снимок всё равно пишется: по нему тестер увидит, что попало).
 func CaptureAroundCursor(path string) (Info, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -85,12 +97,22 @@ func CaptureAroundCursor(path string) (Info, error) {
 		return Info{}, fmt.Errorf("GetCursorPos: %v", err)
 	}
 	info := Info{Cursor: image.Pt(int(pt.X), int(pt.Y)), DPI: 96}
-	if pMonitorFromPoint.Find() == nil && pGetDpiForMonitor.Find() == nil {
+	if pMonitorFromPoint.Find() == nil {
 		packed := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
 		if mon, _, _ := pMonitorFromPoint.Call(packed, monitorDefaultNearest); mon != 0 {
-			var dx, dy uint32
-			if hr, _, _ := pGetDpiForMonitor.Call(mon, mdtEffectiveDPI, uintptr(unsafe.Pointer(&dx)), uintptr(unsafe.Pointer(&dy))); hr == 0 && dx > 0 {
-				info.DPI = int(dx)
+			if pGetDpiForMonitor.Find() == nil {
+				var dx, dy uint32
+				if hr, _, _ := pGetDpiForMonitor.Call(mon, mdtEffectiveDPI, uintptr(unsafe.Pointer(&dx)), uintptr(unsafe.Pointer(&dy))); hr == 0 && dx > 0 {
+					info.DPI = int(dx)
+				}
+			}
+			if pGetMonitorInfoW.Find() == nil {
+				mi := monitorInfo{}
+				mi.Size = uint32(unsafe.Sizeof(mi))
+				if ok, _, _ := pGetMonitorInfoW.Call(mon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+					m := mi.Monitor
+					info.Mon = image.Rect(int(m.Left), int(m.Top), int(m.Right), int(m.Bottom))
+				}
 			}
 		}
 	}
@@ -100,20 +122,38 @@ func CaptureAroundCursor(path string) (Info, error) {
 	}
 	vx, vy := metric(smXVirtualScreen), metric(smYVirtualScreen)
 	bounds := image.Rect(vx, vy, vx+metric(smCxVirtualScreen), vy+metric(smCyVirtualScreen))
-	w, h := Scaled(info.DPI)
-	r := Around(info.Cursor.X, info.Cursor.Y, w, h, bounds)
+	mon := info.Mon.Intersect(bounds)
+	if mon.Empty() {
+		mon = bounds
+	}
+	r := Frame(info.Cursor.X, info.Cursor.Y, info.DPI, mon)
 	if r.Empty() {
 		return info, errors.New("курсор вне экрана")
 	}
 	info.Rect = r
 
+	// Сбой GDI бывает разовым (переключение режима игры) — один повтор.
 	pix, err := grab(r)
+	info.Tries = 1
+	if err != nil {
+		pix, err = grab(r)
+		info.Tries = 2
+	}
 	if err != nil {
 		return info, err
 	}
-	img := Upscale2(FromBGRA(pix, r.Dx(), r.Dy()))
+	info.Empty = stale.Check(pix, r.Dx(), r.Dy())
+	info.Scale = Factor(r.Dx(), r.Dy())
+	img := Upscale(FromBGRA(pix, r.Dx(), r.Dy()), info.Scale)
+	if img.Bounds().Dx() == r.Dx() {
+		info.Scale = 1
+	}
 	info.Out = img.Bounds().Size()
-	return info, SavePNG(path, img)
+	if err := SavePNG(path, img); err != nil {
+		return info, err
+	}
+	Remember(path, img)
+	return info, nil
 }
 
 // grab — пиксели рамки r экрана (BGRA, сверху вниз).
@@ -138,15 +178,25 @@ func grab(r image.Rectangle) ([]byte, error) {
 		uintptr(int32(r.Min.X)), uintptr(int32(r.Min.Y)), srcCopy)
 	pSelectObject.Call(mem, old) // GetDIBits — только с невыбранным битмапом
 	if ok == 0 {
-		return nil, fmt.Errorf("BitBlt: %v", err)
+		return nil, fmt.Errorf("BitBlt: %v", errText(err))
 	}
 	bi := bitmapInfo{Header: bitmapInfoHeader{Width: int32(r.Dx()), Height: -int32(r.Dy()), Planes: 1, BitCount: 32}}
 	bi.Header.Size = uint32(unsafe.Sizeof(bi.Header))
 	pix := make([]byte, 4*r.Dx()*r.Dy())
-	n, _, err := pGetDIBits.Call(mem, bmp, 0, uintptr(r.Dy()), uintptr(unsafe.Pointer(&pix[0])),
+	// GetDIBits возвращает число скопированных строк; GetLastError он не
+	// ставит, поэтому «The operation completed successfully» — не причина.
+	n, _, _ := pGetDIBits.Call(mem, bmp, 0, uintptr(r.Dy()), uintptr(unsafe.Pointer(&pix[0])),
 		uintptr(unsafe.Pointer(&bi)), dibRGBColors)
-	if n == 0 {
-		return nil, fmt.Errorf("GetDIBits: %v", err)
+	if int(int32(n)) != r.Dy() {
+		return nil, fmt.Errorf("GetDIBits: скопировано строк %d из %d", int32(n), r.Dy())
 	}
 	return pix, nil
+}
+
+// errText — текст ошибки Windows; «успешно» (код 0) — без кода смысла нет.
+func errText(err error) string {
+	if errno, ok := err.(windows.Errno); ok && errno == 0 {
+		return "без кода ошибки"
+	}
+	return fmt.Sprint(err)
 }

@@ -153,7 +153,7 @@ func TestRunner(t *testing.T) {
 	var gotLangs []string
 	r := NewRunner(RunnerConfig{
 		Path:    "/tmp/x.png",
-		Capture: func(string) (string, error) { return "600x400", nil },
+		Capture: func(string) (Snap, error) { return Snap{Info: "600x400"}, nil },
 		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
 			gotLangs = langs
 			return ocrLines, nil
@@ -188,11 +188,11 @@ func TestRunner(t *testing.T) {
 		t.Fatal("сразу второе нажатие — дребезг, не берём")
 	}
 	// Ошибки — кодами для страницы.
-	r.cfg.Capture = func(string) (string, error) { return "", errors.New("BitBlt") }
+	r.cfg.Capture = func(string) (Snap, error) { return Snap{}, errors.New("BitBlt") }
 	if s := r.Run(context.Background()); s.Kind != ErrKindCapture || s.Arg != "BitBlt" {
 		t.Fatalf("%+v", s)
 	}
-	r.cfg.Capture = func(string) (string, error) { return "", nil }
+	r.cfg.Capture = func(string) (Snap, error) { return Snap{}, nil }
 	ocrLines = map[string][]string{"en-US": {"Road of Avalon to", "Zzzzzzzzzzzzzzzzzzzzzzzzzzzz"}}
 	if s := r.Run(context.Background()); s.Kind != ErrKindUnknown && s.Kind != "" {
 		t.Fatalf("%+v", s)
@@ -246,7 +246,7 @@ func TestRunnerLangOrder(t *testing.T) {
 	var calls []string
 	r := NewRunner(RunnerConfig{
 		Path:    "/tmp/x.png",
-		Capture: func(string) (string, error) { return "", nil },
+		Capture: func(string) (Snap, error) { return Snap{}, nil },
 		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
 			calls = append(calls, strings.Join(langs, ","))
 			out := map[string][]string{}
@@ -323,7 +323,7 @@ func TestRunnerDoubtfulFirstTriesSecond(t *testing.T) {
 	}
 	var calls []string
 	r := NewRunner(RunnerConfig{
-		Capture: func(string) (string, error) { return "", nil },
+		Capture: func(string) (Snap, error) { return Snap{}, nil },
 		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
 			calls = append(calls, strings.Join(langs, ","))
 			out := map[string][]string{}
@@ -350,7 +350,7 @@ func TestRunnerOneCallWhenWorkerDown(t *testing.T) {
 	var calls []string
 	live := false
 	r := NewRunner(RunnerConfig{
-		Capture: func(string) (string, error) { return "", nil },
+		Capture: func(string) (Snap, error) { return Snap{}, nil },
 		Recognize: func(_ context.Context, _ string, langs []string) (map[string][]string, error) {
 			calls = append(calls, strings.Join(langs, ","))
 			return map[string][]string{"ru": ru, "en-US": {"Nyrb"}}, nil
@@ -369,5 +369,108 @@ func TestRunnerOneCallWhenWorkerDown(t *testing.T) {
 	r.Run(context.Background())
 	if strings.Join(calls, "|") != "en-US|ru" {
 		t.Fatalf("рабочий есть: %v", calls)
+	}
+}
+
+// Повторы: по картинке (снимок, вариант) — что прочитал OCR.
+func retryRunner(t *testing.T, byImage map[string][]string, empty map[string]string) (*Runner, *[]string, *[]time.Duration) {
+	t.Helper()
+	var ocrCalls []string
+	var sleeps []time.Duration
+	r := NewRunner(RunnerConfig{
+		Path:  "/d/zone-capture.png",
+		Retry: true,
+		Capture: func(p string) (Snap, error) {
+			return Snap{Info: p, Empty: empty[p]}, nil
+		},
+		Prepare: func(src, dst, kind string) error { return nil },
+		Recognize: func(_ context.Context, img string, langs []string) (map[string][]string, error) {
+			ocrCalls = append(ocrCalls, img)
+			return map[string][]string{"en-US": byImage[img]}, nil
+		},
+		Pick:  func([]string) []string { return []string{"en-US"} },
+		Dict:  dict(t),
+		Sleep: func(d time.Duration) { sleeps = append(sleeps, d) },
+	})
+	return r, &ocrCalls, &sleeps
+}
+
+var (
+	tipFull   = []string{"Road of Avalon to", "Qiient-Al-Vynsis", "7/7", "Closes in 5 h 53 m"}
+	tipNoTime = []string{"Road of Avalon to", "Qiient-Al-Vynsis", "7/7"}
+	tipName   = []string{"Qiient-Al-Vynsis"} // признака портала нет — noPortal
+)
+
+func TestRunnerRetryUntilGood(t *testing.T) {
+	// Первый снимок: тултипа нет ни в цвете, ни в вариантах; второй — есть.
+	r, calls, sleeps := retryRunner(t, map[string][]string{"/d/zone-capture-2.png": tipFull}, nil)
+	s := r.Run(context.Background())
+	if s.Kind != "" || s.Result.Zone().Code != "TNL-164" || s.Try != "2/3 цвет" || s.Image != "/d/zone-capture-2.png" {
+		t.Fatalf("%+v", s)
+	}
+	want := "/d/zone-capture.png|/d/zone-capture-gray.png|/d/zone-capture-inv.png|/d/zone-capture-2.png"
+	if strings.Join(*calls, "|") != want {
+		t.Fatalf("порядок: %v", *calls)
+	}
+	if len(*sleeps) != 1 || (*sleeps)[0] <= 0 || (*sleeps)[0] > RetryGap {
+		t.Fatalf("пауза между снимками: %v", *sleeps)
+	}
+	if len(s.Tries) != 4 || s.Tries[0] != "1/3 цвет noTooltip" || s.Tries[3] != "2/3 цвет ok" {
+		t.Fatalf("журнал попыток: %v", s.Tries)
+	}
+}
+
+func TestRunnerVariantWinsAndBestKept(t *testing.T) {
+	// Цвет — без времени, серый — полностью: берём серый, дальше не снимаем.
+	r, calls, _ := retryRunner(t, map[string][]string{"/d/zone-capture.png": tipNoTime, "/d/zone-capture-gray.png": tipFull}, nil)
+	s := r.Run(context.Background())
+	if !Good(s) || s.Try != "1/3 серый" || len(*calls) != 2 {
+		t.Fatalf("%+v %v", s, *calls)
+	}
+	// Хорошего нет нигде: лучший — портал без времени, а не просто название.
+	r, calls, _ = retryRunner(t, map[string][]string{"/d/zone-capture.png": tipName, "/d/zone-capture-2-inv.png": tipNoTime}, nil)
+	s = r.Run(context.Background())
+	if s.Kind != "" || !s.Result.Portal || s.Result.Tooltip.Left != 0 || s.Try != "2/3 инверсия" {
+		t.Fatalf("%+v", s)
+	}
+	if len(*calls) == 0 || len(*calls) > 9 {
+		t.Fatal(*calls)
+	}
+	if shotWord(Shot{Result: Result{Matches: s.Result.Matches}}) != "noPortal" {
+		t.Fatal("noPortal")
+	}
+}
+
+func TestRunnerBlankCapture(t *testing.T) {
+	empty := map[string]string{"/d/zone-capture.png": EmptyBlack, "/d/zone-capture-2.png": EmptyBlack, "/d/zone-capture-3.png": EmptyBlack}
+	r, calls, _ := retryRunner(t, nil, empty)
+	s := r.Run(context.Background())
+	if s.Kind != ErrKindBlank || s.Arg != EmptyBlack || len(*calls) != 0 {
+		t.Fatalf("чёрный снимок не распознаём: %+v %v", s, *calls)
+	}
+	// Застывший кадр: распознаём, но без итога — подсказка про режим игры.
+	r, _, _ = retryRunner(t, nil, map[string]string{"/d/zone-capture-2.png": EmptySame})
+	if s = r.Run(context.Background()); s.Kind != ErrKindBlank || s.Arg != EmptySame {
+		t.Fatalf("%+v", s)
+	}
+	// Застывший, но прочитан — итог как есть.
+	r, _, _ = retryRunner(t, map[string][]string{"/d/zone-capture.png": tipFull}, map[string]string{"/d/zone-capture.png": EmptySame})
+	if s = r.Run(context.Background()); s.Kind != "" {
+		t.Fatalf("%+v", s)
+	}
+}
+
+func TestRunnerNoRetryWithoutWorker(t *testing.T) {
+	r, calls, _ := retryRunner(t, nil, nil)
+	r.cfg.Live = func() bool { return false }
+	if s := r.Run(context.Background()); s.Kind != ErrKindNoTooltip || len(*calls) != 1 || len(s.Tries) != 0 {
+		t.Fatalf("%+v %v", s, *calls)
+	}
+	// Варианты выключены в настройках — только цветные снимки.
+	r, calls, _ = retryRunner(t, nil, nil)
+	r.cfg.Variants = func() bool { return false }
+	r.Run(context.Background())
+	if strings.Join(*calls, "|") != "/d/zone-capture.png|/d/zone-capture-2.png|/d/zone-capture-3.png" {
+		t.Fatal(*calls)
 	}
 }

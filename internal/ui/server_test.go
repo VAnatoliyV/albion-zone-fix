@@ -340,7 +340,9 @@ func TestPageKeysInDictionary(t *testing.T) {
 		// заголовок окна карты (Go, internal/desktop)
 		"map.window",
 		// карточка зоны: подпись дороги, собранная из условия
-		"zn.nodes"} {
+		"zn.nodes",
+		// заголовок уведомления о пустом снимке (Go, internal/zonecard)
+		"zn.blankTitle"} {
 		used[k] = true
 	}
 	// Карточка зоны: ключи собираются из кодов справочника и итогов

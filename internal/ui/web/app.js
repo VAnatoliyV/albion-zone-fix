@@ -558,6 +558,7 @@ function cardError(c) {
     case 'ocr': return t('zn.ocrFailed', c.arg || '');
     case 'noLang': return t('ocr.hint.none');
     case 'noDict': return t('zn.noRef');
+    case 'blank': return t('zn.blank');
   }
   return c.error;
 }

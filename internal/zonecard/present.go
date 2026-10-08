@@ -33,6 +33,11 @@ func Options(s settings.Settings) ToastOptions {
 // создалась: вместо неё уведомление Windows.
 func Present(lang string, sh Shot, s settings.Settings, now time.Time, panelOK bool) Presentation {
 	z := sh.Result.Zone()
+	if sh.Kind == ErrKindBlank && settings.NormalizeShow(s.ZoneShow) != settings.ShowOff {
+		// Пустой снимок — подсказка уведомлением (и при «панели»): во
+		// вкладке её не видно, пока человек в игре.
+		return Presentation{Toast: &Toast{Title: i18n.T(lang, "zn.blankTitle"), Body: i18n.T(lang, "zn.blank")}}
+	}
 	if sh.Kind != "" || z == nil {
 		return Presentation{}
 	}

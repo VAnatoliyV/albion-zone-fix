@@ -244,10 +244,19 @@ func main() {
 	}
 	runner := zonecard.NewRunner(zonecard.RunnerConfig{
 		Path: filepath.Join(data, screen.FileName),
-		Capture: func(path string) (string, error) {
+		Capture: func(path string) (zonecard.Snap, error) {
 			info, err := screen.CaptureAroundCursor(path)
-			return fmt.Sprintf("курсор %v, dpi %d, рамка %v, для OCR %v", info.Cursor, info.DPI, info.Rect, info.Out), err
+			text := fmt.Sprintf("курсор %v, dpi %d, монитор %v, рамка %v, для OCR %v (×%d)", info.Cursor, info.DPI, info.Mon, info.Rect, info.Out, info.Scale)
+			if info.Tries > 1 {
+				text += fmt.Sprintf(", пиксели со %d-го раза", info.Tries)
+			}
+			return zonecard.Snap{Info: text, Empty: info.Empty}, err
 		},
+		// Повторы и варианты картинки (серый, инверсия) — тултип мог не
+		// дорисоваться, текст мог прочитаться плохо.
+		Retry:     true,
+		Prepare:   screen.Variant,
+		Variants:  func() bool { return !a.Settings().ZoneOCRPlain },
 		Recognize: ocr.Recognize,
 		Live:      pwsh.Live,
 		Languages: ocr.Languages,
@@ -259,8 +268,12 @@ func main() {
 		Done: func(sh zonecard.Shot) {
 			cardLog("карта: %s", a.SetCard(sh, dict))
 			if zonecard.Doubtful(sh) {
-				// Сомнительное опознание — снимок отдельно, чтобы тестер прислал его.
+				// Сомнительное опознание — снимок отдельно, чтобы тестер прислал его
+				// (тот, по которому вышел итог: при повторах — не обязательно первый).
 				src := filepath.Join(data, screen.FileName)
+				if sh.Image != "" {
+					src = sh.Image
+				}
 				if b, err := os.ReadFile(src); err == nil {
 					if err := os.WriteFile(filepath.Join(data, zonecard.DoubtFile), b, 0644); err != nil {
 						cardLog("снимок сомнительной карточки не сохранён: %v", err)

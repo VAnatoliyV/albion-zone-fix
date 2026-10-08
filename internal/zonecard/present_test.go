@@ -73,6 +73,15 @@ func TestPresentNothingOnFailedShot(t *testing.T) {
 	if p := Present("ru", Shot{}, s, time.Now(), true); p.Toast != nil || p.Panel != nil {
 		t.Fatalf("зона не узнана: %+v", p)
 	}
+	// Пустой снимок (полноэкранная игра) — подсказка уведомлением.
+	if p := Present("ru", Shot{Kind: ErrKindBlank, Arg: EmptyBlack}, s, time.Now(), true); p.Toast == nil || p.Panel != nil ||
+		!strings.Contains(p.Toast.Body, "без рамки") {
+		t.Fatalf("пустой снимок: %+v", p)
+	}
+	s.ZoneShow = settings.ShowOff
+	if p := Present("ru", Shot{Kind: ErrKindBlank}, s, time.Now(), true); p.Toast != nil {
+		t.Fatalf("показ выключен: %+v", p)
+	}
 }
 
 func TestPanelRoadOrderAndFooter(t *testing.T) {
