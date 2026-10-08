@@ -25,7 +25,7 @@ func TestComboRoundTrip(t *testing.T) {
 	for _, c := range []Combo{
 		{Mouse: MouseX1}, {Mouse: MouseX2}, {Mouse: MouseMiddle},
 		{VK: 0x76}, {VK: 0x87}, {VK: 'Q', Mods: ModCtrl}, {VK: '7', Mods: ModCtrl | ModAlt | ModShift | ModWin},
-		{VK: 0xC0, Mods: ModAlt}, {VK: 0x6B, Mods: ModCtrl}, {VK: 0x60, Mods: ModShift}, {VK: 0x20, Mods: ModCtrl},
+		{VK: 0xC0, Mods: ModAlt}, {VK: 0x6B, Mods: ModCtrl}, {VK: 0x60, Mods: ModCtrl | ModShift}, {VK: 0x20, Mods: ModCtrl},
 	} {
 		got, ok := Parse(string(c.String()))
 		if !ok || got != c {
@@ -197,8 +197,8 @@ func TestAltGr(t *testing.T) {
 	if v, k := DecideKey(wmKeyDown, 0x76, 0, altGr); v != Accept || k != "f7" {
 		t.Errorf("AltGr+F7 — просто F7: %v %q", v, k)
 	}
-	if v, k := DecideKey(wmKeyDown, 'E', 0, altGr|ModShift); v != Accept || k != "shift+e" {
-		t.Errorf("Shift+AltGr+E: %v %q", v, k)
+	if v, _ := DecideKey(wmKeyDown, 'E', 0, altGr|ModShift); v != NeedMod {
+		t.Errorf("Shift+AltGr+E — набор символа: %v", v)
 	}
 	if v, k := DecideKey(wmKeyDown, 'E', 0, ModCtrl|ModAlt); v != Accept || k != "ctrl+alt+e" {
 		t.Errorf("настоящий Ctrl+Alt+E: %v %q", v, k)
@@ -214,5 +214,32 @@ func TestCtrlBreak(t *testing.T) {
 	}
 	if Key("ctrl+break").Label() != "Ctrl+Break" || Normalize("ctrl+break") != "ctrl+break" || Normalize("break") != Default {
 		t.Fatal("подпись и разбор Ctrl+Break")
+	}
+}
+
+// Shift с буквой — заглавная в чате игры: нужен Ctrl, Alt или Win.
+func TestShiftAloneNotEnoughForTyping(t *testing.T) {
+	for _, vk := range []uint32{'Q', '7', 0x20, 0xBA, 0xC0, 0xDE, 0x61, 0x6B} {
+		if v, k := DecideKey(wmKeyDown, vk, 0, ModShift); v != NeedMod {
+			t.Errorf("Shift+%#x: %v %q", vk, v, k)
+		}
+	}
+	for vk, want := range map[uint32]Key{0x76: "shift+f7", 0x2D: "shift+insert", 0x21: "shift+pageup", 0x24: "shift+home", 0x0D: "shift+enter"} {
+		if v, k := DecideKey(wmKeyDown, vk, 0, ModShift); v != Accept || k != want {
+			t.Errorf("Shift+%#x: %v %q, а надо %q", vk, v, k, want)
+		}
+	}
+	for m, want := range map[uint8]Key{ModCtrl | ModShift: "ctrl+shift+q", ModAlt: "alt+q", ModWin | ModShift: "shift+win+q"} {
+		if v, k := DecideKey(wmKeyDown, 'Q', 0, m); v != Accept || k != want {
+			t.Errorf("%v: %v %q", m, v, k)
+		}
+	}
+	for _, in := range []string{"shift+q", "shift+1", "shift+space", "shift+vkc0", "shift+num5"} {
+		if Normalize(in) != Default {
+			t.Errorf("%q из настроек — негодная", in)
+		}
+	}
+	if Normalize("shift+f2") != "shift+f2" || Normalize("ctrl+shift+q") != "ctrl+shift+q" {
+		t.Error("Shift+F2 и Ctrl+Shift+Q — годные")
 	}
 }

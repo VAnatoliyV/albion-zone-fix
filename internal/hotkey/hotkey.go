@@ -159,6 +159,33 @@ func BareOK(vk uint32) bool {
 	return false
 }
 
+// typing — клавиша, которой набирают текст: буквы, цифры, знаки (OEM),
+// пробел, цифры и знаки цифрового блока. С одним Shift это просто
+// заглавная буква или символ в чате игры — нужен Ctrl, Alt или Win.
+func typing(vk uint32) bool {
+	switch {
+	case vk >= 'A' && vk <= 'Z', vk >= '0' && vk <= '9', vk == 0x20:
+		return true
+	case vk >= 0x60 && vk <= 0x6F: // цифровой блок
+		return true
+	case vk >= 0xBA && vk <= 0xC0, vk >= 0xDB && vk <= 0xDF, vk == 0xE2: // ; = , - . / ` [ \ ] ' и <>
+		return true
+	}
+	return false
+}
+
+// modsOK — модификаторов хватает: голые — только BareOK, клавиши набора
+// текста — только с Ctrl, Alt или Win (одного Shift мало).
+func modsOK(vk uint32, mods uint8) bool {
+	if mods == 0 {
+		return BareOK(vk)
+	}
+	if typing(vk) {
+		return mods&(ModCtrl|ModAlt|ModWin) != 0
+	}
+	return true
+}
+
 // String — кнопка строкой для настроек.
 func (c Combo) String() Key {
 	switch c.Mouse {
@@ -215,7 +242,7 @@ func Parse(s string) (Combo, bool) {
 		}
 	}
 	c.VK = vkByName(parts[len(parts)-1])
-	if c.VK == 0 || c.VK == vkEsc || (c.Mods == 0 && !BareOK(c.VK)) {
+	if c.VK == 0 || c.VK == vkEsc || !modsOK(c.VK, c.Mods) {
 		return Combo{}, false
 	}
 	return c, true
@@ -406,7 +433,7 @@ func DecideKey(msg uintptr, vk, flags uint32, mods uint8) (Verdict, Key) {
 		return Cancel, ""
 	}
 	mods = realMods(mods)
-	if mods == 0 && !BareOK(vk) {
+	if !modsOK(vk, mods) {
 		return NeedMod, ""
 	}
 	return Accept, Combo{VK: vk, Mods: mods}.String()
