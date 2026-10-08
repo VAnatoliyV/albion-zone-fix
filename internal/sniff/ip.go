@@ -41,3 +41,22 @@ func ParseIP(b []byte, outbound bool) (addr string, payload []byte, ok bool) {
 	}
 	return net.JoinHostPort(ip.String(), strconv.Itoa(port)), udp[8:], true
 }
+
+// CollectorPort — порт, который слушает сборщик цен (его pcap-фильтр:
+// "tcp port 5056 || udp port 5056"). 5055 — сервер входа, его сборщик не видит.
+const CollectorPort = 5056
+
+// ForCollector — нужен ли пакет разборщику сборщика: IPv4, UDP или TCP,
+// порт 5056 с любой стороны. IPv6 сборщик не разбирает.
+func ForCollector(b []byte) bool {
+	if len(b) < 20 || b[0]>>4 != 4 {
+		return false
+	}
+	ihl := int(b[0]&0x0F) * 4
+	if ihl < 20 || len(b) < ihl+4 || (b[9] != 17 && b[9] != 6) {
+		return false
+	}
+	sport := int(b[ihl])<<8 | int(b[ihl+1])
+	dport := int(b[ihl+2])<<8 | int(b[ihl+3])
+	return sport == CollectorPort || dport == CollectorPort
+}

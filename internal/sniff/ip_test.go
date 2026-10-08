@@ -54,3 +54,27 @@ func TestParseIPv6(t *testing.T) {
 		t.Fatalf("ipv6: %v %q %v", ok, addr, pl)
 	}
 }
+
+func TestForCollector(t *testing.T) {
+	me, srv := [4]byte{192, 168, 1, 5}, [4]byte{193, 169, 238, 17}
+	if !ForCollector(ipv4UDP(srv, me, 5056, 51000, []byte{1})) || !ForCollector(ipv4UDP(me, srv, 51000, 5056, nil)) {
+		t.Fatal("UDP 5056 в обе стороны нужен сборщику")
+	}
+	if ForCollector(ipv4UDP(srv, me, 5055, 51000, []byte{1})) {
+		t.Fatal("5055 сборщик не слушает")
+	}
+	tcp := ipv4UDP(srv, me, 5056, 51000, nil)
+	tcp[9] = 6
+	if !ForCollector(tcp) {
+		t.Fatal("TCP 5056 сборщик тоже слушает")
+	}
+	tcp[9] = 1
+	if ForCollector(tcp) {
+		t.Fatal("ICMP принят")
+	}
+	v6 := make([]byte, 60)
+	v6[0] = 0x60
+	if ForCollector(v6) || ForCollector([]byte{0x45, 0, 0}) {
+		t.Fatal("IPv6 или обрывок принят")
+	}
+}

@@ -1,10 +1,12 @@
-// Albion Zone Fix — статистика переходов между локациями Albion Online
-// и обход чёрного экрана для игроков, у которых провайдер портит UDP игры.
+// Albion Journal для Windows — сбор цен, счётчик фейма и урона и Zone Fix
+// (статистика переходов между локациями Albion Online и обход чёрного экрана
+// для игроков, у которых провайдер портит UDP игры).
 package main
 
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"albionzonefix/internal/app"
+	"albionzonefix/internal/collector"
+	"albionzonefix/internal/datadir"
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/names"
 	"albionzonefix/internal/record"
@@ -34,15 +38,34 @@ func main() {
 		fmt.Println("Нужны права администратора: драйверу перехвата пакетов без них нельзя. Перезапускаю…")
 		if err := relaunchAsAdmin(); err != nil {
 			fmt.Println("Не получилось:", err)
-			fmt.Println("Нажмите на AlbionZoneFix.exe правой кнопкой → «Запуск от имени администратора».")
+			fmt.Println("Нажмите на AlbionJournal.exe правой кнопкой → «Запуск от имени администратора».")
 			waitEnter()
 		}
 		return
 	}
 
 	binDir := filepath.Join(dir, "zapret", "bin")
-	a := app.New(dir, binDir, names.Zones())
+	data, err := datadir.Dir()
+	if err != nil {
+		fmt.Println("Нет каталога данных, пишу рядом с программой:", err)
+		data = dir
+	}
+	if moved, err := datadir.Migrate(dir, data); len(moved) > 0 || err != nil {
+		fmt.Println("Перенёс файлы Zone Fix в", data+":", moved, err)
+	}
+	a := app.New(data, binDir, names.Zones())
 	defer a.Shutdown()
+
+	// Разборщик сборщика цен: журнал — в каталог данных, таблица предметов — рядом с exe.
+	logf, err := os.OpenFile(filepath.Join(data, "albion-journal.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Журнал не открылся:", err)
+		logf = nil
+	}
+	col := collector.New(data, dir, logWriter(logf))
+	if err := a.AttachCollector(col); err != nil {
+		fmt.Println("Сборщик цен не запустился:", err)
+	}
 
 	url, err := ui.Start(a)
 	if err != nil {
@@ -50,14 +73,15 @@ func main() {
 		waitEnter()
 		return
 	}
-	fmt.Println("Albion Zone Fix работает. Окно:", url)
+	fmt.Println("Albion Journal работает. Окно:", url)
+	fmt.Println("Данные:", data)
 	fmt.Println("Чтобы выйти, закройте это окно консоли. Обход выключится сам.")
 	if !*noBrowser {
 		openBrowser(url)
 	}
 
 	packets := make(chan game.Packet, 4096)
-	go sniffLoop(a, binDir, packets)
+	go sniffLoop(a, binDir, packets, col.Feed)
 	go func() {
 		for p := range packets {
 			a.Feed(p)
@@ -76,7 +100,8 @@ func main() {
 }
 
 // sniffLoop держит драйвер открытым; если он упал, пробует снова через 5 секунд.
-func sniffLoop(a *app.App, binDir string, out chan<- game.Packet) {
+// raw получает пакеты для сборщика цен (тот же перехват, без второго драйвера).
+func sniffLoop(a *app.App, binDir string, out chan<- game.Packet, raw func([]byte)) {
 	for {
 		d, err := sniff.Open(binDir)
 		if err != nil {
@@ -85,13 +110,21 @@ func sniffLoop(a *app.App, binDir string, out chan<- game.Packet) {
 			continue
 		}
 		a.SetSniffError(nil)
-		err = d.Run(out)
+		err = d.Run(out, raw)
 		d.Close()
 		if err != nil {
 			a.SetSniffError(err)
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+// logWriter — nil-файл превращает в «никуда», чтобы клиент не писал в консоль.
+func logWriter(f *os.File) io.Writer {
+	if f == nil {
+		return io.Discard
+	}
+	return f
 }
 
 // runReplay прогоняет запись через ту же логику, время берётся из записи.

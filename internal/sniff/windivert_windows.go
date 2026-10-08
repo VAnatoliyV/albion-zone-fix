@@ -21,7 +21,10 @@ const (
 	flagRecvOnly = 0x0004
 	shutdownBoth = 3
 	maxPacket    = 0xFFFF
-	albionFilter = "udp and (udp.SrcPort == 5055 or udp.SrcPort == 5056 or udp.DstPort == 5055 or udp.DstPort == 5056)"
+	// UDP 5055/5056 — игра (учёт переходов), плюс TCP 5056, как в pcap-фильтре
+	// сборщика цен ("tcp port 5056 || udp port 5056").
+	albionFilter = "(udp and (udp.SrcPort == 5055 or udp.SrcPort == 5056 or udp.DstPort == 5055 or udp.DstPort == 5056))" +
+		" or (tcp and (tcp.SrcPort == 5056 or tcp.DstPort == 5056))"
 )
 
 // address повторяет WINDIVERT_ADDRESS (80 байт): время, битовые поля, резерв, объединение.
@@ -77,8 +80,13 @@ func explain(err error) error {
 }
 
 // Run читает пакеты Albion, пока драйвер не закроют. Блокирующий.
-func (d *Divert) Run(out chan<- game.Packet) error {
+// UDP идёт в out (учёт переходов); пакеты для сборщика цен (ForCollector) —
+// ещё и в raw целиком, с IP-заголовка. raw не должен держать срез и блокировать.
+func (d *Divert) Run(out chan<- game.Packet, raw func([]byte)) error {
 	return d.recvLoop(func(b []byte, outbound bool) {
+		if raw != nil && ForCollector(b) {
+			raw(b)
+		}
 		a, pl, ok := ParseIP(b, outbound)
 		if !ok {
 			return

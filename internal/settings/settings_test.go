@@ -1,0 +1,47 @@
+package settings
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDefaultsWhenNoFile(t *testing.T) {
+	s := Open(t.TempDir())
+	if s.Get() != Default() {
+		t.Fatalf("ждал умолчания, получил %+v", s.Get())
+	}
+	if !s.Get().ShareADP || !s.Get().SessionStats {
+		t.Fatal("ADP и счётчик по умолчанию включены")
+	}
+}
+
+func TestSaveAndReload(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+	v := s.Get()
+	v.ShareADP, v.Language = false, "es"
+	if err := s.Set(v); err != nil {
+		t.Fatal(err)
+	}
+	if got := Open(dir).Get(); got != v {
+		t.Fatalf("после перечтения %+v, ждал %+v", got, v)
+	}
+}
+
+func TestMissingFieldsKeepDefaults(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"shareADP": false}`), 0644)
+	got := Open(dir).Get()
+	if got.ShareADP || !got.SessionStats || !got.CollectOnStart {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestBrokenFileGivesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`{не json`), 0644)
+	if Open(dir).Get() != Default() {
+		t.Fatal("битый файл должен давать умолчания")
+	}
+}

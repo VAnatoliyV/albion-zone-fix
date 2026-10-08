@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/photon"
 	"albionzonefix/internal/record"
@@ -83,5 +84,75 @@ func TestBypassWithoutWinwsReportsError(t *testing.T) {
 	}
 	if a.State().Bypass != "off" {
 		t.Fatal("состояние врёт")
+	}
+}
+
+type fakeCollector struct {
+	applied []collector.Config
+	resets  int
+}
+
+func (f *fakeCollector) Apply(c collector.Config) error { f.applied = append(f.applied, c); return nil }
+func (f *fakeCollector) ResetSession()                  { f.resets++ }
+func (f *fakeCollector) Stats() collector.Stats {
+	return collector.Stats{Running: len(f.applied) > 0 && f.applied[len(f.applied)-1].Running()}
+}
+
+func TestCollectorFollowsSettings(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	if err := a.ResetSession(); err == nil {
+		t.Fatal("сброс без счётчика должен вернуть ошибку")
+	}
+	f := &fakeCollector{}
+	if err := a.AttachCollector(f); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.applied[0]; got != (collector.Config{Prices: true, ShareADP: true, Session: true}) {
+		t.Fatalf("по умолчанию: %+v", got)
+	}
+
+	s := a.Settings()
+	s.ShareADP = false
+	if err := a.SetSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.applied[1]; got.ShareADP || !got.Prices {
+		t.Fatalf("ADP не выключился: %+v", got)
+	}
+	if b := New(dir, dir, nil); b.Settings().ShareADP {
+		t.Fatal("настройка не сохранилась в файл")
+	}
+
+	a.SetCollecting(false)
+	if got := f.applied[2]; got.Prices || !got.Session {
+		t.Fatalf("сбор не остановился или счётчик выключился: %+v", got)
+	}
+	st := a.State()
+	if st.Collecting || st.Settings.ShareADP || !st.Collector.Running || st.DataDir != dir {
+		t.Fatalf("состояние: %+v", st)
+	}
+
+	a.ResetSession()
+	if f.resets != 1 {
+		t.Fatal("сброс не дошёл")
+	}
+	a.Shutdown()
+	if got := f.applied[len(f.applied)-1]; got.Running() {
+		t.Fatal("при выходе разборщик не остановлен")
+	}
+}
+
+func TestCollectOnStartOff(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	s := a.Settings()
+	s.CollectOnStart = false
+	a.SetSettings(s)
+	b := New(dir, dir, nil)
+	f := &fakeCollector{}
+	b.AttachCollector(f)
+	if b.Collecting() || f.applied[0].Prices || !f.applied[0].Session {
+		t.Fatalf("сбор начался сам: %+v", f.applied)
 	}
 }

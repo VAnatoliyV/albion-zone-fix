@@ -1,5 +1,5 @@
-Albion Zone Fix — сторонний код и файлы
-=======================================
+Albion Journal (Windows) — сторонний код и файлы
+================================================
 
 zapret (winws.exe, cygwin1.dll, файлы *.bin) — из сборки
 Flowseal/zapret-discord-youtube 1.10.3 (https://github.com/Flowseal/zapret-discord-youtube),
@@ -11,6 +11,18 @@ WinDivert (WinDivert.dll, WinDivert64.sys) — basil00/WinDivert
 Разборщик протокола Photon (internal/photon) — из albiondata-client
 (https://github.com/ao-data/albiondata-client), MIT, Copyright (c) 2017 The Albion Data Project;
 сам он — порт Protocol18Deserializer из JPCodeCraft/AlbionDataAvalonia.
+
+Сбор цен и счётчик фейма, серебра и урона — форк albiondata-client
+(https://github.com/ao-data/albiondata-client), MIT, Copyright (c) 2017 The Albion Data Project,
+встроен в программу. Его зависимости (все с открытыми лицензиями MIT, BSD или Apache 2.0):
+google/gopacket (BSD-3), sirupsen/logrus (MIT), nats-io/go-nats, nkeys, nuid (Apache 2.0),
+spf13/viper, afero, cast, pflag (MIT/Apache 2.0/BSD-3), fsnotify (BSD-3),
+mitchellh/mapstructure и go-viper/mapstructure (MIT), gorilla/websocket (BSD-2),
+mattn/go-colorable и go-isatty (MIT), nu7hatch/gouuid (MIT), pelletier/go-toml (MIT),
+sagikazarmark/locafero (MIT), subosito/gotenv (MIT), go.yaml.in/yaml (MIT/Apache 2.0),
+gopkg.in/toast.v1 (MIT), golang.org/x/* (BSD-3).
+
+Таблица предметов (items_by_id.json) — из albibong (MIT).
 
 Названия локаций — из ao-data/ao-bin-dumps.
 

@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"albionzonefix/internal/bypass"
+	"albionzonefix/internal/collector"
 	"albionzonefix/internal/game"
 	"albionzonefix/internal/probe"
 	"albionzonefix/internal/record"
+	"albionzonefix/internal/settings"
 	"albionzonefix/internal/trace"
 	"albionzonefix/internal/zones"
 )
@@ -57,11 +59,24 @@ type App struct {
 	rec      *record.Writer
 	recFile  *os.File
 	recUntil time.Time
+
+	settings   *settings.Store
+	col        Collector // разборщик цен и счётчика; nil — не подключён
+	collecting bool      // сбор цен идёт сейчас (включается кнопкой или при открытии)
+	colMu      sync.Mutex
+}
+
+// Collector — разборщик форка сборщика (collector.Collector); в тестах подделка.
+type Collector interface {
+	Apply(collector.Config) error
+	ResetSession()
+	Stats() collector.Stats
 }
 
 func New(dir, binDir string, names map[string]string) *App {
 	a := &App{dir: dir, binDir: binDir, names: names, runner: bypass.NewRunner(binDir),
-		strats: bypass.LoadStrategies(filepath.Join(dir, "strategies.json"))}
+		strats: bypass.LoadStrategies(filepath.Join(dir, "strategies.json")), settings: settings.Open(dir)}
+	a.collecting = a.settings.Get().CollectOnStart
 	a.tracker = zones.NewTracker(a.name, a.strategyNow, a.onTransition)
 	a.dec = game.NewDecoder(a.onEvent)
 	a.load()
@@ -193,6 +208,84 @@ func (a *App) SetBypass(mode string) error {
 func (a *App) Shutdown() {
 	a.runner.Stop()
 	a.StopRecord()
+	a.colMu.Lock()
+	if a.col != nil {
+		a.col.Apply(collector.Config{})
+	}
+	a.colMu.Unlock()
+}
+
+// AttachCollector подключает разборщик и включает его по настройкам.
+func (a *App) AttachCollector(c Collector) error {
+	a.colMu.Lock()
+	a.col = c
+	a.colMu.Unlock()
+	return a.applyCollector()
+}
+
+// collectorConfig — что должно работать при текущих настройках.
+func (a *App) collectorConfig() collector.Config {
+	s := a.settings.Get()
+	a.mu.Lock()
+	on := a.collecting
+	a.mu.Unlock()
+	return collector.Config{Prices: on, ShareADP: s.ShareADP, Session: s.SessionStats}
+}
+
+func (a *App) applyCollector() error {
+	a.colMu.Lock()
+	defer a.colMu.Unlock()
+	if a.col == nil {
+		return nil
+	}
+	// Настройки читаем под colMu: два переключения подряд не применятся задом наперёд.
+	return a.col.Apply(a.collectorConfig())
+}
+
+// Settings — текущие настройки программы.
+func (a *App) Settings() settings.Settings { return a.settings.Get() }
+
+// SetSettings сохраняет настройки и сразу применяет их к разборщику.
+func (a *App) SetSettings(s settings.Settings) error {
+	if err := a.settings.Set(s); err != nil {
+		return err
+	}
+	return a.applyCollector()
+}
+
+// SetCollecting запускает или останавливает сбор цен (не трогая счётчик).
+func (a *App) SetCollecting(on bool) error {
+	a.mu.Lock()
+	a.collecting = on
+	a.mu.Unlock()
+	return a.applyCollector()
+}
+
+// Collecting — идёт ли сбор цен.
+func (a *App) Collecting() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.collecting
+}
+
+// ResetSession обнуляет счётчик фейма, серебра и урона.
+func (a *App) ResetSession() error {
+	a.colMu.Lock()
+	defer a.colMu.Unlock()
+	if a.col == nil {
+		return errors.New("счётчик не подключён")
+	}
+	a.col.ResetSession()
+	return nil
+}
+
+func (a *App) collectorStats() collector.Stats {
+	a.colMu.Lock()
+	defer a.colMu.Unlock()
+	if a.col == nil {
+		return collector.Stats{}
+	}
+	return a.col.Stats()
 }
 
 func (a *App) StartRecord(d time.Duration) error {
@@ -402,13 +495,19 @@ type State struct {
 	ProbeRuns  []ProbeRun         `json:"probeRuns"`
 	Recording  string             `json:"recording"`
 	RecLeft    int                `json:"recLeft"`
+	DataDir    string             `json:"dataDir"`
+	Collecting bool               `json:"collecting"`
+	Settings   settings.Settings  `json:"settings"`
+	Collector  collector.Stats    `json:"collector"`
 }
 
 func (a *App) State() State {
 	cur, berr, _ := a.runner.Status()
+	cs, set := a.collectorStats(), a.settings.Get()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr}
+	st := State{Packets: a.packets, SniffError: a.sniffErr, Bypass: cur, BypassErr: berr,
+		DataDir: a.dir, Collecting: a.collecting, Settings: set, Collector: cs}
 	if !a.lastPkt.IsZero() {
 		st.LastPacket = a.lastPkt.Format("15:04:05")
 	}
