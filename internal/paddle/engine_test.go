@@ -181,3 +181,11 @@ func TestClosedEngine(t *testing.T) {
 		t.Error("закрытый движок загрузил модель")
 	}
 }
+
+// Телеметрия ONNX Runtime выключена.
+func TestTelemetryDisabled(t *testing.T) {
+	en := testEngine(t)
+	if en.e.telemetry != nil {
+		t.Errorf("DisableTelemetryEvents: %v", en.e.telemetry)
+	}
+}

@@ -22,6 +22,7 @@ const apiVersion = 16
 const (
 	fnGetErrorMessage                      = 2
 	fnCreateEnv                            = 3
+	fnDisableTelemetryEvents               = 6
 	fnCreateSessionFromArray               = 8
 	fnRun                                  = 9
 	fnCreateSessionOptions                 = 10
@@ -140,6 +141,8 @@ type env struct {
 	o        *ort
 	env, mem uintptr
 	alloc    uintptr // распределитель по умолчанию (не освобождается)
+	// telemetry — ошибка выключения телеметрии (nil — выключена).
+	telemetry error
 }
 
 func (o *ort) newEnv() (*env, error) {
@@ -149,6 +152,11 @@ func (o *ort) newEnv() (*env, error) {
 		return nil, err
 	}
 	runtime.KeepAlive(id)
+	// Официальная сборка шлёт события телеметрии (ETW, Privacy.md в
+	// выпуске) — выключаем; не вышло — не беда.
+	if err := o.do("DisableTelemetryEvents", fnDisableTelemetryEvents, e.env); err != nil {
+		e.telemetry = err
+	}
 	if err := o.do("CreateCpuMemoryInfo", fnCreateCpuMemoryInfo, allocArena, memDefault, uintptr(unsafe.Pointer(&e.mem))); err != nil {
 		e.close()
 		return nil, err
