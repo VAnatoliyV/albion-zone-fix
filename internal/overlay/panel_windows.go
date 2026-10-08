@@ -3,8 +3,12 @@
 package overlay
 
 import (
+	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -76,6 +80,7 @@ const (
 	wmTimer          = 0x0113
 	wmNCHitTest      = 0x0084
 	wmMouseActivate  = 0x0021
+	wmDPIChanged     = 0x02E0
 	wmApp            = 0x8000
 	wmShow           = wmApp + 1
 	htTransparent    = ^uintptr(0) // -1
@@ -152,13 +157,21 @@ type paintStruct struct {
 // Panel — окно панели. Живёт на своём потоке со своим циклом сообщений:
 // главное окно и трей программы его не ждут.
 type Panel struct {
-	logf  func(string, ...any)
-	once  sync.Once
-	ready chan struct{}
-	hwnd  uintptr
+	logf      func(string, ...any)
+	once      sync.Once
+	ready     chan struct{}
+	readyOnce sync.Once
+	hwnd      uintptr
+	// broken — панель упала (паника на её потоке): до конца запуска не
+	// показываем, карточка идёт уведомлением (zonecard.Present).
+	broken atomic.Bool
 
 	mu      sync.Mutex
 	pending *request
+	mark    point // курсор в момент нажатия кнопки карточки
+	markAt  time.Time
+
+	inflight *request // на экране сейчас (для запасного пути при панике в show/paint)
 
 	// Дальше — только на потоке панели.
 	cur   Layout
@@ -166,9 +179,10 @@ type Panel struct {
 }
 
 type request struct {
-	card   zonecard.Panel
-	corner string
-	secs   int
+	card     zonecard.Panel
+	corner   string
+	secs     int
+	fallback func() // панель упала на этой карточке — показать её иначе
 }
 
 // панель одна на программу: оконной процедуре нужен её адрес.
@@ -185,20 +199,70 @@ func New(logf func(string, ...any)) *Panel {
 	return &Panel{logf: logf, ready: make(chan struct{}), fonts: map[int]map[Font]uintptr{}}
 }
 
-// Show показывает карточку в углу corner экрана с игрой (монитор под
-// курсором — человек только что навёл его на портал в игре) на secs
-// секунд. Не блокирует; новая карточка заменяет прежнюю.
-func (p *Panel) Show(card zonecard.Panel, corner string, secs int) {
-	p.once.Do(func() { go p.loop() })
-	<-p.ready
-	if p.hwnd == 0 {
+// OK — можно ли показывать панель: не падала в этом запуске и окно
+// создалось (или ещё не создавалось).
+func (p *Panel) OK() bool {
+	if p.broken.Load() {
+		return false
+	}
+	select {
+	case <-p.ready:
+		return p.hwnd != 0
+	default:
+		return true
+	}
+}
+
+// Mark запоминает, где курсор в момент нажатия кнопки карточки: панель
+// встанет на этот монитор, даже если мышь потом увели на другой экран.
+func (p *Panel) Mark() {
+	var pt point
+	if r, _, _ := pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt))); r == 0 {
 		return
 	}
 	p.mu.Lock()
-	p.pending = &request{card: card, corner: corner, secs: secs}
+	p.mark, p.markAt = pt, time.Now()
+	p.mu.Unlock()
+}
+
+// Show показывает карточку в углу corner экрана с игрой на secs секунд.
+// Не блокирует; новая карточка заменяет прежнюю. false — панели нет
+// (сломалась или не создалась): показать иначе сразу. fallback зовётся,
+// если панель упадёт на этой карточке.
+func (p *Panel) Show(card zonecard.Panel, corner string, secs int, fallback func()) bool {
+	if p.broken.Load() {
+		return false
+	}
+	p.once.Do(func() { go p.loop() })
+	<-p.ready
+	if p.hwnd == 0 || p.broken.Load() {
+		return false
+	}
+	p.mu.Lock()
+	p.pending = &request{card: card, corner: corner, secs: secs, fallback: fallback}
 	p.mu.Unlock()
 	pPostMessageW.Call(p.hwnd, wmShow, 0, 0)
+	return true
 }
+
+// fail — паника на потоке панели: в журнал со стеком, панель выключается
+// до конца запуска и прячется, карточка, на которой упали, — запасным путём.
+// Зовётся из recover на потоке панели.
+func (p *Panel) fail(where string, v any) {
+	p.broken.Store(true)
+	p.logf("панель поверх игры упала (%s): %v — дальше карточка уведомлением\n%s", where, v, debug.Stack())
+	req := p.inflight
+	p.inflight = nil
+	if p.hwnd != 0 {
+		pKillTimer.Call(p.hwnd, hideTimer)
+		pShowWindow.Call(p.hwnd, swHide)
+	}
+	if req != nil && req.fallback != nil {
+		go req.fallback()
+	}
+}
+
+func (p *Panel) markReady() { p.readyOnce.Do(func() { close(p.ready) }) }
 
 // Close убирает окно (при выходе).
 func (p *Panel) Close() {
@@ -214,6 +278,13 @@ func (p *Panel) Close() {
 func (p *Panel) loop() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	// Паника здесь не должна ронять программу (перехват, зона, окно).
+	defer func() {
+		if v := recover(); v != nil {
+			p.fail("поток", v)
+		}
+		p.markReady()
+	}()
 	// Поток «по монитору» (V2): координаты и размеры — настоящие пиксели,
 	// масштаб монитора учитываем сами (Scale).
 	if pSetThreadDpiAwarenessContext.Find() == nil {
@@ -224,7 +295,7 @@ func (p *Panel) loop() {
 		p.logf("панель поверх игры не создалась: %v", err)
 	}
 	p.hwnd = hwnd
-	close(p.ready)
+	p.markReady()
 	if hwnd == 0 {
 		return
 	}
@@ -269,8 +340,17 @@ func (p *Panel) create() (uintptr, error) {
 	return hwnd, nil
 }
 
-func wndProc(hwnd, m, wp, lp uintptr) uintptr {
+func wndProc(hwnd, m, wp, lp uintptr) (ret uintptr) {
 	p := active
+	// Go-паника не может пройти через кадры Win32 — ловим здесь. EndPaint
+	// при панике в paint отработает отложенно, окно не будет перерисовываться
+	// без конца.
+	defer func() {
+		if v := recover(); v != nil {
+			p.fail(fmt.Sprintf("сообщение 0x%X", m), v)
+			ret = 0
+		}
+	}()
 	switch m {
 	case wmShow:
 		p.show(hwnd)
@@ -279,6 +359,7 @@ func wndProc(hwnd, m, wp, lp uintptr) uintptr {
 		if wp == hideTimer {
 			pKillTimer.Call(hwnd, hideTimer)
 			pShowWindow.Call(hwnd, swHide)
+			p.inflight = nil // карточка показана и спрятана
 		}
 		return 0
 	case wmPaint:
@@ -286,6 +367,10 @@ func wndProc(hwnd, m, wp, lp uintptr) uintptr {
 		return 0
 	case wmEraseBkgnd:
 		return 1
+	case wmDPIChanged:
+		// Панель уже разложена под DPI монитора назначения (show) —
+		// предложенный системой прямоугольник не берём, иначе масштаб дважды.
+		return 0
 	case wmNCHitTest:
 		return htTransparent
 	case wmMouseActivate:
@@ -326,10 +411,18 @@ func (p *Panel) font(dpi int, f Font) uintptr {
 	return h
 }
 
-// where — рабочая область и dpi монитора под курсором.
-func where() (Rect, int) {
-	var pt point
-	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+// markFresh — сколько после нажатия верим запомненному курсору.
+const markFresh = 15 * time.Second
+
+// where — рабочая область и dpi монитора, где был курсор при нажатии
+// кнопки карточки (или где он сейчас, если нажатие не запомнено).
+func (p *Panel) where() (Rect, int) {
+	p.mu.Lock()
+	pt, at := p.mark, p.markAt
+	p.mu.Unlock()
+	if at.IsZero() || time.Since(at) > markFresh {
+		pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	}
 	packed := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
 	mon, _, _ := pMonitorFromPoint.Call(packed, monitorNearest)
 	work, dpi := Rect{0, 0, 1920, 1080}, 96
@@ -358,8 +451,12 @@ func (p *Panel) show(hwnd uintptr) {
 	if req == nil {
 		return
 	}
-	work, dpi := where()
+	p.inflight = req
+	// DPI и шрифты считаются заново при каждом показе: монитор и масштаб
+	// могли поменяться.
+	work, dpi := p.where()
 	dc, _, _ := pCreateCompatibleDC.Call(0)
+	origFont, _, _ := pSelectObject.Call(dc, p.font(dpi, FontText))
 	measure := func(f Font, s string) int {
 		u, _ := windows.UTF16FromString(s)
 		if len(u) <= 1 {
@@ -371,6 +468,7 @@ func (p *Panel) show(hwnd uintptr) {
 		return int(sz.CX)
 	}
 	p.cur = Arrange(req.card, dpi, measure)
+	pSelectObject.Call(dc, origFont) // шрифт — из кэша, DC его не удаляет
 	pDeleteDC.Call(dc)
 
 	x, y := Place(work, p.cur.W, p.cur.H, req.corner, dpi)

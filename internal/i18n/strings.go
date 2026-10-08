@@ -12,6 +12,7 @@ var Table = map[string][3]string{
 	"st.avalon":          {"Авалон", "Avalon", "Avalon"},
 	"st.watching":        {"следит", "watching", "vigilando"},
 	"st.watchingNoMap":   {"следит, на карту не шлёт", "watching, not sending to the map", "vigilando, sin enviar al mapa"},
+	"st.waitingGame":     {"ждёт игру", "waiting for the game", "esperando el juego"},
 	"st.avalonNoCapture": {"нет перехвата", "no capture", "sin captura"},
 	"st.disabled":        {"выключен", "off", "desactivado"},
 	"st.receiver":        {"Приёмник", "Receiver", "Receptor"},

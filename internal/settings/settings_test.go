@@ -49,8 +49,9 @@ func TestMissingFieldsKeepDefaults(t *testing.T) {
 func TestBrokenFileGivesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{не json`), 0644)
-	if Open(dir).Get() != Default() {
-		t.Fatal("битый файл должен давать умолчания")
+	// Файл был — установка не новая: прежние умолчания, цены не выключаются.
+	if got := Open(dir).Get(); got != legacy() || !got.CollectOnStart || !got.ShareADP || !got.SessionStats {
+		t.Fatalf("битый файл должен давать прежние умолчания: %+v", got)
 	}
 }
 
@@ -103,7 +104,7 @@ func TestSkinSavedAndNormalized(t *testing.T) {
 // Обычное оформление по умолчанию; уже выбранное пиксельное не трогаем.
 func TestSkinDefaultPlainKeepsSaved(t *testing.T) {
 	for body, want := range map[string]string{
-		``:                  SkinPlain, // пустой файл — битый, берутся настройки по умолчанию
+		``:                  SkinPlain, // пустой файл — битый, берутся прежние умолчания
 		`{}`:                SkinPlain,
 		`{"language":"ru"}`: SkinPlain, // старый файл без ключа
 		`{"language":"ru","skin":"pixel","themeV2":true}`: SkinPixel, // выбрано после перехода

@@ -279,6 +279,14 @@ func fakeCard(a *app.App, kind string) {
 		return
 	}
 	a.SetCard(zonecard.Shot{Result: r}, d)
-	t := zonecard.BuildToast("ru", r.Zone(), r, zonecard.ToastOptions{Chests: true, Res: true, Dungeons: true, Portal: true, ChestsFirst: true}, time.Now())
-	fmt.Printf("уведомление:\n%s\n%s\n%s\n", t.Title, t.Subtitle, t.Body)
+	// Как в программе: способ показа и части — из настроек.
+	pr := zonecard.Present("ru", zonecard.Shot{Result: r}, a.Settings(), time.Now(), true)
+	switch {
+	case pr.Toast != nil:
+		fmt.Printf("уведомление:\n%s\n%s\n%s\n", pr.Toast.Title, pr.Toast.Subtitle, pr.Toast.Body)
+	case pr.Panel != nil:
+		fmt.Printf("панель: %+v\n", *pr.Panel)
+	default:
+		fmt.Println("карточка только во вкладке")
+	}
 }

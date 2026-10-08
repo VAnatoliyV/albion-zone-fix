@@ -332,7 +332,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
 		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied",
 		// строки состояния «Авалон», «выключен» и способ показа карточки
-		"st.watching", "st.watchingNoMap", "st.avalonNoCapture", "st.disabled", "btn.enable",
+		"st.watching", "st.watchingNoMap", "st.avalonNoCapture", "st.waitingGame", "st.disabled", "btn.enable",
 		"show.notifyHint", "show.panelHint", "show.offHint",
 		// вкладка «Зона»: типы зон и серверы — через таблицы KIND и REGION
 		"kind.roads", "kind.black", "kind.red", "kind.yellow", "kind.safe", "kind.city", "kind.island", "kind.instance", "kind.other",
@@ -602,5 +602,30 @@ func TestZoneShowSettings(t *testing.T) {
 	postJSON(t, e, `{"zoneShow":"off"}`)
 	if s := settings.Open(e.dir).Get(); s.ZoneShow != settings.ShowOff || s.ZoneNotify {
 		t.Fatalf("не сохранено: %+v", s)
+	}
+}
+
+// «Включить» сбор цен на главной запоминается, «Остановить» — нет.
+func TestCollectEnableIsSaved(t *testing.T) {
+	e := start(t)
+	s := e.a.Settings()
+	s.CollectOnStart = false
+	e.a.SetSettings(s)
+	e.post(t, "/api/collect", url.Values{"on": {"0"}}, true)
+	e.post(t, "/api/collect", url.Values{"on": {"1"}, "save": {"1"}}, true)
+	if !e.a.Collecting() || !e.col.cfg.Prices || !settings.Open(e.dir).Get().CollectOnStart {
+		t.Fatalf("сбор %v, при открытии %v", e.a.Collecting(), settings.Open(e.dir).Get().CollectOnStart)
+	}
+	e.post(t, "/api/collect", url.Values{"on": {"0"}}, true)
+	if e.a.Collecting() || !settings.Open(e.dir).Get().CollectOnStart {
+		t.Fatal("остановка — только до выхода")
+	}
+	// Трей и сторож игры по-прежнему без сохранения.
+	s = e.a.Settings()
+	s.CollectOnStart = false
+	e.a.SetSettings(s)
+	e.post(t, "/api/collect", url.Values{"on": {"1"}}, true)
+	if !e.a.Collecting() || settings.Open(e.dir).Get().CollectOnStart {
+		t.Fatal("без save=1 настройка не меняется")
 	}
 }

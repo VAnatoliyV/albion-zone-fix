@@ -193,6 +193,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) { s.json(w, s.session()) })
 	mux.HandleFunc("POST /api/session/reset", func(w http.ResponseWriter, r *http.Request) { reply(w, s.a.ResetSession()) })
 	mux.HandleFunc("POST /api/collect", func(w http.ResponseWriter, r *http.Request) {
+		// save=1 — кнопка «Включить» на главной: запомнить и при следующем запуске.
+		if r.FormValue("on") == "1" && r.FormValue("save") == "1" {
+			reply(w, s.a.EnableCollecting())
+			return
+		}
 		reply(w, s.a.SetCollecting(r.FormValue("on") == "1"))
 	})
 	mux.HandleFunc("POST /api/receiver", func(w http.ResponseWriter, r *http.Request) {

@@ -470,6 +470,19 @@ func (a *App) SetCollecting(on bool) error {
 	return a.applyCollector()
 }
 
+// EnableCollecting — кнопка «Включить» у сбора цен: включает сбор сейчас
+// и запоминает «начинать сбор при открытии», как «Включить» у счётчика.
+// Остановка кнопкой — только до выхода (SetCollecting(false)).
+func (a *App) EnableCollecting() error {
+	if s := a.settings.Get(); !s.CollectOnStart {
+		s.CollectOnStart = true
+		if err := a.SetSettings(s); err != nil {
+			return err
+		}
+	}
+	return a.SetCollecting(true)
+}
+
 // Collecting — идёт ли сбор цен.
 func (a *App) Collecting() bool {
 	a.mu.Lock()

@@ -271,13 +271,20 @@ func main() {
 			}
 			// Кроме вкладки — уведомлением или панелью поверх игры, по
 			// настройке «Способ показа», и только включённые части.
-			set := a.Settings()
-			pr := zonecard.Present(curLang(), sh, set, time.Now())
-			if pr.Toast != nil {
-				notify.Show(pr.Toast.Title, pr.Toast.Subtitle, pr.Toast.Body)
+			set, lang, now := a.Settings(), curLang(), time.Now()
+			toast := func(t *zonecard.Toast) {
+				if t != nil {
+					notify.Show(t.Title, t.Subtitle, t.Body)
+				}
 			}
+			// Панель упала в этом запуске — сразу уведомлением.
+			pr := zonecard.Present(lang, sh, set, now, panel.OK())
+			toast(pr.Toast)
 			if pr.Panel != nil {
-				panel.Show(*pr.Panel, set.ZoneOverlayCorner, set.ZoneOverlaySec)
+				fallback := func() { toast(zonecard.Present(lang, sh, set, now, false).Toast) }
+				if !panel.Show(*pr.Panel, set.ZoneOverlayCorner, set.ZoneOverlaySec, fallback) {
+					fallback()
+				}
 			}
 		},
 	})
@@ -299,7 +306,7 @@ func main() {
 		}
 		hook.Stop()
 		hook, hookKey = nil, k
-		h, err := hotkey.Start(k, func() { runner.Trigger() }, cardLog)
+		h, err := hotkey.Start(k, func() { panel.Mark(); runner.Trigger() }, cardLog)
 		if err != nil {
 			cardLog("кнопка %s не поставлена: %v", k, err)
 			return

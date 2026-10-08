@@ -34,7 +34,7 @@ func TestPresentShowTimesParts(t *testing.T) {
 	} {
 		s := all
 		s.ZoneShow = c.show
-		p := Present("ru", sh, s, at)
+		p := Present("ru", sh, s, at, true)
 		if (p.Toast != nil) != c.toast || (p.Panel != nil) != c.panel {
 			t.Errorf("%q: уведомление %v, панель %v", c.show, p.Toast != nil, p.Panel != nil)
 		}
@@ -44,22 +44,22 @@ func TestPresentShowTimesParts(t *testing.T) {
 	s := all
 	s.NotifyChests, s.NotifyDng, s.NotifyPortal = false, false, false
 	s.ZoneShow = settings.ShowNotify
-	if b := Present("ru", sh, s, at).Toast.Body; b != "волокно · шкуры" {
+	if b := Present("ru", sh, s, at, true).Toast.Body; b != "волокно · шкуры" {
 		t.Fatalf("уведомление: %q", b)
 	}
 	s.ZoneShow = settings.ShowPanel
-	p := Present("ru", sh, s, at).Panel
+	p := Present("ru", sh, s, at, true).Panel
 	if len(p.Rows) != 1 || p.Rows[0].Label != "на них" || p.Footer != "" {
 		t.Fatalf("панель: %+v", p)
 	}
 	// Всё выключено — только название и вид.
 	s.NotifyRes = false
-	p = Present("ru", sh, s, at).Panel
+	p = Present("ru", sh, s, at, true).Panel
 	if len(p.Rows) != 0 || p.Footer != "" || p.Title != "Qiient-Al-Vynsis" || p.Subtitle != "дорога убежищ · T6" {
 		t.Fatalf("панель без частей: %+v", p)
 	}
 	s.ZoneShow = settings.ShowNotify
-	if tt := Present("ru", sh, s, at).Toast; tt.Body != "" || tt.Title != "Qiient-Al-Vynsis" {
+	if tt := Present("ru", sh, s, at, true).Toast; tt.Body != "" || tt.Title != "Qiient-Al-Vynsis" {
 		t.Fatalf("уведомление без частей: %+v", tt)
 	}
 }
@@ -67,10 +67,10 @@ func TestPresentShowTimesParts(t *testing.T) {
 func TestPresentNothingOnFailedShot(t *testing.T) {
 	s := settings.Default()
 	s.ZoneShow = settings.ShowPanel
-	if p := Present("ru", Shot{Kind: ErrKindNoTooltip}, s, time.Now()); p.Toast != nil || p.Panel != nil {
+	if p := Present("ru", Shot{Kind: ErrKindNoTooltip}, s, time.Now(), true); p.Toast != nil || p.Panel != nil {
 		t.Fatalf("неудачный снимок: %+v", p)
 	}
-	if p := Present("ru", Shot{}, s, time.Now()); p.Toast != nil || p.Panel != nil {
+	if p := Present("ru", Shot{}, s, time.Now(), true); p.Toast != nil || p.Panel != nil {
 		t.Fatalf("зона не узнана: %+v", p)
 	}
 }
@@ -125,5 +125,26 @@ func TestPanelOpenWorld(t *testing.T) {
 	}
 	if p.Footer != "" {
 		t.Fatalf("время не прочитано — низ пустой: %q", p.Footer)
+	}
+}
+
+// Панель сломалась в этом запуске — то же самое уведомлением, с теми же частями.
+func TestPresentFallsBackToToastWhenPanelBroken(t *testing.T) {
+	at := time.Unix(1000, 0)
+	sh := roadShot(t, at, time.Hour)
+	s := settings.Default()
+	s.ZoneShow, s.NotifyChests, s.NotifyPortal, s.NotifyDng = settings.ShowPanel, false, false, false
+	p := Present("ru", sh, s, at, false)
+	if p.Panel != nil || p.Toast == nil || p.Toast.Body != "волокно · шкуры" {
+		t.Fatalf("запасной путь: %+v", p)
+	}
+	// Уведомление и «выключено» от поломки панели не меняются.
+	s.ZoneShow = settings.ShowOff
+	if p := Present("ru", sh, s, at, false); p.Toast != nil || p.Panel != nil {
+		t.Fatalf("выключено: %+v", p)
+	}
+	s.ZoneShow = settings.ShowNotify
+	if p := Present("ru", sh, s, at, false); p.Toast == nil || p.Panel != nil {
+		t.Fatalf("уведомление: %+v", p)
 	}
 }

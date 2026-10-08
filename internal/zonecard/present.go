@@ -29,20 +29,24 @@ func Options(s settings.Settings) ToastOptions {
 
 // Present решает, что показать по снимку sh при настройках s на момент
 // now. Снимок не вышел или зона не узнана — ничего (ошибка видна во
-// вкладке).
-func Present(lang string, sh Shot, s settings.Settings, now time.Time) Presentation {
+// вкладке). panelOK=false — панель в этом запуске сломалась или не
+// создалась: вместо неё уведомление Windows.
+func Present(lang string, sh Shot, s settings.Settings, now time.Time, panelOK bool) Presentation {
 	z := sh.Result.Zone()
 	if sh.Kind != "" || z == nil {
 		return Presentation{}
 	}
 	o := Options(s)
 	switch settings.NormalizeShow(s.ZoneShow) {
+	case settings.ShowPanel:
+		if panelOK {
+			p := BuildPanel(lang, z, sh.Result, o, now)
+			return Presentation{Panel: &p}
+		}
+		fallthrough
 	case settings.ShowNotify:
 		t := BuildToast(lang, z, sh.Result, o, now)
 		return Presentation{Toast: &t}
-	case settings.ShowPanel:
-		p := BuildPanel(lang, z, sh.Result, o, now)
-		return Presentation{Panel: &p}
 	}
 	return Presentation{}
 }

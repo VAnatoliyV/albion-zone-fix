@@ -125,8 +125,9 @@ function renderStatus() {
 
   // Авалон (зона, проходы, карта) следит всегда, пока работает перехват, —
   // отдельно от сбора цен и счётчика: они включаются сами по себе.
-  const watching = !s.sniffError;
-  setRow('rowAvalon', watching, !watching ? t('st.avalonNoCapture')
+  // Зелёным — только когда пакеты игры уже идут.
+  const watching = !s.sniffError && s.packets > 0;
+  setRow('rowAvalon', watching, s.sniffError ? t('st.avalonNoCapture') : !watching ? t('st.waitingGame')
     : t(s.settings.mapSend ? 'st.watching' : 'st.watchingNoMap'));
 
   // Сбор цен выключен — «выключен» и кнопка «Включить»; включён, но
@@ -151,7 +152,12 @@ function renderStatus() {
   $('panics').textContent = p ? t('st.panics', fmt(p)) : '';
 }
 
-$('btnCollect').onclick = async () => { await post('/api/collect', { on: S && S.collecting ? '0' : '1' }); refresh(); };
+// «Включить» запоминается (как у счётчика): сбор начнётся и при следующем
+// запуске. «Остановить» — до выхода.
+$('btnCollect').onclick = async () => {
+  await post('/api/collect', S && S.collecting ? { on: '0' } : { on: '1', save: '1' });
+  refresh();
+};
 $('btnReceiver').onclick = async () => { await post('/api/receiver', { on: S && S.receiver ? '0' : '1' }); refresh(); };
 $('btnSite').onclick = () => post('/api/open', { what: 'site' });
 $('btnAvalonMap').onclick = () => post('/api/open', { what: 'map' });
