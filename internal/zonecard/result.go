@@ -213,5 +213,12 @@ func Choose(d *Dict, byLang map[string][]string, order []string, at time.Time) (
 	if !found {
 		return Result{}, bestErr
 	}
+	// Нестабильный путь хоть на одном языке OCR — нестабильный: лучший по
+	// названию язык мог прочитать заголовок хуже.
+	for _, lines := range byLang {
+		if UnstableSign(lines) {
+			best.Tooltip.Unstable = true
+		}
+	}
 	return best, nil
 }

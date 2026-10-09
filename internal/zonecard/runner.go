@@ -311,9 +311,15 @@ func (r *Runner) run(ctx context.Context, at time.Time) Shot {
 		empty            string
 		lastCap          time.Time
 	)
-	var loose []Shot // порталы с нестрогим временем — для подтверждения повтором
+	var loose []Shot  // порталы с нестрогим временем — для подтверждения повтором
+	unstable := false // хоть одно чтение этого нажатия видело нестабильный путь
 	keep := func(s Shot, try string) bool {
 		s.Try = try
+		for _, lines := range s.Read {
+			if UnstableSign(lines) {
+				unstable = true
+			}
+		}
 		if s.Kind == "" && s.Result.Portal && !s.Result.Doubtful() && s.Result.Tooltip.TimeLoose {
 			if confirmLoose(loose, s) {
 				s.Result.Tooltip.TimeLoose = false
@@ -396,6 +402,11 @@ loop:
 				variants = append(variants, nextVariants(s, snap.Cropped)...)
 			}
 		}
+	}
+	if unstable && best.Kind == "" {
+		// Любой признак нестабильного пути в любом снимке, варианте или
+		// языке — портал в один конец: на карту не идёт.
+		best.Result.Tooltip.Unstable = true
 	}
 	best.CaptureTook, best.OCRTook, best.OCRLangs = capTook, ocrTook, usedLangs
 	if shots > 1 {
