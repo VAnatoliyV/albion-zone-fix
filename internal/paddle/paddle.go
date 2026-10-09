@@ -143,6 +143,18 @@ type Text struct {
 	Text  string
 	Score float64 // средняя уверенность кусков
 	Box   image.Rectangle
+	// Segs — куски строки с выходом модели: по ним можно спросить, насколько
+	// картинка похожа на известное слово (ocr.Hints), а не только взять
+	// самую вероятную букву на каждом шаге.
+	Segs []Seg
+}
+
+// Seg — кусок строки: текст жадного декода и вероятности символов
+// (T шагов по C символов словаря Chars).
+type Seg struct {
+	Text  string
+	Probs []float32
+	T, C  int
 }
 
 // Engine — ONNX Runtime и загруженные модели. Одна на всю программу.
@@ -245,6 +257,8 @@ func (en *Engine) Read(img *image.RGBA, model string) ([]Text, error) {
 		ratio float64
 		text  string
 		score float64
+		probs []float32
+		T, C  int
 	}
 	var items []*item
 	for i, ln := range lines {
@@ -310,12 +324,15 @@ func (en *Engine) Read(img *image.RGBA, model string) ([]Text, error) {
 		}
 		T, C := int(dims[1]), int(dims[2])
 		for k, it := range part {
-			it.text, it.score = Decode(probs[k*T*C:(k+1)*T*C], T, C, s.chars)
+			it.probs = append([]float32(nil), probs[k*T*C:(k+1)*T*C]...)
+			it.T, it.C = T, C
+			it.text, it.score = Decode(it.probs, T, C, s.chars)
 		}
 	}
 	var out []Text
 	for i, ln := range lines {
 		var parts []string
+		var segs []Seg
 		sum, n := 0.0, 0
 		for _, it := range items {
 			if it.line != i {
@@ -326,15 +343,27 @@ func (en *Engine) Read(img *image.RGBA, model string) ([]Text, error) {
 				continue
 			}
 			parts = append(parts, t)
+			segs = append(segs, Seg{Text: t, Probs: it.probs, T: it.T, C: it.C})
 			sum += it.score
 			n++
 		}
 		if n == 0 {
 			continue
 		}
-		out = append(out, Text{Text: strings.Join(parts, " "), Score: sum / float64(n), Box: ln.Box.Add(b.Min)})
+		out = append(out, Text{Text: strings.Join(parts, " "), Score: sum / float64(n), Box: ln.Box.Add(b.Min), Segs: segs})
 	}
 	return out, nil
+}
+
+// Chars — словарь модели (индекс символа → символ; 0 — пусто CTC).
+func (en *Engine) Chars(model string) ([]string, error) {
+	en.mu.Lock()
+	defer en.mu.Unlock()
+	s, err := en.load(model)
+	if err != nil {
+		return nil, err
+	}
+	return s.chars, nil
 }
 
 // Lines — только текст строк.

@@ -283,6 +283,8 @@ func main() {
 		Native:  screen.Native,
 		Windows: ocr.Recognize,
 		Logf:    cardLog,
+		// Подсказки модели: куда ведут порталы и как пишется время.
+		Hints: &ocr.Hints{Names: dict.PortalNames(), TimeRunes: "0123456789чмсдhmsd "},
 	}
 	runner := zonecard.NewRunner(zonecard.RunnerConfig{
 		Path: filepath.Join(data, screen.FileName),

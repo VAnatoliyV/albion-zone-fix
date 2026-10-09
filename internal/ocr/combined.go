@@ -42,6 +42,8 @@ type Combined struct {
 	// (один раз): пора заново проверить языки Windows OCR — подсказка
 	// «установите язык» снова нужна.
 	Unavailable func()
+	// Hints — названия зон и единицы времени: подсказки модели (hints.go).
+	Hints *Hints
 	// LoadWait — сколько нажатие ждёт загрузки модели (0 — LoadWaitDefault),
 	// ReadTimeout — распознавания (0 — ReadTimeoutDefault). Дольше —
 	// запасной Windows OCR: зависание не держит кнопку.
@@ -396,6 +398,19 @@ func (c *Combined) read(path string) (lines []string, took time.Duration, err er
 		return nil, 0, errFallback{"своё распознавание ничего не прочитало"}
 	}
 	lines = paddle.Lines(r.ts)
+	if c.Hints != nil {
+		if ce, ok := eng.(interface {
+			Chars(string) ([]string, error)
+		}); ok {
+			if chars, err := ce.Chars(Model); err == nil {
+				var notes []string
+				lines, notes = c.Hints.Refine(r.ts, chars)
+				if len(notes) > 0 {
+					c.logf("OCR: по справочнику: %s", strings.Join(notes, "; "))
+				}
+			}
+		}
+	}
 	c.mu.Lock()
 	c.lastImg, c.lastLines = img, lines
 	c.mu.Unlock()

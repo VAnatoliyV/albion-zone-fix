@@ -208,3 +208,20 @@ func FoldLatin(s string) string {
 		return r
 	}, s)
 }
+
+// PortalNames — куда может вести портал дорог Авалона: другие дороги и
+// открытый мир. Подсказки распознаванию (ocr.Hints) — только из них, чтобы
+// мутная строка не «узнавалась» как арена или данж.
+func (d *Dict) PortalNames() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, z := range d.Zones {
+		t := strings.ToUpper(z.Type)
+		if !(strings.HasPrefix(t, "TUNNEL") || strings.HasPrefix(t, "OPENPVP") || strings.HasPrefix(t, "SAFEAREA")) || seen[z.Name] {
+			continue
+		}
+		seen[z.Name] = true
+		out = append(out, z.Name)
+	}
+	return out
+}

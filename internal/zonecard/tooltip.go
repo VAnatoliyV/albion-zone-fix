@@ -197,10 +197,11 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 func tolerantLeft(lines []string, after int) time.Duration {
 	units := unitsFor(lines)
 	for i, l := range lines {
-		if i != after && !timeContext(l) {
+		hint := strings.HasPrefix(l, HintTime)
+		if i != after && !timeContext(l) && !hint {
 			continue
 		}
-		if d := tolerantTimeU(l, units); d > 0 {
+		if d := tolerantTimeU(strings.TrimPrefix(l, HintTime), units); d > 0 {
 			return d
 		}
 	}
@@ -236,16 +237,28 @@ func portalSize(lines []string) int {
 // между числом и следующим числом бывает «min», «ч.» и прочее.
 var reTime = regexp.MustCompile(`(?:(\d{1,3})\s*[dд]\D{0,3})?(?:(\d{1,3})\s*[hчr]\D{0,3})?(?:(\d{1,3})\s*[mм]\D{0,3})?(?:(\d{1,3})\s*[sс])?`)
 
+// reCompact — часы и минуты подряд, слепленные мелким шрифтом: «7ч05м»,
+// «р7ч05м». Сами по себе — признак строки времени (в названиях зон цифр нет).
+var reCompact = regexp.MustCompile(`\d{1,2}\s*[hч]\s*\d{1,2}\s*[mм]`)
+
+// HintTime — пометка строки времени, найденной чтением только цифр и единиц
+// (ocr.Hints): такое время — только нестрогое, на карту после подтверждения
+// вторым снимком.
+const HintTime = "≈ "
+
 func timeLeft(lines []string) time.Duration {
 	units := unitsFor(lines)
 	for _, l := range lines {
+		if strings.HasPrefix(l, HintTime) {
+			continue
+		}
 		low := strings.ToLower(l)
 		if reSize.MatchString(low) && !hasCloseWord(low) {
 			continue // «7/7» — размер портала, не время
 		}
 		low = normUnits(low, units) // «5 sa 3 dk», «2 st 7 m» → «5 h 3 m», «2 h 7 m»
 		if !(strings.Contains(low, "closes") || strings.Contains(low, "закро") || strings.Contains(low, "через") || strings.Contains(low, ":") ||
-			strings.Contains(low, " m") || strings.Contains(low, " м") || hasCloseWord(low)) {
+			strings.Contains(low, " m") || strings.Contains(low, " м") || hasCloseWord(low) || reCompact.MatchString(low)) {
 			continue
 		}
 		for _, m := range reTime.FindAllStringSubmatch(low, -1) {
