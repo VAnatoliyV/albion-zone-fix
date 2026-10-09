@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -328,8 +329,9 @@ func TestCombinedTimeouts(t *testing.T) {
 		return map[string][]string{"ru-RU": {"w"}}, nil
 	}
 	native := func(string) (*image.RGBA, bool, error) { return img, true, nil }
+	var logMu sync.Mutex
 	var log []string
-	logf := func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }
+	logf := func(f string, a ...any) { logMu.Lock(); log = append(log, fmt.Sprintf(f, a...)); logMu.Unlock() }
 
 	h := &hangReader{release: make(chan struct{})}
 	defer close(h.release)
@@ -338,7 +340,10 @@ func TestCombinedTimeouts(t *testing.T) {
 	if got := recognizeWithin(t, cb, 2*time.Second); got["ru-RU"][0] != "w" {
 		t.Errorf("зависшее распознавание: %v", got)
 	}
-	if all := strings.Join(log, "\n"); !strings.Contains(all, "не ответило") {
+	logMu.Lock()
+	all := strings.Join(log, "\n")
+	logMu.Unlock()
+	if !strings.Contains(all, "не ответило") {
 		t.Errorf("журнал: %s", all)
 	}
 
@@ -416,5 +421,85 @@ func TestVCRuntimeHint(t *testing.T) {
 	other.Warm()
 	if other.NeedVCRuntime() {
 		t.Error("другая ошибка — не про runtime")
+	}
+}
+
+// slowReader — первое распознавание долгое (ждёт release), дальше быстрые.
+type slowReader struct {
+	release chan struct{}
+	mu      sync.Mutex
+	reads   int
+}
+
+func (s *slowReader) Load(string) error { return nil }
+func (s *slowReader) Version() string   { return "slow" }
+func (s *slowReader) Read(*image.RGBA, string) ([]paddle.Text, error) {
+	s.mu.Lock()
+	s.reads++
+	first := s.reads == 1
+	s.mu.Unlock()
+	if first {
+		<-s.release
+	}
+	return []paddle.Text{{Text: "Road of Avalon to", Score: 1}}, nil
+}
+
+// Медленное (а не зависшее) распознавание не выключается до перезапуска:
+// пока оно думает — запасной Windows OCR, ответило — снова своё. Так было у
+// тестера 9 октября: первое распознавание на слабом процессоре дольше 2 с.
+func TestCombinedSlowRecovers(t *testing.T) {
+	img := darkImg()
+	var mu sync.Mutex
+	var log []string
+	logf := func(f string, a ...any) { mu.Lock(); log = append(log, fmt.Sprintf(f, a...)); mu.Unlock() }
+	s := &slowReader{release: make(chan struct{})}
+	cb := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return s, nil },
+		Native: func(string) (*image.RGBA, bool, error) { return img, true, nil },
+		Windows: func(context.Context, string, []string) (map[string][]string, error) {
+			return map[string][]string{"ru-RU": {"w"}}, nil
+		},
+		Logf: logf, ReadTimeout: 50 * time.Millisecond}
+	if got := recognizeWithin(t, cb, 2*time.Second); got["ru-RU"][0] != "w" {
+		t.Fatalf("первое (медленное): ждали запасное, %v", got)
+	}
+	// Пока первое ещё думает — тоже запасное, второй вызов в движок не идёт.
+	if got := recognizeWithin(t, cb, 2*time.Second); got["ru-RU"][0] != "w" {
+		t.Fatalf("пока думает: ждали запасное, %v", got)
+	}
+	close(s.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := recognizeWithin(t, cb, 2*time.Second)
+		if got["ru-RU"][0] == "Road of Avalon to" {
+			break
+		}
+		if time.Now().After(deadline) {
+			mu.Lock()
+			t.Fatalf("своё не включилось снова; журнал:\n%s", strings.Join(log, "\n"))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	s.mu.Lock()
+	reads := s.reads
+	s.mu.Unlock()
+	if reads != 2 {
+		t.Errorf("в движок ушло %d распознаваний, ждали 2 (без наложения)", reads)
+	}
+	mu.Lock()
+	all := strings.Join(log, "\n")
+	mu.Unlock()
+	if !strings.Contains(all, "снова включено") {
+		t.Errorf("журнал без «снова включено»:\n%s", all)
+	}
+}
+
+// Прогрев не только грузит модель, но и распознаёт пробную картинку:
+// первый прогон ONNX Runtime самый долгий, и он не должен выпасть на нажатие.
+func TestCombinedWarmRunsInference(t *testing.T) {
+	r := &fakeReader{lines: []string{"x"}}
+	cb := &Combined{Dir: fakeDir(t), Open: func(string, int) (Reader, error) { return r, nil }}
+	cb.Warm()
+	if r.reads != 1 {
+		t.Fatalf("прогрев: распознаваний %d, ждали 1", r.reads)
 	}
 }

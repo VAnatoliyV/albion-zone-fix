@@ -57,7 +57,8 @@ type Combined struct {
 	needVC  atomic.Bool // не загрузилось: нет VC++ runtime
 
 	mu        sync.Mutex
-	broken    string      // своё распознавание сломалось (паника, зависание) — больше не зовём
+	broken    string      // своё распознавание сломалось (паника) — больше не зовём
+	busy      bool        // идёт распознавание (опоздавшее или прогрев) — второе в движок не шлём
 	lastImg   *image.RGBA // последняя распознанная картинка и её строки:
 	lastLines []string    // второй язык не распознаёт её заново
 }
@@ -93,9 +94,69 @@ func (c *Combined) Files() bool {
 	return true
 }
 
-// Warm загружает движок и модель и ждёт конца загрузки (при запуске, в
-// горутине): первое нажатие не ждёт.
-func (c *Combined) Warm() { <-c.begin() }
+// Warm загружает движок и модель и прогоняет пробную картинку (при
+// запуске, в горутине): первый прогон ONNX Runtime самый долгий — пусть он
+// случится здесь, а не на первом нажатии.
+func (c *Combined) Warm() {
+	<-c.begin()
+	if c.eng == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.busy || c.broken != "" {
+		c.mu.Unlock()
+		return
+	}
+	c.busy = true
+	c.mu.Unlock()
+	t0 := time.Now()
+	r := c.run(c.eng, warmImage())
+	c.mu.Lock()
+	c.busy = false
+	c.mu.Unlock()
+	if r.bad != nil {
+		c.disable(fmt.Sprintf("сбой своего распознавания при прогреве: %v", r.bad))
+		return
+	}
+	c.logf("OCR: прогрев своего распознавания за %v", time.Since(t0).Round(time.Millisecond))
+}
+
+// warmImage — тёмная полоса со светлыми штрихами, похожая на строку
+// тултипа: на ней деление на строки находит текст и модель реально
+// запускается.
+func warmImage() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 200, 40))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 20, 20, 24, 255
+	}
+	for x := 10; x < 190; x++ {
+		if x%7 > 2 {
+			for y := 12; y < 28; y++ {
+				o := img.PixOffset(x, y)
+				img.Pix[o], img.Pix[o+1], img.Pix[o+2] = 230, 230, 230
+			}
+		}
+	}
+	return img
+}
+
+// readResult — итог одного распознавания; bad — паника внутри.
+type readResult struct {
+	ts  []paddle.Text
+	err error
+	bad any
+}
+
+// run — одно распознавание с перехватом паники.
+func (c *Combined) run(eng Reader, img *image.RGBA) (r readResult) {
+	defer func() {
+		if v := recover(); v != nil {
+			r = readResult{bad: fmt.Sprintf("%v\n%s", v, debug.Stack())}
+		}
+	}()
+	r.ts, r.err = eng.Read(img, Model)
+	return r
+}
 
 // begin запускает загрузку (один раз, в своей горутине) и отдаёт канал её
 // конца.
@@ -264,10 +325,13 @@ func (c *Combined) read(path string) (lines []string, took time.Duration, err er
 		}
 	}()
 	c.mu.Lock()
-	broken := c.broken
+	broken, busy := c.broken, c.busy
 	c.mu.Unlock()
 	if broken != "" {
 		return nil, 0, errFallback{broken}
+	}
+	if busy {
+		return nil, 0, errFallback{"своё распознавание ещё занято прошлым снимком"}
 	}
 	eng, err, ok := c.engine(orDefault(c.LoadWait, LoadWaitDefault))
 	if !ok {
@@ -293,32 +357,30 @@ func (c *Combined) read(path string) (lines []string, took time.Duration, err er
 		return lines, -1, nil
 	}
 	c.mu.Unlock()
-	// Распознавание — в своей горутине со сроком: зависшая ONNX Runtime не
-	// держит нажатие (горутина остаётся висеть, но своё больше не зовём).
-	type result struct {
-		ts  []paddle.Text
-		err error
-		bad any // паника
+	// Распознавание — в своей горутине со сроком: долгое не держит нажатие.
+	// Опоздавшее не выключает своё распознавание: пока оно думает — запасное,
+	// ответило — снова своё (первый прогон на слабом процессоре бывает
+	// дольше срока). Выключаем только при сбое или если так и не ответило.
+	c.mu.Lock()
+	if c.busy {
+		c.mu.Unlock()
+		return nil, 0, errFallback{"своё распознавание ещё занято прошлым снимком"}
 	}
-	ch := make(chan result, 1)
+	c.busy = true
+	c.mu.Unlock()
+	ch := make(chan readResult, 1)
 	t0 := time.Now()
-	go func() {
-		var r result
-		defer func() {
-			if v := recover(); v != nil {
-				r = result{bad: fmt.Sprintf("%v\n%s", v, debug.Stack())}
-			}
-			ch <- r
-		}()
-		r.ts, r.err = eng.Read(img, Model)
-	}()
+	go func() { ch <- c.run(eng, img) }()
 	limit := orDefault(c.ReadTimeout, ReadTimeoutDefault)
-	var r result
+	var r readResult
 	select {
 	case r = <-ch:
+		c.mu.Lock()
+		c.busy = false
+		c.mu.Unlock()
 	case <-time.After(limit):
 		why := fmt.Sprintf("своё распознавание не ответило за %v", limit)
-		c.disable(why)
+		go c.late(ch, t0)
 		return nil, 0, errFallback{why}
 	}
 	took = time.Since(t0)
@@ -339,6 +401,28 @@ func (c *Combined) read(path string) (lines []string, took time.Duration, err er
 	c.mu.Unlock()
 	return lines, took, nil
 }
+
+// late ждёт опоздавшее распознавание: ответило — своё снова в деле,
+// сбой — выключаем до перезапуска; не ответило за LateLimit — тоже.
+func (c *Combined) late(ch chan readResult, t0 time.Time) {
+	select {
+	case r := <-ch:
+		c.mu.Lock()
+		c.busy = false
+		c.mu.Unlock()
+		if r.bad != nil {
+			c.disable(fmt.Sprintf("сбой своего распознавания: %v", r.bad))
+			return
+		}
+		c.logf("OCR: своё распознавание ответило через %v — снова включено", time.Since(t0).Round(time.Millisecond))
+	case <-time.After(LateLimit):
+		c.disable(fmt.Sprintf("своё распознавание не ответило и за %v", LateLimit))
+	}
+}
+
+// LateLimit — сколько ждём опоздавшее распознавание, прежде чем счесть его
+// зависшим.
+var LateLimit = 30 * time.Second
 
 // disable — своё распознавание больше не звать (до перезапуска).
 func (c *Combined) disable(why string) {
