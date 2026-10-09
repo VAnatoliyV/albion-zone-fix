@@ -13,8 +13,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 let T = {};          // словарь текущего языка
 let lang = '';       // ru / en / es / pl / de / tr / fr / pt / it
 let S = null;        // последнее /api/state
-let tab = 'own';
-try { tab = localStorage.getItem('tab') || 'own'; } catch (e) {}
+// Первой открывается «Зона»: главное в программе — Авалон.
+let tab = 'zone';
+try { tab = localStorage.getItem('tab') || 'zone'; } catch (e) {}
 let copied = false;
 
 // --- язык -------------------------------------------------------------------
@@ -571,9 +572,32 @@ function cardError(c) {
   return c.error;
 }
 
+// Плашка новичку: пока не было ни одной карточки и кнопку не выбирали
+// сами — какая кнопка назначена, зачем она и как поставить свою.
+// Выключенная кнопка — плашка всегда, красная.
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function renderKeyNeed(c, key) {
+  if (c.zone || c.error) lsSet('cardSeen', '1');
+  const off = key === 'off';
+  const show = off || (!lsGet('cardSeen') && !lsGet('keyChosen'));
+  $('znKeyNeed').hidden = !show;
+  if (!show) return;
+  $('znKeyNeed').classList.toggle('off', off);
+  $('znKeyNeedNow').textContent = off ? t('zn.keyNeedOff') : t('zn.keyNeedNow', keyLabel(key));
+  $('znKeyOk').hidden = off;
+}
+$('znKeySet').onclick = () => {
+  openSettings();
+  $('zoneKey').scrollIntoView({ block: 'center' });
+  if (!KR.active) $('zoneKeyRec').onclick();
+};
+$('znKeyOk').onclick = () => { lsSet('keyChosen', '1'); renderZone(); };
+
 function renderCard() {
   const c = S.card || {};
   const key = S.settings.zoneKey || 'xbutton1';
+  renderKeyNeed(c, key);
   $('cdHint').textContent = c.busy ? t('zn.busy') : key === 'off' ? t('zn.keyOff') : t('zn.hint', keyLabel(key));
   const hint = c.ocrHint;
   $('cdOcr').hidden = !hint;
@@ -716,7 +740,7 @@ async function pollKeyRec() {
   if (KR.active) KR.timer = setTimeout(pollKeyRec, 250);
   else {
     KR.res = st.result || ''; KR.err = st.error || '';
-    if (st.result === 'ok' && S) S.settings.zoneKey = st.key;
+    if (st.result === 'ok' && S) { S.settings.zoneKey = st.key; lsSet('keyChosen', '1'); }
     refresh();
   }
   renderKeyRec();
@@ -826,7 +850,7 @@ async function refresh() {
 
 (async () => {
   await loadLang('');
-  showTab(['own', 'shared', 'session', 'zone', 'zonefix'].includes(tab) ? tab : 'own');
+  showTab(['own', 'shared', 'session', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
   await refresh();
   setInterval(refresh, 2000);
 })();

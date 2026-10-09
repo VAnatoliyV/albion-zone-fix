@@ -59,15 +59,15 @@
   </section>
 
   <nav class="tabs" id="tabs">
+    <button data-tab="zone" data-t="tab.zone"></button>
     <button data-tab="own" data-t="tab.own"></button>
     <button data-tab="shared" data-t="tab.shared"></button>
     <button data-tab="session" data-t="tab.session"></button>
-    <button data-tab="zone" data-t="tab.zone"></button>
     <button data-tab="zonefix" data-t="tab.zonefix"></button>
   </nav>
 
   <!-- Мои цены -->
-  <section class="tab" id="tab-own">
+  <section class="tab" id="tab-own" hidden>
     <div class="stats">
       <div class="stat"><div class="slabel" data-t="own.positions"></div><div class="sval" id="ownPositions">0</div></div>
       <div class="stat"><div class="slabel" data-t="own.orders"></div><div class="sval" id="ownOrders">0</div></div>
@@ -125,6 +125,13 @@
 
   <!-- Зона -->
   <section class="tab" id="tab-zone" hidden>
+    <!-- Новичку: какая кнопка у карточки, зачем она и как назначить свою -->
+    <div class="panel keyneed" id="znKeyNeed" hidden>
+      <div class="caption gold" data-t="zn.keyNeedTitle"></div>
+      <p data-t="zn.keyNeedWhy"></p>
+      <p id="znKeyNeedNow"></p>
+      <div class="controls"><button class="btn small" id="znKeySet" data-t="zn.keyNeedBtn"></button><button class="btn ghost small" id="znKeyOk" data-t="zn.keyNeedOk"></button></div>
+    </div>
     <!-- Карточка зоны по кнопке (как КарточкаЗоны у мака) -->
     <div class="caption" data-t="zn.cardTitle"></div>
     <div class="panel box card">
