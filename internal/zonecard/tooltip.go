@@ -23,6 +23,9 @@ type Tooltip struct {
 	// Unstable — «Нестабильные Пути в …»: портал в один конец (из Мглы или
 	// Брецилиена), время — «для вашей группы». На общую карту не идёт.
 	Unstable bool `json:"unstable,omitempty"`
+	// TitleLoose — заголовок опознан только нестрого (искажённый, или его нет
+	// вовсе): нестабильный путь не исключить — на карту не идёт.
+	TitleLoose bool `json:"titleLoose,omitempty"`
 }
 
 // Признак, что перед нами портал дорог, а не случайный текст, — markers
@@ -177,7 +180,8 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 	if len([]rune(name)) < 4 {
 		return Tooltip{}, false
 	}
-	t := Tooltip{Read: name, Size: portalSize(clean), Left: timeLeft(clean), Unstable: unstableIn(clean, idx)}
+	t := Tooltip{Read: name, Size: portalSize(clean), Left: timeLeft(clean), Unstable: unstableIn(clean, idx),
+		TitleLoose: !markerStrict(clean[idx])}
 	if t.Left == 0 {
 		// В тултипе — и время искажённое («6 q 17 N»): только нестрого,
 		// на карту не идёт.

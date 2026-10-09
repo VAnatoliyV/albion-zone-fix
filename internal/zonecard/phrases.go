@@ -64,6 +64,8 @@ var (
 	// в нижнем регистре без предлога; partyPhrases — «Закроется для вашей
 	// группы через» без подстановки: время у такого портала — групповое.
 	unstableMarkers, partyPhrases []string
+	// unstableKeys, partyKeys — то же как foldKey (без диакритики).
+	unstableKeys, partyKeys []string
 	// unitsByLang — единицы времени языка (кроме русских и английских d/h/m/s,
 	// д/ч/м/с, их знает reTime) → 'd', 'h', 'm', 's'. Применяются только в
 	// тултипе этого языка (unitsFor): «g» у турецкого и итальянского — дни, а в
@@ -192,33 +194,67 @@ func loadPhrases(data []byte) {
 	}
 	unitsByLang, langSignals = byLang, signals
 	unstableMarkers, partyPhrases = un.list, party.list
+	unstableKeys, partyKeys = nil, nil
+	for _, m := range un.list {
+		if k := foldKey(m); len(k) >= 8 {
+			unstableKeys = append(unstableKeys, k)
+		}
+	}
+	for _, p := range party.list {
+		if k := foldKey(p); len(k) >= 8 {
+			partyKeys = append(partyKeys, k)
+		}
+	}
 }
 
-// unstableIn — портал в один конец: строка признака — «Нестабильные Пути
-// в …» (нестрого, как markerStrict; искажённая русская — по cyrTokens), или
-// в тултипе строка времени «для вашей группы».
+// unstableIn — портал в один конец: в любой строке тултипа заголовок
+// «Нестабильные Пути в …» или строка времени «для вашей группы» — на
+// любом языке и не строже, чем ищется сам признак (garbledMarker: до
+// четверти длины ошибок без диакритики). Ошибиться в сторону «нестабильный»
+// безопасно: такой портал просто не идёт на карту. idx — строка признака
+// (не нужна: смотрим все строки).
 func unstableIn(lines []string, idx int) bool {
-	if idx >= 0 && idx < len(lines) {
-		ll := strings.ToLower(lines[idx])
-		for _, m := range unstableMarkers {
-			k := 1
-			if len([]rune(m)) >= 12 {
-				k = 2
-			}
-			if strings.Contains(ll, m) || fuzzyContains(ll, m, k) {
-				return true
-			}
-		}
-		if fuzzyContains(strings.Join(cyrTokens(lines[idx]), ""), "нестабипьныепути", 4) {
+	_ = idx
+	for _, l := range lines {
+		if unstableLine(l) {
 			return true
 		}
 	}
-	for _, l := range lines {
-		ll := strings.ToLower(l)
-		for _, p := range partyPhrases {
-			if fuzzyContains(ll, p, len([]rune(p))/5) {
-				return true
-			}
+	return false
+}
+
+// UnstableSign — в строках (любого языка OCR, варианта, повтора) есть
+// признак нестабильного пути.
+func UnstableSign(lines []string) bool { return unstableIn(lines, -1) }
+
+func unstableLine(l string) bool {
+	ll := strings.ToLower(l)
+	for _, m := range unstableMarkers {
+		k := 1
+		if len([]rune(m)) >= 12 {
+			k = 2
+		}
+		if strings.Contains(ll, m) || fuzzyContains(ll, m, k) {
+			return true
+		}
+	}
+	key := foldKey(l)
+	for _, m := range unstableKeys {
+		if fuzzyContains(key, m, len(m)/4) {
+			return true
+		}
+	}
+	if fuzzyContains(strings.Join(cyrTokens(l), ""), "нестабипьныепути", 4) {
+		return true
+	}
+	for _, p := range partyPhrases {
+		if fuzzyContains(ll, p, len([]rune(p))/5) {
+			return true
+		}
+	}
+	for _, p := range partyKeys {
+		if fuzzyContains(key, p, len(p)/4) {
+			return true
 		}
 	}
 	return false

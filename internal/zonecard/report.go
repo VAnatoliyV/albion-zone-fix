@@ -9,13 +9,14 @@ import (
 // Почему портал карточки не ушёл на карту (ПочемуНеОтправлено у мака).
 // Коды — для страницы, она переводит их сама (map.why.*).
 const (
-	WhyNoTime    = "noTime"    // время закрытия не прочитано
-	WhyNoPlace   = "noPlace"   // не знаем, где игрок
-	WhyNotEurope = "notEurope" // сервер игры не Европа
-	WhyDoubt     = "doubt"     // название прочитано неуверенно
-	WhySame      = "same"      // портал ведёт в эту же зону
-	WhyNotRoad   = "notRoad"   // ни одна из зон не дороги Авалона
-	WhyUnstable  = "unstable"  // нестабильный путь: в один конец, время группы
+	WhyNoTime     = "noTime"     // время закрытия не прочитано
+	WhyNoPlace    = "noPlace"    // не знаем, где игрок
+	WhyNotEurope  = "notEurope"  // сервер игры не Европа
+	WhyDoubt      = "doubt"      // название прочитано неуверенно
+	WhySame       = "same"       // портал ведёт в эту же зону
+	WhyNotRoad    = "notRoad"    // ни одна из зон не дороги Авалона
+	WhyUnstable   = "unstable"   // нестабильный путь: в один конец, время группы
+	WhyTitleLoose = "titleLoose" // заголовок прочитан нестрого: может быть нестабильный
 )
 
 // ByButton — отчёт tooltip по кнопке, правила как у ОтчётКарты.поКнопке:
@@ -27,6 +28,11 @@ func ByButton(r Result, here *avalon.Place, d *Dict) (avalon.Tip, string) {
 		// Портал в один конец со временем «для вашей группы»: другим
 		// игрокам эта связь не годится — на общую карту не шлём.
 		return avalon.Tip{}, WhyUnstable
+	}
+	if r.Tooltip.TitleLoose {
+		// Заголовок искажён или не прочитан: нестабильный ли это путь —
+		// не знаем, а ошибиться можно только в сторону «не отправлять».
+		return avalon.Tip{}, WhyTitleLoose
 	}
 	if r.Tooltip.Left <= 0 || r.Tooltip.TimeLoose {
 		// Время не прочитано или прочитано только нестрого — не выдумываем.
