@@ -66,6 +66,9 @@ var (
 	unstableMarkers, partyPhrases []string
 	// unstableKeys, partyKeys — то же как foldKey (без диакритики).
 	unstableKeys, partyKeys []string
+	// normalCloses — «Закроется через» без «для вашей группы» (нижний
+	// регистр): строка времени обычного портала.
+	normalCloses []string
 	// unitsByLang — единицы времени языка (кроме русских и английских d/h/m/s,
 	// д/ч/м/с, их знает reTime) → 'd', 'h', 'm', 's'. Применяются только в
 	// тултипе этого языка (unitsFor): «g» у турецкого и итальянского — дни, а в
@@ -95,7 +98,7 @@ func loadPhrases(data []byte) {
 	}
 	sort.Strings(langs)
 	mk, lat, pre, bio, nm, nml, cw := set{}, set{}, set{}, set{}, set{}, set{}, set{}
-	un, party, full := set{}, set{}, set{}
+	un, party, full, closes := set{}, set{}, set{}, set{}
 	un.add("unstable road")
 	byLang, signals := map[string]map[string]byte{}, map[string][]string{}
 	for _, m := range legacyMarkers {
@@ -115,6 +118,9 @@ func loadPhrases(data []byte) {
 		}
 		for _, s := range p.Party {
 			party.add(strings.ToLower(s))
+		}
+		for _, s := range p.Closes {
+			closes.add(strings.ToLower(s))
 		}
 		for _, s := range append(append([]string(nil), p.Marker...), p.Unstable...) {
 			words := strings.Fields(strings.ToLower(strings.Trim(s, " :：")))
@@ -194,6 +200,12 @@ func loadPhrases(data []byte) {
 	}
 	unitsByLang, langSignals = byLang, signals
 	unstableMarkers, partyPhrases = un.list, party.list
+	normalCloses = nil
+	for _, c := range closes.list {
+		if !party.seen[c] && len([]rune(c)) >= 5 {
+			normalCloses = append(normalCloses, c)
+		}
+	}
 	unstableKeys, partyKeys = nil, nil
 	for _, m := range un.list {
 		if k := foldKey(m); len(k) >= 8 {
@@ -218,6 +230,23 @@ func unstableIn(lines []string, idx int) bool {
 	for _, l := range lines {
 		if unstableLine(l) {
 			return true
+		}
+	}
+	return false
+}
+
+// normalClosesIn — в строках «Закроется через …» обычного портала (не «для
+// вашей группы»), нестрого.
+func normalClosesIn(lines []string) bool {
+	for _, l := range lines {
+		ll, key := strings.ToLower(l), foldKey(l)
+		for _, c := range normalCloses {
+			if fuzzyContains(ll, c, len([]rune(c))/5) {
+				return true
+			}
+			if k := foldKey(c); len(k) >= 6 && fuzzyContains(key, k, len(k)/5) {
+				return true
+			}
 		}
 	}
 	return false

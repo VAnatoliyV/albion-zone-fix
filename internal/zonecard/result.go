@@ -129,7 +129,11 @@ func Identify(d *Dict, lines []string, at time.Time) (Result, error) {
 	// это тултип портала дорог, только без строки-признака.
 	if best[0].Zone.Road {
 		if left := timeLeft(lines); left > 0 {
-			return Result{Tooltip: Tooltip{Read: best[0].Zone.Name, Size: portalSize(lines), Left: left},
+			// Заголовка нет: нестабильный путь узнаём по строке «для
+			// вашей группы», а отправлять можно, только если строка времени —
+			// обычное «Закроется через …» (иначе TitleLoose: не на карту).
+			return Result{Tooltip: Tooltip{Read: best[0].Zone.Name, Size: portalSize(lines), Left: left,
+				Unstable: unstableIn(lines, -1), TitleLoose: unstableIn(lines, -1) || !normalClosesIn(lines)},
 				Matches: best, At: at, Portal: true}, nil
 		}
 	}
