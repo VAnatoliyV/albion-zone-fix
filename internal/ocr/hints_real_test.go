@@ -55,7 +55,7 @@ func TestHintsSmallText(t *testing.T) {
 			Windows: func(context.Context, string, []string) (map[string][]string, error) {
 				return nil, errors.New("не нужен")
 			},
-			Hints: &Hints{Names: d.PortalNames(), TimeRunes: "0123456789чмсдhmsd "}}
+			Hints: &Hints{Names: d.PortalNames(), TimeRunes: TimeRunes}}
 		langs := []string{"ru-RU", "en-US"}
 		byLang, err := cb.Recognize(context.Background(), path, langs)
 		if err != nil {

@@ -55,3 +55,18 @@ func TestPortalNames(t *testing.T) {
 		t.Fatalf("названий %d, Pasos-Avosam %v, Eldon Hill %v, Arena1 %v", len(names), has["Pasos-Avosam"], has["Eldon Hill"], has["Arena1"])
 	}
 }
+
+// Слепленное время немецкого и турецкого клиента (часы St / sa, минуты dk).
+func TestCompactTimeDeTr(t *testing.T) {
+	for _, lines := range [][]string{
+		{"Straße von Avalon nach", "Pasos-Avosam", "Schliet in7St05m"},
+		{"Straße von Avalon nach", "Pasos-Avosam", "Sch1ie8t i7St5m"},
+		{"Avalon Yolu çıkışı:", "Pasos-Avosam", "Kapanmasna kalan7sa05dk"},
+		{"Avalon Yolu çıkışı:", "Pasos-Avosam", "Kpanmsn klan 7sa5dk"},
+	} {
+		tt, ok := ParseTooltip(lines)
+		if !ok || tt.Left != 7*time.Hour+5*time.Minute {
+			t.Errorf("%q: время %v (ok %v, нестрого %v)", lines, tt.Left, ok, tt.TimeLoose)
+		}
+	}
+}

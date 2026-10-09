@@ -32,6 +32,10 @@ type Hints struct {
 	chars []string
 }
 
+// TimeRunes — цифры и буквы единиц времени всех языков клиента (ч м с д,
+// h m s d, немецкие St, турецкие sa dk sn) и пробел.
+const TimeRunes = "0123456789чмсдhmsdtakn "
+
 // HintTime — пометка строки времени, найденной чтением только цифр и единиц.
 const HintTime = zonecard.HintTime
 
@@ -137,11 +141,13 @@ func abs(x int) int {
 	return x
 }
 
-// reHM — «7ч05м», «7 h 5 m»; reMS — «49м27с». Последнее совпадение в строке:
+// reHM — «7ч05м», «7 h 5 m», «7 St 5 m», «7 sa 5 dk»; reMS — «49м27с». Последнее совпадение в строке:
 // время стоит в конце строки «Закроется через …».
 var (
-	reHM = regexp.MustCompile(`(\d{1,2})\s*[чh]\s*(\d{1,2})\s*[мm]`)
-	reMS = regexp.MustCompile(`(\d{1,2})\s*[мm]\s*(\d{1,2})\s*[сs]`)
+	// часы: ч, h, у немцев st, у турок sa; минуты: м, m, у турок dk;
+	// секунды: с, s, у турок sn (единицы из tooltip-phrases.json)
+	reHM = regexp.MustCompile(`(\d{1,2})\s*(?:ч|h|st|sa)\s*(\d{1,2})\s*(?:м|m|dk)`)
+	reMS = regexp.MustCompile(`(\d{1,2})\s*(?:м|m|dk)\s*(\d{1,2})\s*(?:с|s|sn)`)
 )
 
 // compactTime — время из строки, прочитанной только цифрами и единицами,
