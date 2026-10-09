@@ -131,3 +131,28 @@ func TestTimeUnitsEveryLanguage(t *testing.T) {
 		t.Errorf("единицы: h=%c j=%c", unitWords["h"], unitWords["j"])
 	}
 }
+
+// Как восточнославянская модель (internal/paddle) читает синтетические
+// тултипы de, pl, tr: буквы с диакритикой теряются, но признак, название и
+// время опознаются уверенно.
+func TestIdentifyEslavDiacritics(t *testing.T) {
+	d := dict(t)
+	at := time.Unix(1_800_000_000, 0)
+	for _, c := range []struct {
+		lines []string
+		name  string
+		left  time.Duration
+	}{
+		{[]string{"Stralbe von Avalon nach", "Pasos-Avosam", "Schlielt in 6 st 25 m"}, "Pasos-Avosam", 6*time.Hour + 25*time.Minute},
+		{[]string{"Instabile Strafbe nach", "Qiient-Al-Vynsis", "Verschlielft sich für deine Gruppe in 4 m 18 s"}, "Qiient-Al-Vynsis", 4*time.Minute + 18*time.Second},
+		{[]string{"Sciezka Awalonu do", "Pasos-Avosam", "Zamyka sie za 6 h 25 m"}, "Pasos-Avosam", 6*time.Hour + 25*time.Minute},
+		{[]string{"Niestabilne Sciezki do", "Qiient-Al-Vynsis", "Zamyka sie dlla twojej druzyny za 4 m 18 s"}, "Qiient-Al-Vynsis", 4*time.Minute + 18*time.Second},
+		{[]string{"Avalon Yolu giki$1", "Secent-Al-Qinsom", "Kapanmasina kalan 6 sa 25 dk"}, "Secent-Al-Qinsom", 6*time.Hour + 25*time.Minute},
+		{[]string{"Dengesiz Yol Azi", "Qiient-Al-Vynsis", "4 dk 18 sn igerisinde grubun igin kapatilacaktir"}, "Qiient-Al-Vynsis", 4*time.Minute + 18*time.Second},
+	} {
+		r, err := Identify(d, c.lines, at)
+		if err != nil || !r.Portal || r.Zone() == nil || r.Zone().Name != c.name || r.Doubtful() || r.Tooltip.Left != c.left || r.Tooltip.TimeLoose {
+			t.Errorf("%q: %+v %v", c.lines, r, err)
+		}
+	}
+}

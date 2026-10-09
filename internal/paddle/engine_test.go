@@ -146,6 +146,34 @@ func TestReadEnglishSynthetic(t *testing.T) {
 	}
 }
 
+// Клиенты на латинице с диакритикой (de, pl, tr — у остальных букв без
+// точек и хвостиков в тултипе почти нет): восточнославянская модель теряет
+// ß, ś, ż, ç, ı («Stralbe», «Sciezka», «giki$1»), но название зоны и время
+// читает точно, а признак карточка сравнивает нестрого. Латинская модель
+// (latin_PP-OCRv5_rec_mobile) проверена на тех же синтетических тултипах
+// 7 языков (21 снимок): буквы лучше (ошибок 2.4% против 3.0%), но «Al» в
+// названиях читает как «AI» — опознание уверенно в 7 из 21 против 21 из 21
+// у восточнославянской, а кириллицу не читает вовсе. Поэтому не возим.
+func TestReadDiacriticSynthetic(t *testing.T) {
+	en := testEngine(t)
+	for file, want := range map[string][]string{
+		"syn-de-1.png": {"von Avalon nach", "Pasos-Avosam", "6 st 25 m"},
+		"syn-pl-2.png": {"Niestabilne", "Qiient-Al-Vynsis", "4 m 18 s"},
+		"syn-tr-2.png": {"Dengesiz Yol", "Qiient-Al-Vynsis", "4 dk 18 sn"},
+	} {
+		ts, err := en.Read(loadPNG(t, filepath.Join("testdata", file)), ModelEslav)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := Lines(ts)
+		for _, w := range want {
+			if !hasLine(lines, w) {
+				t.Errorf("%s: нет %q в %q", file, w, lines)
+			}
+		}
+	}
+}
+
 // Вся рамка без обрезки (карта под курсором): мусора много, но кусков не
 // больше maxItems — распознавание не тянется секунду.
 func TestReadFullFrame(t *testing.T) {
