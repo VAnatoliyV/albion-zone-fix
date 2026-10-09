@@ -762,6 +762,11 @@ function renderUpdate() {
     $('updHint').classList.toggle('red', bad);
   }
 
+  // Та же кнопка в настройках, рядом с «Проверить обновления»: проверил —
+  // скачалось — перезапустил, не уходя наверх к плашке.
+  $('updRestartSet').hidden = !r || !!u.noWrite;
+  $('updRestartSet').disabled = restarting || !!(u && u.installing);
+
   $('appVersion').textContent = t('upd.version', S.version || '—');
   const st = u ? u.state : 'dev';
   $('updCheck').disabled = !u || st === 'checking' || st === 'downloading' || st === 'dev';
@@ -778,7 +783,7 @@ function renderUpdate() {
 }
 
 $('updCheck').onclick = async () => { await post('/api/update/check'); refresh(); };
-$('updRestart').onclick = async () => {
+$('updRestart').onclick = $('updRestartSet').onclick = async () => {
   restarting = true; renderUpdate();
   // Ошибку покажет сама плашка (installFailed) — без окна alert.
   const { ok } = await post('/api/update/restart', {}, true);
