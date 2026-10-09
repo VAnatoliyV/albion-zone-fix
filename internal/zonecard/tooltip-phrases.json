@@ -1,0 +1,578 @@
+{
+ "en": {
+  "marker": [
+   "Road of Avalon to"
+  ],
+  "unstable": [
+   "Unstable Roads to"
+  ],
+  "closes": [
+   "Closes in",
+   "Closes to your party in"
+  ],
+  "party": [
+   "Closes to your party in"
+  ],
+  "biome": [
+   "Biome"
+  ],
+  "notMarker": [
+   "Roads of Avalon"
+  ],
+  "free": [
+   "Free to use"
+  ],
+  "units": {
+   "d": [
+    "d"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "ru": {
+  "marker": [
+   "Путь Авалона в"
+  ],
+  "unstable": [
+   "Нестабильные Пути в"
+  ],
+  "closes": [
+   "Закроется через",
+   "Закроется для вашей группы через"
+  ],
+  "party": [
+   "Закроется для вашей группы через"
+  ],
+  "biome": [
+   "Биом"
+  ],
+  "notMarker": [
+   "Пути Авалона"
+  ],
+  "free": [
+   "Можно использовать"
+  ],
+  "units": {
+   "d": [
+    "д"
+   ],
+   "h": [
+    "ч"
+   ],
+   "m": [
+    "м"
+   ],
+   "s": [
+    "с"
+   ]
+  }
+ },
+ "es": {
+  "marker": [
+   "Camino de Avalon a"
+  ],
+  "unstable": [
+   "Caminos inestables hacia"
+  ],
+  "closes": [
+   "se cierra",
+   "Se cierra en",
+   "Se cierra para tu grupo en"
+  ],
+  "party": [
+   "Se cierra para tu grupo en"
+  ],
+  "biome": [
+   "Bioma"
+  ],
+  "notMarker": [
+   "Caminos de Avalon"
+  ],
+  "free": [
+   "Gratis para usar"
+  ],
+  "units": {
+   "d": [
+    "d"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "pl": {
+  "marker": [
+   "Ścieżka Awalonu do"
+  ],
+  "unstable": [
+   "Niestabilne Ścieżki do"
+  ],
+  "closes": [
+   "Zamyka się za",
+   "Zamyka się dla twojej drużyny za"
+  ],
+  "party": [
+   "Zamyka się dla twojej drużyny za"
+  ],
+  "biome": [
+   "Biom"
+  ],
+  "notMarker": [
+   "Ścieżki Awalonu"
+  ],
+  "free": [
+   "Dostępna"
+  ],
+  "units": {
+   "d": [
+    "d"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "de": {
+  "marker": [
+   "Straße von Avalon nach"
+  ],
+  "unstable": [
+   "Instabile Straße nach"
+  ],
+  "closes": [
+   "Schließt in",
+   "Verschließt sich für deine Gruppe in"
+  ],
+  "party": [
+   "Verschließt sich für deine Gruppe in"
+  ],
+  "biome": [
+   "Biom"
+  ],
+  "notMarker": [
+   "Straßen von Avalon"
+  ],
+  "free": [
+   "Freie Nutzung"
+  ],
+  "units": {
+   "d": [
+    "t"
+   ],
+   "h": [
+    "st"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "tr": {
+  "marker": [
+   "Avalon Yolu çıkışı"
+  ],
+  "unstable": [
+   "Dengesiz Yol Ağzı"
+  ],
+  "closes": [
+   "Kapanmasına kalan",
+   "içerisinde kapanacaktır",
+   "içerisinde grubun için kapatılacaktır"
+  ],
+  "party": [
+   "içerisinde grubun için kapatılacaktır"
+  ],
+  "biome": [
+   "Biyom"
+  ],
+  "notMarker": [
+   "Avalon Yolları"
+  ],
+  "free": [
+   "Ücretsiz kullanım"
+  ],
+  "units": {
+   "d": [
+    "g"
+   ],
+   "h": [
+    "sa"
+   ],
+   "m": [
+    "dk"
+   ],
+   "s": [
+    "sn"
+   ]
+  }
+ },
+ "fr": {
+  "marker": [
+   "Route d'Avalon vers"
+  ],
+  "unstable": [
+   "Routes instables vers"
+  ],
+  "closes": [
+   "Ferme dans",
+   "Ferme pour votre groupe dans"
+  ],
+  "party": [
+   "Ferme pour votre groupe dans"
+  ],
+  "biome": [
+   "Biome"
+  ],
+  "notMarker": [
+   "Routes d'Avalon"
+  ],
+  "free": [
+   "Utilisation libre"
+  ],
+  "units": {
+   "d": [
+    "j"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "pt": {
+  "marker": [
+   "Estrada de Avalon para"
+  ],
+  "unstable": [
+   "Estradas Instáveis para"
+  ],
+  "closes": [
+   "Fecha em",
+   "Fecha para o seu grupo em"
+  ],
+  "party": [
+   "Fecha para o seu grupo em"
+  ],
+  "biome": [
+   "Bioma"
+  ],
+  "notMarker": [
+   "Estradas de Avalon"
+  ],
+  "free": [
+   "Grátis para usar"
+  ],
+  "units": {
+   "d": [
+    "d"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "it": {
+  "marker": [
+   "Strada di Avalon per"
+  ],
+  "unstable": [
+   "Strade instabili per"
+  ],
+  "closes": [
+   "Chiusura fra",
+   "Si chiude in",
+   "Si chiude al tuo gruppo in"
+  ],
+  "party": [
+   "Si chiude al tuo gruppo in"
+  ],
+  "biome": [
+   "Bioma"
+  ],
+  "notMarker": [
+   "Strade di Avalon"
+  ],
+  "free": [
+   "Utilizzo gratuito"
+  ],
+  "units": {
+   "d": [
+    "g"
+   ],
+   "h": [
+    "h"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "s"
+   ]
+  }
+ },
+ "ar": {
+  "marker": [
+   "درب أفالون إلى"
+  ],
+  "unstable": [
+   "دروب وعرة إلى"
+  ],
+  "closes": [
+   "الإغلاق خلال",
+   "الإغلاق لمجموعتك خلال"
+  ],
+  "party": [
+   "الإغلاق لمجموعتك خلال"
+  ],
+  "biome": [
+   "البيئة الحيوية"
+  ],
+  "notMarker": [
+   "دروب أفالون"
+  ],
+  "free": [
+   "مجانًا"
+  ],
+  "units": {
+   "d": [
+    "ي"
+   ],
+   "h": [
+    "س"
+   ],
+   "m": [
+    "د"
+   ],
+   "s": [
+    "ثانية"
+   ]
+  }
+ },
+ "id": {
+  "marker": [
+   "Jalan Avalon menuju"
+  ],
+  "unstable": [
+   "Jalan Tidak Stabil menuju"
+  ],
+  "closes": [
+   "Ditutup dalam",
+   "Ditutup untuk regumu dalam"
+  ],
+  "party": [
+   "Ditutup untuk regumu dalam"
+  ],
+  "biome": [
+   "Bioma"
+  ],
+  "notMarker": [
+   "Jalan Avalon"
+  ],
+  "free": [
+   "Bebas digunakan"
+  ],
+  "units": {
+   "d": [
+    "h"
+   ],
+   "h": [
+    "j"
+   ],
+   "m": [
+    "m"
+   ],
+   "s": [
+    "d"
+   ]
+  }
+ },
+ "ja": {
+  "marker": [
+   "アバロンの道から"
+  ],
+  "unstable": [
+   "不安定の道"
+  ],
+  "closes": [
+   "終了まで",
+   "で閉まる",
+   "であなたのパーティーに閉じます"
+  ],
+  "party": [
+   "であなたのパーティーに閉じます"
+  ],
+  "biome": [
+   "バイオーム"
+  ],
+  "notMarker": [
+   "アバロンの道"
+  ],
+  "free": [
+   "自由に使用可能"
+  ],
+  "units": {
+   "d": [
+    "日"
+   ],
+   "h": [
+    "時間"
+   ],
+   "m": [
+    "分"
+   ],
+   "s": [
+    "秒"
+   ]
+  }
+ },
+ "ko": {
+  "marker": [
+   "아발론의 길"
+  ],
+  "unstable": [
+   "불안정한 길"
+  ],
+  "closes": [
+   "닫히는 시간",
+   "후 닫힘",
+   "후 내 파티에 제한됨"
+  ],
+  "party": [
+   "후 내 파티에 제한됨"
+  ],
+  "biome": [
+   "생물 군계"
+  ],
+  "notMarker": [
+   "아발론의 길"
+  ],
+  "free": [
+   "자유롭게 이용"
+  ],
+  "units": {
+   "d": [
+    "일"
+   ],
+   "h": [
+    "시간"
+   ],
+   "m": [
+    "분"
+   ],
+   "s": [
+    "초"
+   ]
+  }
+ },
+ "zh-cn": {
+  "marker": [
+   "阿瓦隆之路"
+  ],
+  "unstable": [
+   "不稳定的道路通往"
+  ],
+  "closes": [
+   "关闭倒计时",
+   "后关闭",
+   "后对你的队伍关闭"
+  ],
+  "party": [
+   "后对你的队伍关闭"
+  ],
+  "biome": [
+   "地貌"
+  ],
+  "notMarker": [
+   "阿瓦隆之路"
+  ],
+  "free": [
+   "免费使用"
+  ],
+  "units": {
+   "d": [
+    "天"
+   ],
+   "h": [
+    "时"
+   ],
+   "m": [
+    "分"
+   ],
+   "s": [
+    "秒"
+   ]
+  }
+ },
+ "zh-tw": {
+  "marker": [
+   "阿瓦隆之路"
+  ],
+  "unstable": [
+   "不穩定的阿瓦隆之路，可通往"
+  ],
+  "closes": [
+   "關閉剩餘時間",
+   "後對您的隊伍關閉"
+  ],
+  "party": [
+   "後對您的隊伍關閉"
+  ],
+  "biome": [
+   "地貌"
+  ],
+  "notMarker": [
+   "阿瓦隆之路"
+  ],
+  "free": [
+   "免費使用"
+  ],
+  "units": {
+   "d": [
+    "天"
+   ],
+   "h": [
+    "小時"
+   ],
+   "m": [
+    "分鐘"
+   ],
+   "s": [
+    "秒"
+   ]
+  }
+ }
+}

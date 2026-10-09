@@ -22,16 +22,16 @@ type Tooltip struct {
 	TimeLoose bool `json:"timeLoose,omitempty"`
 }
 
-// markers — признак, что перед нами портал дорог, а не случайный текст.
-// Русский клиент пишет «Путь Авалона в», английский — «Road of Avalon to».
-var markers = []string{"road of avalon", "путь авалона", "дорога авалона",
-	// «Нестабильные Пути в …» — портал в один конец (время «для вашей группы»).
-	"нестабильные пути", "unstable roads", "unstable road"}
+// Признак, что перед нами портал дорог, а не случайный текст, — markers
+// (phrases.go): «Путь Авалона в», «Road of Avalon to», «Straße von Avalon
+// nach»… и «Нестабильные Пути в …» — портал в один конец (время «для
+// вашей группы») — на всех языках клиента игры.
 
 // markerAt — номер признака в строке или -1. Мелкий серый заголовок Windows
 // OCR читает с ошибками в буквах («Авапона», «Пvть», «Rood»), поэтому
 // сравнение нестрогое: до 1 ошибки на короткий признак, до 2 — на длинный.
-// Строку «Биом: Пути Авалона» из тултипа нестабильного пути не берём.
+// Строку «Биом: Пути Авалона» (на любом языке) из тултипа нестабильного
+// пути не берём.
 func markerAt(line string) bool { return markerIn(line, false) }
 
 // markerIn — markerAt, а если строгий не нашёлся — по искажённому тексту
@@ -45,13 +45,20 @@ func markerIn(line string, withTime bool) bool {
 
 func markerStrict(line string) bool {
 	ll := strings.ToLower(line)
-	if strings.Contains(ll, "биом") || strings.Contains(ll, "biome") {
+	if hasBiome(ll) {
 		return false
 	}
 	for _, m := range markers {
 		if strings.Contains(ll, m) {
 			return true
 		}
+	}
+	// «Roads of Avalon», «Straßen von Avalon» — значение биома без подписи
+	// (подпись ушла в другую строку): на признак похоже, но не он.
+	if likeNotMarker(line) {
+		return false
+	}
+	for _, m := range markers {
 		k := 1
 		if len([]rune(m)) >= 12 {
 			k = 2
@@ -95,9 +102,6 @@ func fuzzyContains(s, pat string, k int) bool {
 	return false
 }
 
-// prepositions — после них в той же строке может стоять название.
-var prepositions = []string{" to ", " в "}
-
 // HasMarker — в строках есть признак тултипа портала (по нему выбирается
 // язык OCR, на котором тултип прочитан).
 func HasMarker(lines []string) bool { return markerIndex(lines) >= 0 }
@@ -139,13 +143,20 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 	if len(low) != len(line) {
 		line = low // редкие буквы меняют длину при ToLower: режем по нижнему регистру
 	}
+	// Название — после последнего предлога признака (« to », « в »,
+	// « nach »; турецкое «çıkışı:» — с двоеточием, его считаем пробелом).
+	// Если предлогов несколько — берём самый правый.
+	low2 := strings.ReplaceAll(low, ":", " ") + " "
+	best, bestLen := -1, 0
 	for _, p := range prepositions {
-		if k := strings.LastIndex(low, p); k >= 0 {
-			// strings.ToLower не меняет длину у наших букв (латиница и
-			// кириллица), поэтому индекс годится и для исходной строки.
-			name = line[k+len(p):]
-			break
+		if k := strings.LastIndex(low2, p); k > best {
+			best, bestLen = k, len(p)
 		}
+	}
+	if best >= 0 && best+bestLen <= len(line) {
+		// strings.ToLower не меняет длину у наших букв (латиница и
+		// кириллица), поэтому индекс годится и для исходной строки.
+		name = line[best+bestLen:]
 	}
 	after := idx + 1 // строка сразу после блока «признак + название»
 	if len([]rune(Clean(name))) < 4 && idx+1 < len(clean) {
@@ -217,8 +228,12 @@ var reTime = regexp.MustCompile(`(?:(\d{1,3})\s*[dд]\D{0,3})?(?:(\d{1,3})\s*[h�
 func timeLeft(lines []string) time.Duration {
 	for _, l := range lines {
 		low := strings.ToLower(l)
+		if reSize.MatchString(low) && !hasCloseWord(low) {
+			continue // «7/7» — размер портала, не время
+		}
+		low = normUnits(low) // «5 sa 3 dk», «2 st 7 m» → «5 h 3 m», «2 h 7 m»
 		if !(strings.Contains(low, "closes") || strings.Contains(low, "закро") || strings.Contains(low, "через") || strings.Contains(low, ":") ||
-			strings.Contains(low, " m") || strings.Contains(low, " м")) {
+			strings.Contains(low, " m") || strings.Contains(low, " м") || hasCloseWord(low)) {
 			continue
 		}
 		for _, m := range reTime.FindAllStringSubmatch(low, -1) {

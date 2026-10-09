@@ -1,0 +1,133 @@
+package zonecard
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+)
+
+// Синтетические тултипы на каждом языке клиента игры — из тех же фраз
+// tooltip-phrases.json (данные игры): заголовок + название + «закроется
+// через 5 ч 3 м» в форме языка.
+
+var ourLangs = []string{"ru", "en", "es", "pl", "de", "tr", "fr", "pt", "it"}
+
+func phrasesFor(t *testing.T) map[string]langPhrases {
+	t.Helper()
+	var all map[string]langPhrases
+	if err := json.Unmarshal(phrasesJSON, &all); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range ourLangs {
+		p, ok := all[l]
+		if !ok || len(p.Marker) == 0 || len(p.Unstable) == 0 || len(p.Closes) == 0 || len(p.Units["h"]) == 0 || len(p.Units["m"]) == 0 {
+			t.Fatalf("%s: в tooltip-phrases.json нет фраз: %+v", l, p)
+		}
+	}
+	return all
+}
+
+// timeText — «5 h 3 m» в единицах языка.
+func timeText(p langPhrases) string {
+	return "5 " + p.Units["h"][0] + " 3 " + p.Units["m"][0]
+}
+
+// closesLine — строка времени: фраза до или после времени, как в игре
+// («Closes in {0}», «{0} içerisinde kapanacaktır»).
+func closesLine(phrase, tm string, after bool) string {
+	if after {
+		return tm + " " + phrase
+	}
+	return phrase + " " + tm
+}
+
+func TestTooltipEveryLanguage(t *testing.T) {
+	all := phrasesFor(t)
+	const name = "Secent-Al-Qinsom"
+	want := 5*time.Hour + 3*time.Minute
+	for _, l := range ourLangs {
+		p := all[l]
+		tm := timeText(p)
+		for _, title := range append(append([]string(nil), p.Marker...), p.Unstable...) {
+			for _, cl := range p.Closes {
+				for _, after := range []bool{false, true} {
+					// Название в той же строке, что и заголовок.
+					same := []string{title + " " + name, "7/7", closesLine(cl, tm, after)}
+					// Название отдельной строкой (как на мелком шрифте).
+					split := []string{title, name, "7/7", closesLine(cl, tm, after)}
+					for _, lines := range [][]string{same, split} {
+						tt, ok := ParseTooltip(lines)
+						if !ok || tt.Read != name || tt.Size != 7 || tt.Left != want {
+							t.Errorf("%s: %q → %+v ok=%v", l, lines, tt, ok)
+						}
+					}
+				}
+			}
+			// Опознание целиком: признак, зона из справочника, время.
+			r, err := Identify(dict(t), []string{title + " " + name, closesLine(p.Closes[0], tm, false)}, time.Unix(1_800_000_000, 0))
+			if err != nil || !r.Portal || r.Zone() == nil || r.Zone().Name != name || r.Tooltip.Left != want {
+				t.Errorf("%s: Identify(%q): %+v %v", l, title, r, err)
+			}
+		}
+	}
+}
+
+// Нестрогое сравнение: признак с одной-двумя ошибками OCR находится на
+// каждом языке (как «Авапона», «Rood» у русского и английского).
+func TestMarkerFuzzyEveryLanguage(t *testing.T) {
+	all := phrasesFor(t)
+	for _, l := range ourLangs {
+		for _, title := range all[l].Marker {
+			r := []rune(title)
+			// Одна буква в середине заменена, предлог потерян.
+			r[len(r)/2] = 'x'
+			bad := strings.Join(strings.Fields(string(r))[:len(strings.Fields(string(r)))-1], " ")
+			if !HasMarker([]string{bad}) {
+				t.Errorf("%s: признак с ошибкой %q не найден", l, bad)
+			}
+		}
+	}
+}
+
+// «Биом: Пути Авалона» и значение «Пути Авалона» без подписи — не признак
+// ни на одном языке.
+func TestBiomeIsNotMarker(t *testing.T) {
+	all := phrasesFor(t)
+	for _, l := range ourLangs {
+		p := all[l]
+		for _, v := range p.NotMarker {
+			for _, lines := range [][]string{{p.Biome[0] + ": " + v}, {v}, {p.Biome[0], v}} {
+				if HasMarker(lines) {
+					t.Errorf("%s: %q принято за признак", l, lines)
+				}
+			}
+		}
+	}
+}
+
+// Единицы времени всех языков: «5 st 3 m», «5 sa 3 dk», «1 t 2 st».
+func TestTimeUnitsEveryLanguage(t *testing.T) {
+	all := phrasesFor(t)
+	for _, l := range ourLangs {
+		u := all[l].Units
+		cl := all[l].Closes[0]
+		for _, c := range []struct {
+			text string
+			want time.Duration
+		}{
+			{"1 " + u["d"][0] + " 2 " + u["h"][0], 26 * time.Hour},
+			{"5 " + u["h"][0] + " 3 " + u["m"][0], 5*time.Hour + 3*time.Minute},
+			{"49 " + u["m"][0] + " 27 " + u["s"][0], 49*time.Minute + 27*time.Second},
+		} {
+			line := cl + " " + c.text
+			if got := timeLeft([]string{line}); got != c.want {
+				t.Errorf("%s: %q → %v, ждал %v", l, line, got, c.want)
+			}
+		}
+	}
+	// Индонезийские единицы спорят с остальными (h — дни) и не берутся.
+	if unitWords["h"] != 'h' || unitWords["j"] != 'd' {
+		t.Errorf("единицы: h=%c j=%c", unitWords["h"], unitWords["j"])
+	}
+}

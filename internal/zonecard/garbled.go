@@ -96,7 +96,7 @@ func latKey(s string) string {
 // «авапана»).
 var (
 	cyrMarkers = []string{"путьавапана", "нестабипьныепути", "дарагаавапана"}
-	latMarkers = []string{"roadofavalon", "unstableroad"}
+	// Латинские признаки всех языков — latMarkers (phrases.go).
 	// avalonTail — хвост «Авалона» без «Путь»: «ABan0H0 a» — заголовок, у
 	// которого «Путь» не прочитался вовсе.
 	avalonTail = "авапана"
@@ -125,7 +125,7 @@ func garbledMarker(line string, time bool) bool {
 			return true
 		}
 	}
-	if lat := latKey(line); !strings.Contains(lat, "biome") {
+	if lat := latKey(line); !strings.Contains(lat, "biom") && !strings.Contains(lat, "biyom") && !likeNotMarker(line) {
 		for _, m := range latMarkers {
 			if fuzzyContains(lat, m, len(m)/4) {
 				return true
@@ -211,7 +211,7 @@ func WeakMarker(lines []string) bool {
 			}
 		}
 		for _, w := range strings.FieldsFunc(strings.ToLower(l), func(r rune) bool { return !unicode.IsLetter(r) }) {
-			if strings.HasPrefix(w, "aval") {
+			if strings.HasPrefix(w, "aval") || strings.HasPrefix(w, "awal") {
 				return true
 			}
 		}
@@ -239,6 +239,10 @@ func unitOf(tok string) byte {
 		return 's'
 	case "д", "d":
 		return 'd'
+	}
+	// Единицы других языков клиента: «st», «sa», «dk», «sn», «t», «g», «j».
+	if u, ok := unitWords[strings.ToLower(strings.Trim(tok, ".,:;"))]; ok {
+		return u
 	}
 	return 0
 }
@@ -329,8 +333,8 @@ func tolerantTime(line string) time.Duration {
 	return 0
 }
 
-// timeContext — строка «Закроется через …» / «Closes in …» (или значок
-// песочных часов перед временем).
+// timeContext — строка «Закроется через …» / «Closes in …» на любом языке
+// клиента (или значок песочных часов перед временем).
 func timeContext(line string) bool {
 	low := strings.ToLower(line)
 	for _, w := range []string{"закро", "через", "closes", "close", "⏳", "⌛", "ⴟ"} {
@@ -338,7 +342,7 @@ func timeContext(line string) bool {
 			return true
 		}
 	}
-	return false
+	return hasCloseWord(low)
 }
 
 // isTimeLine — строка — это время (строгое или искажённое), а не название.
