@@ -216,11 +216,14 @@ func BuildPanel(lang string, z *Zone, r Result, o ToastOptions, now time.Time) P
 	}
 	if o.Portal {
 		var tail []string
+		if r.Tooltip.Unstable {
+			tail = append(tail, i18n.T(lang, "zn.unstable"))
+		}
 		if r.Tooltip.Size > 0 {
 			tail = append(tail, i18n.Tf(lang, "zn.portal", r.Tooltip.Size))
 		}
 		if left, ok := r.LeftAt(now); ok {
-			tail = append(tail, i18n.Tf(lang, "zn.closes", approx(r)+Clock(lang, left)))
+			tail = append(tail, i18n.Tf(lang, closesKey(r), approx(r)+Clock(lang, left)))
 			p.Warn = left < warnLeft
 		}
 		p.Footer = strings.Join(tail, " · ")

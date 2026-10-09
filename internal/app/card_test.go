@@ -159,3 +159,26 @@ func gameEv(at time.Time, kind, server string) game.Ev {
 	}
 	return e
 }
+
+// Нестабильный путь (в один конец, время «для вашей группы») на общую
+// карту не идёт: в журнале «не отправлено (unstable)», на карточке — метка.
+func TestCardUnstableNotSent(t *testing.T) {
+	dir := t.TempDir()
+	a := New(dir, dir, nil)
+	m := &fakeMap{}
+	a.AttachMap(m, nil)
+	t0 := time.Unix(5000, 0)
+	joinAt(a, t0, eu, "TNL-001")
+	unstable := []string{"Unstable Roads to", "Qiient-Al-Vynsis", "Closes to your party in 4 m 18 s"}
+	if d := a.SetCard(shotFor(t, unstable, t0.Add(time.Second)), zonecard.Default()); d != "не отправлено (unstable)" {
+		t.Fatal(d)
+	}
+	c := a.State().Card
+	if len(m.tips) != 0 || c.MapWhy != zonecard.WhyUnstable || !c.Unstable || c.Zone == nil || c.Zone.Code != "TNL-164" {
+		t.Fatalf("%+v %+v", c, m.tips)
+	}
+	// Обычный портал после него — снова уходит.
+	if d := a.SetCard(shotFor(t, portal164, t0.Add(2*time.Second)), zonecard.Default()); d != "портал TNL-001 → TNL-164 отправляю" {
+		t.Fatal(d)
+	}
+}

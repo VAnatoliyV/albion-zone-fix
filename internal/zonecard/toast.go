@@ -172,6 +172,15 @@ func Clock(lang string, d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
+// closesKey — «закроется через …» или, у нестабильного пути, «закроется
+// для группы через …».
+func closesKey(r Result) string {
+	if r.Tooltip.Unstable {
+		return "zn.closesGroup"
+	}
+	return "zn.closes"
+}
+
 // approx — «≈» перед временем, прочитанным только нестрого.
 func approx(r Result) string {
 	if r.Tooltip.TimeLoose {
@@ -202,11 +211,14 @@ func BuildToast(lang string, z *Zone, r Result, o ToastOptions, now time.Time) T
 	}
 	if o.Portal {
 		var tail []string
+		if r.Tooltip.Unstable {
+			tail = append(tail, i18n.T(lang, "zn.unstable"))
+		}
 		if r.Tooltip.Size > 0 {
 			tail = append(tail, i18n.Tf(lang, "zn.portal", r.Tooltip.Size))
 		}
 		if left, ok := r.LeftAt(now); ok {
-			tail = append(tail, i18n.Tf(lang, "zn.closes", approx(r)+Clock(lang, left)))
+			tail = append(tail, i18n.Tf(lang, closesKey(r), approx(r)+Clock(lang, left)))
 		}
 		if len(tail) > 0 {
 			other = append(other, strings.Join(tail, " · "))

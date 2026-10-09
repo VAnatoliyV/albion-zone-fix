@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"albionzonefix/internal/avalon"
+	"albionzonefix/internal/i18n"
 )
 
 // Синтетические тултипы на каждом языке клиента игры — из тех же фраз
@@ -153,6 +156,56 @@ func TestIdentifyEslavDiacritics(t *testing.T) {
 		r, err := Identify(d, c.lines, at)
 		if err != nil || !r.Portal || r.Zone() == nil || r.Zone().Name != c.name || r.Doubtful() || r.Tooltip.Left != c.left || r.Tooltip.TimeLoose {
 			t.Errorf("%q: %+v %v", c.lines, r, err)
+		}
+	}
+}
+
+// Нестабильный путь — на каждом языке: по заголовку или по строке времени
+// «для вашей группы»; обычный путь — не нестабильный. На карту не идёт, в
+// уведомлении и панели — метка «в один конец» и время группы.
+func TestUnstableEveryLanguage(t *testing.T) {
+	all := phrasesFor(t)
+	d := dict(t)
+	at := time.Unix(1_800_000_000, 0)
+	here := &avalon.Place{Zone: "TNL-001", Region: "europe"}
+	const name = "Qiient-Al-Vynsis"
+	for _, l := range ourLangs {
+		p := all[l]
+		tm := timeText(p)
+		for _, c := range []struct {
+			lines []string
+			want  bool
+		}{
+			{[]string{p.Unstable[0], name, closesLine(p.Party[0], tm, l == "tr")}, true},
+			{[]string{p.Unstable[0] + " " + name, closesLine(p.Closes[0], tm, false)}, true},
+			// Заголовок не прочитан, но время — «для вашей группы».
+			{[]string{p.Marker[0], name, closesLine(p.Party[0], tm, l == "tr")}, true},
+			{[]string{p.Marker[0], name, closesLine(p.Closes[0], tm, false)}, false},
+		} {
+			r, err := Identify(d, c.lines, at)
+			if err != nil || r.Tooltip.Unstable != c.want {
+				t.Errorf("%s: %q → unstable=%v, ждал %v (%v)", l, c.lines, r.Tooltip.Unstable, c.want, err)
+				continue
+			}
+			_, why := ByButton(r, here, d)
+			if c.want && why != WhyUnstable || !c.want && why == WhyUnstable {
+				t.Errorf("%s: %q → why %q", l, c.lines, why)
+			}
+			if !c.want {
+				continue
+			}
+			o := ToastOptions{Portal: true}
+			toast := BuildToast(l, r.Zone(), r, o, at)
+			panel := BuildPanel(l, r.Zone(), r, o, at)
+			for _, key := range []string{"zn.unstable", "zn.closesGroup"} {
+				want := i18n.T(l, key)
+				if key == "zn.closesGroup" {
+					want = strings.Split(want, "%s")[0]
+				}
+				if !strings.Contains(toast.Body, want) || !strings.Contains(panel.Footer, want) {
+					t.Errorf("%s: нет %q: %q / %q", l, want, toast.Body, panel.Footer)
+				}
+			}
 		}
 	}
 }

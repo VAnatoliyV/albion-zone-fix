@@ -56,6 +56,10 @@ var (
 	notMarkers, notMarkersLat []string
 	// closeWords — слова строки времени («закроется», «closes», «schließt»…).
 	closeWords []string
+	// unstableMarkers — признаки нестабильного пути (портал в один конец)
+	// в нижнем регистре без предлога; partyPhrases — «Закроется для вашей
+	// группы через» без подстановки: время у такого портала — групповое.
+	unstableMarkers, partyPhrases []string
 	// unitWords — единица времени языка → 'd', 'h', 'm', 's'.
 	unitWords map[string]byte
 	// reUnit — число и слово после него (единица на любом языке).
@@ -79,6 +83,8 @@ func loadPhrases(data []byte) {
 	}
 	sort.Strings(langs)
 	mk, lat, pre, bio, nm, nml, cw := set{}, set{}, set{}, set{}, set{}, set{}, set{}
+	un, party := set{}, set{}
+	un.add("unstable road")
 	units := map[string]byte{}
 	for _, m := range legacyMarkers {
 		mk.add(m)
@@ -88,6 +94,16 @@ func loadPhrases(data []byte) {
 			continue
 		}
 		p := all[l]
+		for _, s := range p.Unstable {
+			if words := strings.Fields(strings.ToLower(strings.Trim(s, " :："))); len(words) >= 2 {
+				un.add(strings.Join(words[:len(words)-1], " "))
+			} else if len(words) == 1 {
+				un.add(words[0])
+			}
+		}
+		for _, s := range p.Party {
+			party.add(strings.ToLower(s))
+		}
 		for _, s := range append(append([]string(nil), p.Marker...), p.Unstable...) {
 			words := strings.Fields(strings.ToLower(strings.Trim(s, " :：")))
 			if len(words) == 0 {
@@ -133,6 +149,37 @@ func loadPhrases(data []byte) {
 	markers, latMarkers, prepositions = mk.list, lat.list, pre.list
 	biomeWords, notMarkers, notMarkersLat, closeWords = bio.list, nm.list, nml.list, cw.list
 	unitWords = units
+	unstableMarkers, partyPhrases = un.list, party.list
+}
+
+// unstableIn — портал в один конец: строка признака — «Нестабильные Пути
+// в …» (нестрого, как markerStrict; искажённая русская — по cyrTokens), или
+// в тултипе строка времени «для вашей группы».
+func unstableIn(lines []string, idx int) bool {
+	if idx >= 0 && idx < len(lines) {
+		ll := strings.ToLower(lines[idx])
+		for _, m := range unstableMarkers {
+			k := 1
+			if len([]rune(m)) >= 12 {
+				k = 2
+			}
+			if strings.Contains(ll, m) || fuzzyContains(ll, m, k) {
+				return true
+			}
+		}
+		if fuzzyContains(strings.Join(cyrTokens(lines[idx]), ""), "нестабипьныепути", 4) {
+			return true
+		}
+	}
+	for _, l := range lines {
+		ll := strings.ToLower(l)
+		for _, p := range partyPhrases {
+			if fuzzyContains(ll, p, len([]rune(p))/5) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // set — список без повторов в порядке добавления.

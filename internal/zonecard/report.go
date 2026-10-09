@@ -15,6 +15,7 @@ const (
 	WhyDoubt     = "doubt"     // название прочитано неуверенно
 	WhySame      = "same"      // портал ведёт в эту же зону
 	WhyNotRoad   = "notRoad"   // ни одна из зон не дороги Авалона
+	WhyUnstable  = "unstable"  // нестабильный путь: в один конец, время группы
 )
 
 // ByButton — отчёт tooltip по кнопке, правила как у ОтчётКарты.поКнопке:
@@ -22,6 +23,11 @@ const (
 // сколько осталось (округлено до секунды), size, server. here == nil —
 // входа в зону после запуска не видели. Пустое why — отправлять.
 func ByButton(r Result, here *avalon.Place, d *Dict) (avalon.Tip, string) {
+	if r.Tooltip.Unstable {
+		// Портал в один конец со временем «для вашей группы»: другим
+		// игрокам эта связь не годится — на общую карту не шлём.
+		return avalon.Tip{}, WhyUnstable
+	}
 	if r.Tooltip.Left <= 0 || r.Tooltip.TimeLoose {
 		// Время не прочитано или прочитано только нестрого — не выдумываем.
 		return avalon.Tip{}, WhyNoTime

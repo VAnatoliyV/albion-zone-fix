@@ -36,6 +36,8 @@ type CardView struct {
 	// (zonecard.Why*, "off" — отправка выключена).
 	Map    *avalon.Status `json:"map,omitempty"`
 	MapWhy string         `json:"mapWhy,omitempty"`
+	// Unstable — нестабильный путь: в один конец, время — для группы.
+	Unstable bool `json:"unstable,omitempty"`
 	// Риск чёрного экрана: Black из Total переходов в эту зону; Risk —
 	// показывать (Total ≥ 3 и предупреждения включены).
 	Black int  `json:"black"`
@@ -174,7 +176,7 @@ func (a *App) cardView(tip *avalon.Status, blackWarn bool) *CardView {
 	if v.Doubt && len(r.Matches) > 1 {
 		v.Alt = r.Matches[1].Zone.Name
 	}
-	v.Size, v.ClosesAt = r.Tooltip.Size, r.ClosesAt()
+	v.Size, v.ClosesAt, v.Unstable = r.Tooltip.Size, r.ClosesAt(), r.Tooltip.Unstable
 	v.MapWhy = c.why
 	if c.tipTo != "" && tip != nil && tip.To == c.tipTo && !tip.At.Before(c.at) {
 		v.Map = tip

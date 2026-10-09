@@ -536,10 +536,11 @@ function cardHTML(c) {
   h += `<div class="cdpanel">${rows.join('')}</div>`;
 
   const foot = [];
+  if (c.unstable) foot.push(`<span class="gold">${esc(t('zn.unstable'))}</span>`);
   if (c.size) foot.push(`<span>${esc(t('zn.portal', c.size))}</span>`);
   if (c.closesAt) {
     const left = (Date.parse(c.closesAt) - Date.now()) / 1000;
-    foot.push(left > 0 ? `<span class="${left < 300 ? 'gold' : ''}">${esc(t('zn.closes', clockLeft(left)))}</span>` : `<span>${esc(t('zn.closed'))}</span>`);
+    foot.push(left > 0 ? `<span class="${left < 300 ? 'gold' : ''}">${esc(c.unstable ? t('zn.closesGroup', clockLeft(left)) : t('zn.closes', clockLeft(left)))}</span>` : `<span>${esc(t('zn.closed'))}</span>`);
   }
   foot.push(`<span>${esc(t('zn.shot', clock(c.at)))}</span>`);
   h += `<div class="cdfoot">${foot.join('')}</div>`;
