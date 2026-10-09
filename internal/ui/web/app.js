@@ -11,7 +11,7 @@ function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerH
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let T = {};          // словарь текущего языка
-let lang = '';       // ru / en / es
+let lang = '';       // ru / en / es / pl / de / tr / fr / pt / it
 let S = null;        // последнее /api/state
 let tab = 'own';
 try { tab = localStorage.getItem('tab') || 'own'; } catch (e) {}
@@ -50,6 +50,13 @@ function plural(n, forms) {
     if (b >= 2 && b <= 4) return forms[1];
     return forms[2];
   }
+  if (lang === 'pl' && forms.length >= 3) {
+    // Польский: 1 minutę, 2–4 minuty (кроме 12–14), остальное — minut.
+    const a = n % 100, b = n % 10;
+    if (n === 1) return forms[0];
+    if (b >= 2 && b <= 4 && !(a >= 12 && a <= 14)) return forms[1];
+    return forms[2];
+  }
   return n === 1 ? forms[0] : forms[1];
 }
 
@@ -66,7 +73,7 @@ function ago(ts) {
   return unit(Math.floor(h / 24), 'ago.day');
 }
 
-const locale = () => ({ ru: 'ru-RU', en: 'en-GB', es: 'es-ES' }[lang] || 'en-GB');
+const locale = () => ({ ru: 'ru-RU', en: 'en-GB', es: 'es-ES', pl: 'pl-PL', de: 'de-DE', tr: 'tr-TR', fr: 'fr-FR', pt: 'pt-BR', it: 'it-IT' }[lang] || 'en-GB');
 const clock = iso => new Date(iso).toLocaleTimeString(locale());
 
 // --- запросы ----------------------------------------------------------------

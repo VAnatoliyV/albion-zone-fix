@@ -16,7 +16,8 @@ const FileName = "albion-journal-settings.json"
 // Settings — всё, что пользователь включает и выключает. Поля, которых нет
 // в файле (старый файл, новая версия), берутся из Default.
 type Settings struct {
-	// Language — "ru", "en", "es"; пусто — по языку системы.
+	// Language — один из i18n.Langs (ru, en, es, pl, de, tr, fr, pt, it);
+	// пусто — по языку системы (незнакомый — английский).
 	Language string `json:"language"`
 	// ShareADP — отправлять цены в Albion Online Data Project.
 	ShareADP bool `json:"shareADP"`

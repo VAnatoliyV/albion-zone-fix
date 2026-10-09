@@ -63,6 +63,9 @@ button, select, input { font: inherit; color: inherit; }
 .tabs button.on { background: var(--gold); color: var(--ongold); }
 .tabs.small { margin: 6px 0 10px; }
 .tabs.small button { font-size: 12px; }
+/* выбор языка: девять кнопок в три ряда */
+.tabs.wrap { flex-wrap: wrap; }
+.tabs.wrap button { flex: 1 0 calc(33.333% - 2px); border-right: 0; }
 
 /* кнопки: золото на тёмном, под курсором — наизнанку */
 .btn { font: 600 13px var(--pix); letter-spacing: .5px; padding: 8px 12px; cursor: pointer;
