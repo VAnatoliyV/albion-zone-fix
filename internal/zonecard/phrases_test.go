@@ -83,9 +83,11 @@ func TestMarkerFuzzyEveryLanguage(t *testing.T) {
 	for _, l := range ourLangs {
 		for _, title := range all[l].Marker {
 			r := []rune(title)
-			// Одна буква в середине заменена, предлог потерян.
+			// Одна буква в середине заменена. Предлог оставляем: без него и
+			// с ошибкой заголовок неотличим от значения биома («Roads of
+			// Avalon») — такое нарочно не признак.
 			r[len(r)/2] = 'x'
-			bad := strings.Join(strings.Fields(string(r))[:len(strings.Fields(string(r)))-1], " ")
+			bad := string(r)
 			if !HasMarker([]string{bad}) {
 				t.Errorf("%s: признак с ошибкой %q не найден", l, bad)
 			}

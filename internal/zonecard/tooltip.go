@@ -51,15 +51,18 @@ func markerStrict(line string) bool {
 	if hasBiome(ll) {
 		return false
 	}
-	for _, m := range markers {
-		if strings.Contains(ll, m) {
-			return true
-		}
+	if fullMarkerIn(ll) {
+		return true
 	}
 	// «Roads of Avalon», «Straßen von Avalon» — значение биома без подписи
 	// (подпись ушла в другую строку): на признак похоже, но не он.
 	if likeNotMarker(line) {
 		return false
+	}
+	for _, m := range markers {
+		if strings.Contains(ll, m) {
+			return true
+		}
 	}
 	for _, m := range markers {
 		k := 1

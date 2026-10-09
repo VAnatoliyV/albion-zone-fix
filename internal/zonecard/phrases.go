@@ -54,6 +54,9 @@ var (
 	// которая целиком похожа на него, — не признак (оно почти как признак:
 	// «Roads of Avalon», «Straßen von Avalon»).
 	notMarkers, notMarkersLat []string
+	// markersFull — признаки целиком, с предлогом («road of avalon to»):
+	// строка с ним — признак, даже если похожа на значение биома.
+	markersFull []string
 	// closeWords — слова строки времени («закроется», «closes», «schließt»…).
 	closeWords []string
 	// unstableMarkers — признаки нестабильного пути (портал в один конец)
@@ -83,7 +86,7 @@ func loadPhrases(data []byte) {
 	}
 	sort.Strings(langs)
 	mk, lat, pre, bio, nm, nml, cw := set{}, set{}, set{}, set{}, set{}, set{}, set{}
-	un, party := set{}, set{}
+	un, party, full := set{}, set{}, set{}
 	un.add("unstable road")
 	units := map[string]byte{}
 	for _, m := range legacyMarkers {
@@ -109,6 +112,7 @@ func loadPhrases(data []byte) {
 			if len(words) == 0 {
 				continue
 			}
+			full.add(strings.Join(words, " "))
 			stem := words
 			if len(words) >= 2 {
 				stem = words[:len(words)-1]
@@ -116,7 +120,7 @@ func loadPhrases(data []byte) {
 			}
 			m := strings.Join(stem, " ")
 			mk.add(m)
-			if k := latKey(m); len(k) >= 10 {
+			if k := foldKey(m); len(k) >= 10 {
 				lat.add(k)
 			}
 		}
@@ -125,7 +129,7 @@ func loadPhrases(data []byte) {
 		}
 		for _, s := range p.NotMarker {
 			nm.add(strings.ToLower(s))
-			nml.add(latKey(s))
+			nml.add(foldKey(s))
 		}
 		for _, s := range append(append([]string(nil), p.Closes...), p.Party...) {
 			for _, w := range strings.Fields(strings.ToLower(s)) {
@@ -146,8 +150,26 @@ func loadPhrases(data []byte) {
 			}
 		}
 	}
-	markers, latMarkers, prepositions = mk.list, lat.list, pre.list
 	biomeWords, notMarkers, notMarkersLat, closeWords = bio.list, nm.list, nml.list, cw.list
+	markersFull, prepositions = full.list, pre.list
+	// Признак, который совпадает со значением биома какого-нибудь языка
+	// (индонезийское «Jalan Avalon» без «menuju»), — не признак: такой
+	// стебель не берём, только фразу целиком.
+	biomeKey := map[string]bool{}
+	for _, n := range nml.list {
+		biomeKey[n] = true
+	}
+	markers, latMarkers = nil, nil
+	for _, m := range mk.list {
+		if !biomeKey[foldKey(m)] {
+			markers = append(markers, m)
+		}
+	}
+	for _, m := range lat.list {
+		if !biomeKey[m] {
+			latMarkers = append(latMarkers, m)
+		}
+	}
 	unitWords = units
 	unstableMarkers, partyPhrases = un.list, party.list
 }
@@ -210,7 +232,9 @@ func hasBiome(low string) bool {
 }
 
 // likeNotMarker — строка целиком похожа на «Пути Авалона» (значение биома)
-// какого-нибудь языка: до одной ошибки на всю строку.
+// какого-нибудь языка. Кириллица — до одной ошибки; латиница — без
+// диакритики (eslav теряет ś, ż, ß: «Sciezki Awalonu», «Stralben von
+// Avalon») и до шестой части длины ошибок.
 func likeNotMarker(line string) bool {
 	low := strings.ToLower(Clean(line))
 	for _, n := range notMarkers {
@@ -218,13 +242,49 @@ func likeNotMarker(line string) bool {
 			return true
 		}
 	}
-	lat := latKey(line)
+	return likeNotMarkerKey(foldKey(line))
+}
+
+// likeNotMarkerKey — то же для готового foldKey.
+func likeNotMarkerKey(k string) bool {
 	for _, n := range notMarkersLat {
-		if len(n) >= 8 && Levenshtein([]rune(lat), []rune(n)) <= 1 {
+		if len(n) >= 8 && Levenshtein([]rune(k), []rune(n)) <= max(1, len(n)/6) {
 			return true
 		}
 	}
 	return false
+}
+
+// fullMarkerIn — в строке признак целиком, с предлогом.
+func fullMarkerIn(low string) bool {
+	for _, m := range markersFull {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// diacritics — буквы с диакритикой → латиница без неё (как их теряет OCR).
+var diacritics = map[rune]string{
+	'ß': "ss", 'ä': "a", 'ö': "o", 'ü': "u", 'à': "a", 'á': "a", 'â': "a", 'ã': "a", 'å': "a", 'ą': "a",
+	'ç': "c", 'ć': "c", 'č': "c", 'è': "e", 'é': "e", 'ê': "e", 'ë': "e", 'ę': "e", 'ğ': "g",
+	'ì': "i", 'í': "i", 'î': "i", 'ï': "i", 'ı': "i", 'ł': "l", 'ñ': "n", 'ń': "n",
+	'ò': "o", 'ó': "o", 'ô': "o", 'õ': "o", 'ś': "s", 'ş': "s", 'š': "s", 'ù': "u", 'ú': "u", 'û': "u",
+	'ý': "y", 'ź': "z", 'ż': "z", 'ž': "z",
+}
+
+// foldKey — latKey без диакритики: «Ścieżki Awalonu» → «sciezkiawalonu».
+func foldKey(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if f, ok := diacritics[r]; ok {
+			b.WriteString(f)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return latKey(b.String())
 }
 
 // normUnits — единицы времени всех языков → d/h/m/s сразу после числа:
