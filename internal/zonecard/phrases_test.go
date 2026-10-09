@@ -121,7 +121,9 @@ func TestTimeUnitsEveryLanguage(t *testing.T) {
 			text string
 			want time.Duration
 		}{
-			{"1 " + u["d"][0] + " 2 " + u["h"][0], 26 * time.Hour},
+			{"0 " + u["d"][0] + " 2 " + u["h"][0], 2 * time.Hour},
+			// Больше суток портал не живёт — не время.
+			{"1 " + u["d"][0] + " 2 " + u["h"][0], 0},
 			{"5 " + u["h"][0] + " 3 " + u["m"][0], 5*time.Hour + 3*time.Minute},
 			{"49 " + u["m"][0] + " 27 " + u["s"][0], 49*time.Minute + 27*time.Second},
 		} {
@@ -132,8 +134,8 @@ func TestTimeUnitsEveryLanguage(t *testing.T) {
 		}
 	}
 	// Индонезийские единицы спорят с остальными (h — дни) и не берутся.
-	if unitWords["h"] != 'h' || unitWords["j"] != 'd' {
-		t.Errorf("единицы: h=%c j=%c", unitWords["h"], unitWords["j"])
+	if _, ok := unitsByLang["id"]; ok {
+		t.Error("индонезийские единицы взяты")
 	}
 }
 

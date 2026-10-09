@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Фразы тултипа портала дорог на всех языках клиента игры — из данных игры
@@ -63,8 +64,14 @@ var (
 	// в нижнем регистре без предлога; partyPhrases — «Закроется для вашей
 	// группы через» без подстановки: время у такого портала — групповое.
 	unstableMarkers, partyPhrases []string
-	// unitWords — единица времени языка → 'd', 'h', 'm', 's'.
-	unitWords map[string]byte
+	// unitsByLang — единицы времени языка (кроме русских и английских d/h/m/s,
+	// д/ч/м/с, их знает reTime) → 'd', 'h', 'm', 's'. Применяются только в
+	// тултипе этого языка (unitsFor): «g» у турецкого и итальянского — дни, а в
+	// русском тултипе «g» — испорченная «ч».
+	unitsByLang map[string]map[string]byte
+	// langSignals — фразы языка (заголовок, нестабильный путь, время) как
+	// foldKey: по ним видно, что тултип на этом языке.
+	langSignals map[string][]string
 	// reUnit — число и слово после него (единица на любом языке).
 	reUnit = regexp.MustCompile(`(\d)\s*(\pL+)`)
 )
@@ -88,7 +95,7 @@ func loadPhrases(data []byte) {
 	mk, lat, pre, bio, nm, nml, cw := set{}, set{}, set{}, set{}, set{}, set{}, set{}
 	un, party, full := set{}, set{}, set{}
 	un.add("unstable road")
-	units := map[string]byte{}
+	byLang, signals := map[string]map[string]byte{}, map[string][]string{}
 	for _, m := range legacyMarkers {
 		mk.add(m)
 	}
@@ -140,12 +147,25 @@ func loadPhrases(data []byte) {
 			}
 		}
 		if !skipUnits[l] {
+			units := map[string]byte{}
 			for u, ws := range p.Units {
 				if len(u) != 1 {
 					continue
 				}
 				for _, w := range ws {
-					units[strings.ToLower(w)] = u[0]
+					w = strings.ToLower(w)
+					if r := []rune(w); len(r) == 1 && strings.ContainsRune("dhmsдчмс", r[0]) {
+						continue // русские и английские — как раньше (reTime)
+					}
+					units[w] = u[0]
+				}
+			}
+			if len(units) > 0 {
+				byLang[l] = units
+				for _, s := range append(append(append(append([]string(nil), p.Closes...), p.Party...), p.Marker...), p.Unstable...) {
+					if k := foldKey(s); len(k) >= 6 {
+						signals[l] = append(signals[l], k)
+					}
 				}
 			}
 		}
@@ -170,7 +190,7 @@ func loadPhrases(data []byte) {
 			latMarkers = append(latMarkers, m)
 		}
 	}
-	unitWords = units
+	unitsByLang, langSignals = byLang, signals
 	unstableMarkers, partyPhrases = un.list, party.list
 }
 
@@ -287,17 +307,47 @@ func foldKey(s string) string {
 	return latKey(b.String())
 }
 
-// normUnits — единицы времени всех языков → d/h/m/s сразу после числа:
-// «5 Std. 3 m» → «5 h. 3 m», «5 sa 3 dk» → «5 h 3 m». Строка — в нижнем
-// регистре. Русские и английские единицы и незнакомые слова («q», «min»)
-// не трогаем — их понимают reTime и unitOf, как раньше.
-func normUnits(low string) string {
+// unitsFor — единицы языков, чьи фразы есть в строках (нестрого, без
+// диакритики: eslav читает «Schließt» как «Schlielt»).
+func unitsFor(lines []string) map[string]byte {
+	var keys []string
+	for _, l := range lines {
+		keys = append(keys, foldKey(l))
+	}
+	out := map[string]byte{}
+	for lang, sigs := range langSignals {
+		found := false
+		for _, s := range sigs {
+			for _, k := range keys {
+				if fuzzyContains(k, s, len(s)/5) {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if found {
+			for w, u := range unitsByLang[lang] {
+				out[w] = u
+			}
+		}
+	}
+	return out
+}
+
+// MaxLeft — дольше портал дорог не живёт: больше — ошибка чтения, не время.
+const MaxLeft = 24 * time.Hour
+
+// normUnits — единицы времени языков units → d/h/m/s сразу после числа:
+// «5 sa 3 dk» → «5 h 3 m». Строка — в нижнем регистре. Русские и
+// английские единицы и незнакомые слова («q», «min») не трогаем — их
+// понимают reTime и unitOf, как раньше.
+func normUnits(low string, units map[string]byte) string {
 	return reUnit.ReplaceAllStringFunc(low, func(m string) string {
 		sub := reUnit.FindStringSubmatch(m)
-		if w := []rune(sub[2]); len(w) == 1 && strings.ContainsRune("dhmsдчмс", w[0]) {
-			return m // русские и английские — как раньше (reTime их знает)
-		}
-		if u, ok := unitWords[sub[2]]; ok {
+		if u, ok := units[sub[2]]; ok {
 			return sub[1] + " " + string(rune(u))
 		}
 		return m

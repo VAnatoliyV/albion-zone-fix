@@ -191,11 +191,12 @@ func ParseTooltip(lines []string) (Tooltip, bool) {
 // tolerantLeft — время по искажённым строкам (tolerantTime): только строка
 // «Закроется через …» или строка after сразу после признака с названием.
 func tolerantLeft(lines []string, after int) time.Duration {
+	units := unitsFor(lines)
 	for i, l := range lines {
 		if i != after && !timeContext(l) {
 			continue
 		}
-		if d := tolerantTime(l); d > 0 {
+		if d := tolerantTimeU(l, units); d > 0 {
 			return d
 		}
 	}
@@ -232,12 +233,13 @@ func portalSize(lines []string) int {
 var reTime = regexp.MustCompile(`(?:(\d{1,3})\s*[dд]\D{0,3})?(?:(\d{1,3})\s*[hчr]\D{0,3})?(?:(\d{1,3})\s*[mм]\D{0,3})?(?:(\d{1,3})\s*[sс])?`)
 
 func timeLeft(lines []string) time.Duration {
+	units := unitsFor(lines)
 	for _, l := range lines {
 		low := strings.ToLower(l)
 		if reSize.MatchString(low) && !hasCloseWord(low) {
 			continue // «7/7» — размер портала, не время
 		}
-		low = normUnits(low) // «5 sa 3 dk», «2 st 7 m» → «5 h 3 m», «2 h 7 m»
+		low = normUnits(low, units) // «5 sa 3 dk», «2 st 7 m» → «5 h 3 m», «2 h 7 m»
 		if !(strings.Contains(low, "closes") || strings.Contains(low, "закро") || strings.Contains(low, "через") || strings.Contains(low, ":") ||
 			strings.Contains(low, " m") || strings.Contains(low, " м") || hasCloseWord(low)) {
 			continue
@@ -248,7 +250,7 @@ func timeLeft(lines []string) time.Duration {
 				return n
 			}
 			sec := part(1)*86400 + part(2)*3600 + part(3)*60 + part(4)
-			if sec > 0 {
+			if sec > 0 && time.Duration(sec)*time.Second <= MaxLeft {
 				return time.Duration(sec) * time.Second
 			}
 		}

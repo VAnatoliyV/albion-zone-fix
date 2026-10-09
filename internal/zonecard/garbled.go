@@ -229,7 +229,7 @@ var reTok = regexp.MustCompile(`\d+|[^\d\s]+`)
 
 // Единицы времени, как их путает OCR: «q», «Ч», «4» — «ч»; «N», «Н», «M» —
 // «м»; «C» — «с».
-func unitOf(tok string) byte {
+func unitOf(tok string, units map[string]byte) byte {
 	switch strings.ToLower(strings.Trim(tok, ".,:;")) {
 	case "ч", "q", "h", "r", "чч":
 		return 'h'
@@ -241,7 +241,7 @@ func unitOf(tok string) byte {
 		return 'd'
 	}
 	// Единицы других языков клиента: «st», «sa», «dk», «sn», «t», «g», «j».
-	if u, ok := unitWords[strings.ToLower(strings.Trim(tok, ".,:;"))]; ok {
+	if u, ok := units[strings.ToLower(strings.Trim(tok, ".,:;"))]; ok {
 		return u
 	}
 	return 0
@@ -272,7 +272,10 @@ type timePart struct {
 // игра пишет две единицы, и раз вторая — минуты, первая — часы). Лишнее
 // число без единицы («2 5 26 C») или одни минуты без часов и секунд («39 M»
 // — скорее всего, обрезанное «X ч 39 м») — неоднозначно, 0.
-func tolerantTime(line string) time.Duration {
+func tolerantTime(line string) time.Duration { return tolerantTimeU(line, unitsFor([]string{line})) }
+
+// tolerantTimeU — tolerantTime с единицами языков units (unitsFor тултипа).
+func tolerantTimeU(line string, units map[string]byte) time.Duration {
 	toks := reTok.FindAllString(line, -1)
 	// «б» — шестёрка в игровом шрифте (только отдельным словом).
 	for i, t := range toks {
@@ -287,7 +290,7 @@ func tolerantTime(line string) time.Duration {
 	// «6 4 17 M»: одиночная «4» между числами — это «ч», но только в строке
 	// «Закроется через …» (иначе «3 4 5 M» стало бы 3 ч 5 м).
 	for i := 1; timeContext(line) && i+2 < len(toks); i++ {
-		if toks[i] == "4" && isNum(toks[i-1]) && isNum(toks[i+1]) && unitOf(toks[i+2]) == 'm' {
+		if toks[i] == "4" && isNum(toks[i-1]) && isNum(toks[i+1]) && unitOf(toks[i+2], units) == 'm' {
 			toks[i] = "ч"
 		}
 	}
@@ -306,7 +309,7 @@ func tolerantTime(line string) time.Duration {
 		n, _ := strconv.Atoi(t)
 		p := timePart{n: n}
 		if i+1 < len(toks) && !isNum(toks[i+1]) {
-			if u := unitOf(toks[i+1]); u != 0 {
+			if u := unitOf(toks[i+1], units); u != 0 {
 				p.unit = u
 				i++
 			} else if junk(toks[i+1]) {
@@ -401,6 +404,9 @@ func groupTime(ps []timePart) time.Duration {
 	}
 	if has['s'] && !has['m'] && !has['h'] && !has['d'] {
 		return 0 // одни секунды — скорее обрезанное «X м NN с»
+	}
+	if time.Duration(sec)*time.Second > MaxLeft {
+		return 0 // больше суток — ошибка чтения
 	}
 	return time.Duration(sec) * time.Second
 }
