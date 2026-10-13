@@ -84,6 +84,9 @@ type Settings struct {
 	// выбор пользователя не трогаем.
 	ThemeV2  bool `json:"themeV2"`
 	LogoAnim bool `json:"logoAnim"`
+	// StatusSide — строки «Авалон / приёмник / сбор / сайт / фейм» в узкой
+	// колонке слева, чтобы вкладки (фейм и урон) начинались с самого верха.
+	StatusSide bool `json:"statusSide"`
 	// ResetOnZone — обнулять урон при смене зоны (resetOnZone у мака). Сам
 	// сброс делает форк сборщика при входе в зону: он читает файл
 	// albion-session-options.json, который пишет программа.

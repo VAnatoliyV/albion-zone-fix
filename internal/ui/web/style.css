@@ -252,3 +252,20 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
 .keyneed p { margin: 6px 0; font-size: 12.5px; line-height: 1.45; }
 .keyneed.off { border-color: var(--red); background: linear-gradient(180deg, rgba(220,80,70,.14), rgba(220,80,70,.04)); }
 [data-skin="plain"] .keyneed { border-radius: 10px; }
+
+/* Кнопки запуска сбоку (настройка statusSide): шапка и строки состояния —
+   узкая колонка слева, вкладки с феймом и уроном начинаются с самого верха.
+   В узком окне места на две колонки нет — остаётся обычный вид. */
+@media (min-width: 720px) {
+  body.side main { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 0 16px; align-items: start; }
+  body.side .sidecol { position: sticky; top: 0; }
+  body.side .sidecol .head { flex-wrap: wrap; }
+  body.side .sidecol .subtitle { display: none; }
+  body.side .status { padding: 4px 10px; }
+  body.side .srow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 0; padding: 4px 0; }
+  body.side .srow .dot { grid-row: 1 / span 2; }
+  body.side .srow .sname { grid-column: 2; }
+  body.side .srow .sdetail { grid-column: 2; grid-row: 2; justify-self: start; margin: 0; text-align: left; font-size: 12px; overflow-wrap: anywhere; }
+  body.side .srow .btn { grid-column: 3; grid-row: 1 / span 2; width: auto; padding-inline: 10px; }
+  body.side .maincol > .tabs { margin-top: 0; }
+}

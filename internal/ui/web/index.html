@@ -9,6 +9,7 @@
 </head>
 <body>
 <main>
+  <div class="sidecol">
   <header class="head">
     <img class="rabbit" id="rabbit" src="{{LOGO}}" alt="" width="38" height="47">
     <div class="titles">
@@ -58,6 +59,8 @@
     <div class="hint flat" id="updHint"></div>
   </section>
 
+  </div>
+  <div class="maincol">
   <nav class="tabs" id="tabs">
     <button data-tab="zone" data-t="tab.zone"></button>
     <button data-tab="own" data-t="tab.own"></button>
@@ -232,6 +235,7 @@
       <div class="note" data-t="zf.recHint"></div>
     </div>
   </section>
+  </div>
 </main>
 
 <!-- Настройки -->
@@ -259,6 +263,8 @@
     </nav>
     <label class="toggle"><input type="checkbox" data-set="logoAnim"><span class="sw"></span><span class="tl" data-t="set.logo"></span></label>
     <div class="hint" data-t="set.logoHint"></div>
+    <label class="toggle"><input type="checkbox" data-set="statusSide"><span class="sw"></span><span class="tl" data-t="set.side"></span></label>
+    <div class="hint" data-t="set.sideHint"></div>
 
     <div class="dash"></div>
     <div class="caption gold" data-t="sec.collect"></div>

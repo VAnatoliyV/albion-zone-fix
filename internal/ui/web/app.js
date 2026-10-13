@@ -638,6 +638,7 @@ function applyLook() {
   const r = $('rabbit');
   if (!r.src.endsWith('/' + src)) r.src = src;
   r.classList.toggle('still', !st.logoAnim);
+  document.body.classList.toggle('side', !!st.statusSide);
 }
 document.addEventListener('visibilitychange', applyLook);
 window.ajVisible = v => { if (S) { S.windowHidden = !v; applyLook(); } };
