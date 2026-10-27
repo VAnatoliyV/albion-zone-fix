@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"albionzonefix/internal/app"
+	"albionzonefix/internal/chestlog"
 	"albionzonefix/internal/i18n"
 	"albionzonefix/internal/ownprices"
 	"albionzonefix/internal/receiver"
@@ -191,6 +192,8 @@ func (s *Server) Handler() http.Handler {
 		s.json(w, s.o.Shared.Get(r.Context(), r.URL.Query().Get("force") != ""))
 	})
 	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) { s.json(w, s.session()) })
+	mux.HandleFunc("POST /api/chestlog", s.chestLog)
+	mux.HandleFunc("POST /api/chest/save", s.saveChest)
 	mux.HandleFunc("POST /api/session/reset", func(w http.ResponseWriter, r *http.Request) { reply(w, s.a.ResetSession()) })
 	mux.HandleFunc("POST /api/collect", func(w http.ResponseWriter, r *http.Request) {
 		// save=1 — кнопка «Включить» на главной: запомнить и при следующем запуске.
@@ -349,6 +352,82 @@ func (s *Server) session() SessionReply {
 	}
 	rep.Exists, rep.Data = true, b
 	return rep
+}
+
+// chestLog сверяет вставленный лог сундука с логом лута текущей сессии.
+func (s *Server) chestLog(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
+		reply(w, err)
+		return
+	}
+	rows := chestlog.Parse(req.Text)
+	if len(rows) == 0 {
+		reply(w, errors.New("nolog"))
+		return
+	}
+	var sess struct {
+		Loot []chestlog.Loot `json:"loot"`
+	}
+	if s.o.SessionFile != "" {
+		if b, err := os.ReadFile(s.o.SessionFile); err == nil {
+			json.Unmarshal(b, &sess)
+		}
+	}
+	resDir := ""
+	if exe, err := os.Executable(); err == nil {
+		resDir = filepath.Dir(exe)
+	}
+	names, err := chestlog.Load(s.o.DataDir, resDir)
+	if err != nil {
+		reply(w, err)
+		return
+	}
+	s.json(w, chestlog.Reconcile(rows, sess.Loot, names))
+}
+
+// saveChest сохраняет снимок сундука текстом в папку «chests» каталога
+// данных и открывает её.
+func (s *Server) saveChest(w http.ResponseWriter, r *http.Request) {
+	text := r.FormValue("text")
+	if strings.TrimSpace(text) == "" || len(text) > 1<<20 {
+		reply(w, errors.New("пусто"))
+		return
+	}
+	dir := filepath.Join(s.o.DataDir, "chests")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		reply(w, err)
+		return
+	}
+	name := time.Now().Format("2006-01-02 15-04-05") + " " + safeFileName(r.FormValue("name")) + ".txt"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("\ufeff"+strings.ReplaceAll(text, "\n", "\r\n")), 0o644); err != nil {
+		reply(w, err)
+		return
+	}
+	if s.o.OpenFolder != nil {
+		s.o.OpenFolder(dir)
+	}
+	s.json(w, map[string]string{"file": name})
+}
+
+// safeFileName убирает из названия символы, запрещённые в именах файлов Windows.
+func safeFileName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`<>:"/\\|?*`, r) || r < 32 {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(s)
+	if len([]rune(s)) > 60 {
+		s = string([]rune(s)[:60])
+	}
+	if s == "" {
+		s = "chest"
+	}
+	return s
 }
 
 func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {

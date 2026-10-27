@@ -34,6 +34,7 @@ async function loadLang(l) {
   document.documentElement.lang = lang;
   document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
   document.querySelectorAll('[data-title]').forEach(el => { el.title = t(el.dataset.title); });
+  document.querySelectorAll('[data-ph]').forEach(el => { el.placeholder = t(el.dataset.ph); });
 }
 
 // Числа — с узким неразрывным пробелом между разрядами, как у мака.
@@ -98,15 +99,28 @@ function showTab(name) {
   try { localStorage.setItem('tab', name); } catch (e) {}
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   document.querySelectorAll('section.tab').forEach(s => { s.hidden = s.id !== 'tab-' + name; });
+  placeSessionSide();
+  applyLook();
   refreshTab();
 }
+
+// Во вкладке «Сессия» счётчик урона занимает всю правую часть, а итоги
+// (фейм, серебро, кнопка счётчика) уезжают в левую колонку под строки
+// состояния. В узком окне двух колонок нет — итоги стоят под счётчиком.
+const meterLayout = () => tab === 'session' && window.innerWidth >= 720;
+function placeSessionSide() {
+  const side = $('seSide');
+  const want = meterLayout() ? document.querySelector('.sidecol') : $('tab-session');
+  if (side.parentElement !== want) want.appendChild(side);
+}
+window.addEventListener('resize', () => { placeSessionSide(); applyLook(); });
 
 $('tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 
 function refreshTab() {
   if (tab === 'own') refreshOwn();
   else if (tab === 'shared') refreshShared(false);
-  else if (tab === 'session') refreshSession();
+  else if (tab === 'session' || tab === 'loot') refreshSession();
   else if (tab === 'zonefix') renderZoneFix();
   else if (tab === 'zone') renderZone();
 }
@@ -253,41 +267,235 @@ function renderSession() {
   const r = lastSession;
   if (!r) return;
   const f = r.exists ? r.data : null;
+  if (tab === 'loot') return renderLoot(f);
   const list = (f && f.fighters) || [];
   const total = list.reduce((a, x) => a + (x.damage || 0), 0);
   $('seBody').hidden = !f;
   if (f) {
+    const hours = Math.max(60, (f.updatedAt || 0) - (f.startedAt || 0)) / 3600;
     $('seFame').textContent = fmt(f.fame);
     $('seRespec').textContent = f.respec > 0 ? t('se.respec') + ' ' + fmt(f.respec) : '';
+    $('seGather').textContent = fmt(f.gatherFame);
+    $('seGatherHour').textContent = f.gatherFame > 0 ? t('se.perHour', fmt(f.gatherFame / hours)) : '';
     $('seLooted').textContent = fmt(f.silverLooted);
     $('seWallet').textContent = fmt(f.silverEarned);
     $('seCity').textContent = f.silverCity > 0 ? t('se.inCity') + ' ' + fmt(f.silverCity) : '';
-    $('seDamage').textContent = fmt(total);
-    const hours = Math.max(60, (f.updatedAt || 0) - (f.startedAt || 0)) / 3600;
     const parts = [t('se.lastEvent', ago(f.updatedAt)), t('se.famePerHour', fmt((f.fame || 0) / hours))];
     if (f.might > 0) parts.push(t('se.might', fmt(f.might)));
     if (f.silverBalance > 0) parts.push(t('se.balance', fmt(f.silverBalance)));
     $('seSummary').textContent = parts.join('  ·  ');
+    const g = (f.gathered || []).slice().sort((a, b) => b.n - a.n);
+    $('seGathered').hidden = !g.length;
+    if (g.length) setHTML($('seGathered'), g.map(x => `<div class="gitem" title="${esc(x.item)}">${icon(x.item)}<span>×${fmt(x.n)}</span></div>`).join(''));
     $('seUnknown').hidden = !(f.unknownHits > 0);
     if (f.unknownHits > 0) $('seUnknown').textContent = '⚠ ' + t('se.unknown', fmt(f.unknownHits), fmt(f.unknownSources));
-  }
+  } else $('seUnknown').hidden = true;
+  $('seHead').hidden = !list.length;
   $('seList').hidden = !list.length;
   const msg = !f ? t('se.never') : (!list.length ? t(r.running ? 'se.noDamageUp' : 'se.noDamageDown') : '');
   $('seMsg').hidden = !msg;
   $('seMsg').textContent = msg;
   if (list.length) {
-    setHTML($('seList'), list.map(x => {
+    $('seDamage').textContent = fmt(total);
+    const t0 = Math.min(...list.map(x => x.firstAt || Infinity)), t1 = Math.max(...list.map(x => x.lastAt || 0));
+    $('seDps').textContent = t('se.perSec', fmt(total / Math.max(1, t1 - t0)));
+    const top = list[0].damage || 1;
+    setHTML($('seList'), list.map((x, i) => {
       const share = total > 0 ? x.damage / total : 0;
       const dps = (x.damage || 0) / Math.max(1, (x.lastAt || 0) - (x.firstAt || 0));
-      const heal = x.heal > 0 ? `<div class="heal">${t('se.heal', fmt(x.heal))}</div>` : '';
-      return `<div class="item fighter">${icon(x.weapon, true)}<div class="ibody"><div class="itop"><span class="iname">${esc(x.name)}</span><span class="share">${Math.floor(share * 100)}%</span><span class="dmg">${fmt(x.damage)}</span><span class="dps">${t('se.perSec', fmt(dps))}</span></div><div class="bar"><i style="width:${(share * 100).toFixed(1)}%"></i></div>${heal}</div></div>`;
+      const heal = x.heal > 0 ? `<span class="heal">${t('se.heal', fmt(x.heal))}</span>` : '';
+      return `<div class="item fighter"><span class="rank">${i + 1}</span>${icon(x.weapon, true)}<div class="ibody"><div class="itop"><span class="iname">${esc(x.name)}</span>${heal}<span class="share">${Math.floor(share * 100)}%</span><span class="dmg">${fmt(x.damage)}</span><span class="dps">${t('se.perSec', fmt(dps))}</span></div><div class="bar"><i style="width:${(x.damage / top * 100).toFixed(1)}%"></i></div></div></div>`;
     }).join(''));
   }
-  $('btnReset').hidden = !f;
-  $('btnCopy').hidden = !f;
   $('btnCopy').disabled = !list.length;
   $('btnCopy').textContent = t(copied ? 'btn.copied' : 'btn.copy');
 }
+
+// --- «Лут» --------------------------------------------------------------------
+
+let lootWho = 'all';
+try { lootWho = localStorage.getItem('lootWho') || 'all'; } catch (e) {}
+let lootCopied = false;
+
+function lootRows(f) {
+  const q = $('lootSearch').value.trim().toLowerCase();
+  return ((f && f.loot) || []).filter(x => (lootWho !== 'me' || x.me) &&
+    (!q || [x.by, x.from, x.item, x.name].some(v => String(v || '').toLowerCase().includes(q)))).reverse();
+}
+const lootName = x => x.silver ? t('loot.silver') : (x.name || x.item || '?');
+
+let lootMode = 'log';
+try { lootMode = localStorage.getItem('lootMode') || 'log'; } catch (e) {}
+
+function renderLoot(f) {
+  document.querySelectorAll('#lootMode button').forEach(b => b.classList.toggle('on', b.dataset.mode === lootMode));
+  $('lootLogView').hidden = lootMode !== 'log';
+  $('lootChestView').hidden = lootMode !== 'chests';
+  $('lootCheckView').hidden = lootMode !== 'check';
+  if (lootMode === 'chests') return renderChests(f);
+  if (lootMode === 'check') return;
+  document.querySelectorAll('#lootWho button').forEach(b => b.classList.toggle('on', b.dataset.who === lootWho));
+  const all = (f && f.loot) || [];
+  const rows = lootRows(f);
+  const msg = !f ? t('se.never') : !all.length ? t(lastSession.running ? 'loot.emptyUp' : 'se.noDamageDown') : !rows.length ? t('loot.nothing') : '';
+  $('lootMsg').hidden = !msg;
+  $('lootMsg').textContent = msg;
+  $('lootList').hidden = !rows.length;
+  if (rows.length) setHTML($('lootList'), rows.slice(0, 400).map(x => {
+    const ic = x.silver ? '<span class="ico"><span class="licon coin"></span></span>' : icon(x.item);
+    const time = new Date(x.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `<div class="item lrow${x.me ? ' mine' : ''}">${ic}<div class="ibody"><div class="itop"><span class="iname">${esc(lootName(x))}</span><span class="lqty">×${fmt(x.n)}</span><span class="iwhere">${time}</span></div><div class="lwho"><b>${esc(x.by)}</b> ${t('loot.from')} ${esc(x.mob ? t('loot.mob') : (x.from || '?'))}</div></div></div>`;
+  }).join(''));
+  // кто сколько поднял — для дележа добычи
+  const by = {};
+  for (const x of rows) { const k = x.by || '?'; by[k] = by[k] || { items: 0, silver: 0 }; if (x.silver) by[k].silver += x.n; else by[k].items += x.n; }
+  const names = Object.keys(by).sort((a, b) => by[b].items - by[a].items);
+  $('lootBy').hidden = $('lootByCap').hidden = names.length < 2;
+  if (names.length > 1) setHTML($('lootBy'), names.map(n => `<div class="line"><span class="llabel">${esc(n)}</span><span class="lsecond">${by[n].silver ? t('loot.silverN', fmt(by[n].silver)) : ''}</span><span class="lval small">${t('loot.itemsN', fmt(by[n].items))}</span></div>`).join('<div class="dash"></div>'));
+  $('lootCopy').disabled = !rows.length;
+  $('lootCopy').textContent = t(lootCopied ? 'btn.copied' : 'btn.copy');
+}
+
+$('lootMode').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  lootMode = b.dataset.mode;
+  try { localStorage.setItem('lootMode', lootMode); } catch (e) {}
+  renderSession();
+});
+
+// --- «Сундуки»: что лежало в открытых сундуках, мешках и на трупах -------------
+
+const hhmm = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const itemName = x => x.name || x.item || '?';
+
+function chestTitle(c) {
+  if (c.kind === 'mob') return t('chest.mob');
+  if (c.kind === 'player') return t('chest.player', c.name || '?');
+  const n = c.name || '';
+  const r = n.includes('LEGENDARY') ? 'legendary' : n.includes('RARE') && !n.includes('UNCOMMON') ? 'rare' : n.includes('UNCOMMON') ? 'uncommon' : n.includes('COMMON') ? 'common' : '';
+  return r ? `${t('chest.chest')} · ${t('chest.r.' + r)}` : t('chest.chest');
+}
+
+// chestTaken — что из сундука забрали между первым и последним открытием и
+// кто это поднял (по логу лута за то же время).
+function chestTaken(c, loot) {
+  const now = {};
+  for (const x of c.now || []) now[x.item] = (now[x.item] || 0) + x.n;
+  const out = [];
+  for (const x of c.first || []) {
+    const n = x.n - (now[x.item] || 0);
+    if (n <= 0) continue;
+    const who = [...new Set(loot.filter(l => !l.silver && l.item === x.item && l.t >= c.t - 5 && l.t <= c.last + 600).map(l => l.by))];
+    out.push({ item: x.item, name: x.name, n, who });
+  }
+  return out;
+}
+
+function chestText(c, loot) {
+  const lines = [`${chestTitle(c)} — ${hhmm(c.t)}`, t('chest.had')];
+  for (const x of c.first || []) lines.push(`  ${itemName(x)} ×${x.n}`);
+  const taken = chestTaken(c, loot);
+  if (taken.length) {
+    lines.push(t('chest.taken'));
+    for (const x of taken) lines.push(`  ${itemName(x)} ×${x.n}${x.who.length ? ' — ' + x.who.join(', ') : ''}`);
+  }
+  return lines.join('\n');
+}
+
+let chestCopied = -1;
+function renderChests(f) {
+  const list = ((f && f.chests) || []).slice().reverse();
+  const loot = (f && f.loot) || [];
+  const msg = !f ? t('se.never') : !list.length ? t('chest.empty') : '';
+  $('chestMsg').hidden = !msg;
+  $('chestMsg').textContent = msg;
+  setHTML($('chestList'), list.slice(0, 60).map((c, i) => {
+    const total = (c.first || []).reduce((a, x) => a + x.n, 0);
+    const taken = chestTaken(c, loot);
+    const grid = (c.first || []).map(x => `<span class="citem" title="${esc(itemName(x))}">${icon(x.item)}<b>${fmt(x.n)}</b></span>`).join('');
+    const tk = taken.length ? `<div class="caption">${esc(t('chest.taken'))}</div><div class="ctaken">${taken.map(x => `<div class="ctrow">${icon(x.item)}<span class="iname">${esc(itemName(x))}</span><span class="lqty">×${fmt(x.n)}</span><span class="cwho">${esc(x.who.join(', ') || '?')}</span></div>`).join('')}</div>` : '';
+    return `<div class="panel lchest" data-i="${i}"><div class="chead"><span class="ctitle">${esc(chestTitle(c))}</span><span class="iwhere">${hhmm(c.t)} · ${t('loot.itemsN', fmt(total))}</span><span class="mspacer"></span><button class="btn ghost small" data-act="copy">${t(chestCopied === c.t * 1000 + c.id % 1000 ? 'btn.copied' : 'btn.copy')}</button><button class="btn ghost small" data-act="save">${t('chest.save')}</button></div><div class="cgrid">${grid}</div>${tk}</div>`;
+  }).join(''));
+}
+
+$('chestList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const f = lastSession && lastSession.data;
+  const list = ((f && f.chests) || []).slice().reverse();
+  const c = list[+b.closest('.lchest').dataset.i]; if (!c) return;
+  const text = chestText(c, (f && f.loot) || []);
+  if (b.dataset.act === 'copy') {
+    await copyText(text);
+    chestCopied = c.t * 1000 + c.id % 1000; renderSession();
+    setTimeout(() => { chestCopied = -1; renderSession(); }, 1600);
+  } else {
+    await post('/api/chest/save', { text, name: chestTitle(c) });
+  }
+});
+
+// --- «Сверка»: лог лута против лога сундука гильдии --------------------------
+
+let checkReport = null, checkCopied = false;
+function checkText(r) {
+  const lines = [];
+  for (const p of r.players) {
+    lines.push(`${p.name}: ${t('check.looted')} ${p.looted}, ${t('check.deposited')} ${p.deposited}` + (p.missingN ? `, ${t('check.missing')} ${p.missingN}` : ' ✓'));
+    for (const m of p.missing || []) lines.push(`  ${itemName(m)} ×${m.n}`);
+  }
+  return lines.join('\n');
+}
+
+function renderCheck() {
+  const r = checkReport;
+  $('checkCopy').hidden = !r || !r.players.length;
+  $('checkCopy').textContent = t(checkCopied ? 'btn.copied' : 'btn.copy');
+  if (!r) { setHTML($('checkResult'), ''); return; }
+  const notes = [t('check.summary', fmt(r.rows), fmt(r.deposits))];
+  if (r.old) notes.push(t('check.old', fmt(r.old)));
+  let html = `<div class="note small">${esc(notes.join(' '))}</div>`;
+  if (r.noLoot) html += `<div class="empty">${esc(t('check.noLoot'))}</div>`;
+  html += r.players.map(p => `<div class="panel cplayer${p.missingN ? ' bad' : ''}"><div class="chead"><span class="ctitle">${esc(p.name)}</span><span class="iwhere">${esc(t('check.looted'))} ${fmt(p.looted)} · ${esc(t('check.deposited'))} ${fmt(p.deposited)}</span><span class="mspacer"></span><span class="cmiss">${p.missingN ? esc(t('check.missing')) + ' ' + fmt(p.missingN) : '✓ ' + esc(t('check.allIn'))}</span></div>${(p.missing || []).length ? `<div class="cgrid">${p.missing.map(m => `<span class="citem" title="${esc(itemName(m))}">${icon(m.item)}<b>${fmt(m.n)}</b></span>`).join('')}</div>` : ''}</div>`).join('');
+  if (r.noPlayers && r.noPlayers.length) html += `<div class="note small">${esc(t('check.noPlayers', r.noPlayers.join(', ')))}</div>`;
+  if (r.unknown && r.unknown.length) html += `<div class="warn small">${esc(t('check.unknown', r.unknown.slice(0, 12).join(', ')))}</div>`;
+  setHTML($('checkResult'), html);
+}
+
+$('checkRun').onclick = async () => {
+  const text = $('checkText').value;
+  $('checkMsg').hidden = true;
+  if (!text.trim()) { $('checkMsg').hidden = false; $('checkMsg').textContent = t('check.nolog'); return; }
+  $('checkRun').disabled = true;
+  const { ok, j } = await post('/api/chestlog', { text }, true);
+  $('checkRun').disabled = false;
+  if (!ok) {
+    checkReport = null;
+    $('checkMsg').hidden = false;
+    $('checkMsg').textContent = j.error === 'nolog' ? t('check.nolog') : (j.error || t('err.generic'));
+  } else checkReport = j;
+  renderCheck();
+};
+$('checkCopy').onclick = async () => {
+  if (!checkReport) return;
+  await copyText(checkText(checkReport));
+  checkCopied = true; renderCheck();
+  setTimeout(() => { checkCopied = false; renderCheck(); }, 1600);
+};
+
+$('lootWho').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  lootWho = b.dataset.who;
+  try { localStorage.setItem('lootWho', lootWho); } catch (e) {}
+  renderSession();
+});
+$('lootSearch').addEventListener('input', () => renderSession());
+$('lootCopy').onclick = async () => {
+  const rows = lootRows(lastSession && lastSession.data);
+  if (!rows.length) return;
+  const time = x => new Date(x.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  await copyText(rows.map(x => `${time(x)} ${x.by} — ${lootName(x)} ×${x.n} (${t('loot.from')} ${x.mob ? t('loot.mob') : (x.from || '?')})`).join('\n'));
+  lootCopied = true; renderSession();
+  setTimeout(() => { lootCopied = false; renderSession(); }, 1600);
+};
 
 $('btnReset').onclick = async () => { await post('/api/session/reset'); refreshSession(); };
 $('btnCopy').onclick = async () => {
@@ -638,7 +846,8 @@ function applyLook() {
   const r = $('rabbit');
   if (!r.src.endsWith('/' + src)) r.src = src;
   r.classList.toggle('still', !st.logoAnim);
-  document.body.classList.toggle('side', !!st.statusSide);
+  document.body.classList.toggle('side', !!st.statusSide || tab === 'session' || tab === 'loot');
+  document.body.classList.toggle('meter', meterLayout());
 }
 document.addEventListener('visibilitychange', applyLook);
 window.ajVisible = v => { if (S) { S.windowHidden = !v; applyLook(); } };
@@ -833,7 +1042,7 @@ function renderAll() {
   renderUpdate();
   if (tab === 'zonefix') renderZoneFix();
   if (tab === 'zone') renderZone();
-  if (tab === 'session') renderSession();
+  if (tab === 'session' || tab === 'loot') renderSession();
   if (tab === 'shared') renderShared();
 }
 
@@ -845,13 +1054,13 @@ async function refresh() {
   if (S.lang && S.lang !== lang) await loadLang(S.lang);
   renderAll();
   tick++;
-  if (tab === 'own' || tab === 'session') refreshTab();
+  if (tab === 'own' || tab === 'session' || tab === 'loot') refreshTab();
   else if (tab === 'shared' && tick % 30 === 0) refreshShared(false);
 }
 
 (async () => {
   await loadLang('');
-  showTab(['own', 'shared', 'session', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
+  showTab(['own', 'shared', 'session', 'loot', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
   await refresh();
   setInterval(refresh, 2000);
 })();

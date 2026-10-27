@@ -55,9 +55,9 @@ button, select, input { font: inherit; color: inherit; }
 .alert.soft { background: #2d2614; border-color: #5d4a1d; color: var(--gold2); }
 
 /* вкладки: свой сегментный переключатель */
-.tabs { display: flex; border: 1px solid var(--line2); margin: 14px 0 12px; }
+.tabs { display: flex; border: 1px solid var(--line2); margin: 12px 0 10px; }
 .tabs button { flex: 1; background: var(--card2); border: 0; border-right: 1px solid var(--line2); color: var(--muted);
-  font: 600 13px var(--pix); letter-spacing: .5px; padding: 7px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  font: 600 12px var(--pix); letter-spacing: .5px; padding: 4px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs button:last-child { border-right: 0; }
 .tabs button:hover { color: var(--text); }
 .tabs button.on { background: var(--gold); color: var(--ongold); }
@@ -269,3 +269,64 @@ code { font-size: 11px; color: var(--muted); word-break: break-all; flex: 1; }
   body.side .srow .btn { grid-column: 3; grid-row: 1 / span 2; width: auto; padding-inline: 10px; }
   body.side .maincol > .tabs { margin-top: 0; }
 }
+
+/* Счётчик урона: шапка с итогом и строки покрупнее */
+.meterhead { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; }
+.meterhead .caption { margin: 0; }
+.mtotal { font: 600 22px var(--sys); color: var(--gold); font-variant-numeric: tabular-nums; }
+.mdps { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mspacer { flex: 1; }
+.list.meter { max-height: calc(100vh - 92px); min-height: 200px; padding: 2px 12px; }
+.meter .fighter { padding: 7px 0; }
+.meter .fighter .iname { font-size: 15px; }
+.meter .rank { width: 16px; text-align: right; font: 600 12px var(--pix); color: var(--muted); flex: none; }
+.meter .dmg { font-size: 16px; }
+.meter .dps { width: 76px; font-size: 12px; }
+.meter .share { width: 34px; text-align: right; }
+.meter .bar { height: 6px; margin-top: 5px; }
+.meter .bar i { height: 6px; }
+.meter .heal { margin: 0 6px 0 0; font-size: 12px; }
+#seSide .buttons { flex-direction: column; }
+#seSide { margin-top: 10px; }
+body.meter #seSide { margin-top: 12px; }
+body.meter #seSide .lines { margin-bottom: 6px; }
+body.meter #seSide .line { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 0; }
+body.meter #seSide .licon { grid-row: 1 / span 2; }
+body.meter #seSide .llabel { grid-column: 2; overflow: hidden; text-overflow: ellipsis; }
+body.meter #seSide .lsecond { grid-column: 2; grid-row: 2; font-size: 11px; }
+body.meter #seSide .lsecond:empty { display: none; }
+body.meter #seSide .lval { grid-column: 3; grid-row: 1 / span 2; font-size: 17px; }
+body.meter #seSide .note { margin-bottom: 8px; }
+.gathered { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.gitem { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* «Лут» */
+.lootctl { margin-top: 0; }
+.lootctl .tabs { margin: 0; flex: none; }
+.lootctl .tabs button { flex: none; padding: 4px 12px; overflow: visible; }
+.search { flex: 1; min-width: 120px; background: var(--card2); border: 1px solid var(--line2); padding: 5px 8px; }
+.list.loot { max-height: calc(100vh - 260px); }
+.lrow .lqty { font-weight: 600; color: var(--gold); font-variant-numeric: tabular-nums; }
+.lrow .lwho { font-size: 11.5px; color: var(--muted); }
+.lrow .lwho b { color: var(--text); font-weight: 600; }
+.lrow.mine .lwho b { color: var(--gold); }
+.lval.small { font-size: 14px; }
+
+/* «Лут» → «Сундуки» и «Сверка» */
+.lootmode { margin: 0 0 8px; }
+.lootmode button { flex: none; padding: 4px 14px; overflow: visible; }
+.lchest, .cplayer { padding: 8px 10px; margin-bottom: 8px; }
+.chead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chead .ctitle { font-weight: 600; color: var(--text); }
+.chead .btn { padding: 2px 10px; }
+.cgrid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.citem { position: relative; display: inline-flex; }
+.citem b { position: absolute; right: 1px; bottom: 0; font: 600 11px var(--pix); color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+.ctaken { margin-top: 2px; }
+.ctrow { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12.5px; }
+.ctrow .iname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctrow .cwho { color: var(--muted); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cplayer .cmiss { font-weight: 600; color: var(--green, #6c6); }
+.cplayer.bad .cmiss { color: var(--red, #e66); }
+textarea.chestlog { width: 100%; box-sizing: border-box; min-height: 90px; max-height: 200px; resize: vertical; background: var(--card2); color: var(--text); border: 1px solid var(--line2); padding: 6px 8px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+#lootCheckView .controls { margin: 6px 0 8px; }

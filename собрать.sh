@@ -26,6 +26,7 @@ ZAPRET_VER="1.10.3"
 OUT=dist/AlbionJournal
 RECV=../acp-prices-src # приёмник своих цен (тот же код, что у мака)
 ITEMS=../items_by_id.json # таблица предметов для счётчика урона (та же, что у мака)
+ITEMLOC=../albion-craft-profit/item_loc.json # названия на 9 языках для сверки лога сундука
 rm -rf dist && mkdir -p "$OUT/zapret/bin" dist/cache
 
 echo "тесты..."
@@ -80,6 +81,7 @@ OLIST="$PWD/dist/ocr-delete.nsh"
 cp README-RU.txt LICENSES.txt "$OUT/"
 cp TESTER-RU.txt dist/ # памятка тестеру рядом с выпуском (в zip и установщик не входит)
 cp "$ITEMS" "$OUT/items_by_id.json"
+cp "$ITEMLOC" "$OUT/item_loc.json"
 (cd dist && zip -qr AlbionJournal.zip AlbionJournal)
 rm -rf dist/cache
 

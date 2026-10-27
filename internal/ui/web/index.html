@@ -66,6 +66,7 @@
     <button data-tab="own" data-t="tab.own"></button>
     <button data-tab="shared" data-t="tab.shared"></button>
     <button data-tab="session" data-t="tab.session"></button>
+    <button data-tab="loot" data-t="tab.loot"></button>
     <button data-tab="zonefix" data-t="tab.zonefix"></button>
   </nav>
 
@@ -102,27 +103,74 @@
     </div>
   </section>
 
-  <!-- Сессия -->
+  <!-- Сессия: счётчик урона сверху на всю высоту, итоги — в боковой колонке
+       (app.js переносит #seSide в .sidecol, пока открыта эта вкладка) -->
   <section class="tab" id="tab-session" hidden>
-    <div id="seBody" hidden>
-      <div class="panel lines">
-        <div class="line"><span class="licon">★</span><span class="llabel" data-t="se.fame"></span><span class="lsecond" id="seRespec"></span><span class="lval" id="seFame">0</span></div>
-        <div class="dash"></div>
-        <div class="line"><span class="licon coin"></span><span class="llabel" data-t="se.looted"></span><span class="lsecond"></span><span class="lval" id="seLooted">0</span></div>
-        <div class="dash"></div>
-        <div class="line"><span class="licon">↗</span><span class="llabel" data-t="se.wallet"></span><span class="lsecond" id="seCity"></span><span class="lval" id="seWallet">0</span></div>
-        <div class="dash"></div>
-        <div class="line"><span class="licon">✦</span><span class="llabel" data-t="se.damage"></span><span class="lsecond"></span><span class="lval" id="seDamage">0</span></div>
-      </div>
-      <div class="note small" id="seSummary"></div>
-      <div class="warn small" id="seUnknown" hidden></div>
+    <div class="meterhead" id="seHead" hidden>
+      <span class="caption gold" data-t="se.damage"></span>
+      <span class="mtotal" id="seDamage">0</span>
+      <span class="mdps" id="seDps"></span>
+      <span class="mspacer"></span>
+      <button class="btn ghost small" id="btnCopy" data-t="btn.copy"></button>
+      <button class="btn ghost small" id="btnReset" data-t="btn.reset"></button>
     </div>
     <div class="empty" id="seMsg"></div>
-    <div class="panel list" id="seList" hidden></div>
-    <div class="buttons">
-      <button class="btn" id="btnFame2"></button>
-      <button class="btn ghost" id="btnReset" data-t="btn.reset"></button>
-      <button class="btn ghost" id="btnCopy" data-t="btn.copy"></button>
+    <div class="panel list meter" id="seList" hidden></div>
+    <div class="warn small" id="seUnknown" hidden></div>
+    <div id="seSide">
+      <div id="seBody" hidden>
+        <div class="panel lines">
+          <div class="line"><span class="licon">★</span><span class="llabel" data-t="se.fame"></span><span class="lsecond" id="seRespec"></span><span class="lval" id="seFame">0</span></div>
+          <div class="dash"></div>
+          <div class="line"><span class="licon">❀</span><span class="llabel" data-t="se.gather"></span><span class="lsecond" id="seGatherHour"></span><span class="lval" id="seGather">0</span></div>
+          <div class="dash"></div>
+          <div class="line"><span class="licon coin"></span><span class="llabel" data-t="se.looted"></span><span class="lsecond"></span><span class="lval" id="seLooted">0</span></div>
+          <div class="dash"></div>
+          <div class="line"><span class="licon">↗</span><span class="llabel" data-t="se.wallet"></span><span class="lsecond" id="seCity"></span><span class="lval" id="seWallet">0</span></div>
+        </div>
+        <div class="gathered" id="seGathered" hidden></div>
+        <div class="note small" id="seSummary"></div>
+      </div>
+      <div class="buttons">
+        <button class="btn" id="btnFame2"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Лут: кто что поднял за сессию, что было в сундуках и сверка с логом сундука -->
+  <section class="tab" id="tab-loot" hidden>
+    <nav class="tabs small lootmode" id="lootMode">
+      <button data-mode="log" data-t="loot.modeLog"></button>
+      <button data-mode="chests" data-t="loot.modeChests"></button>
+      <button data-mode="check" data-t="loot.modeCheck"></button>
+    </nav>
+    <div id="lootLogView">
+      <div class="controls lootctl">
+        <nav class="tabs small" id="lootWho">
+          <button data-who="all" data-t="loot.all"></button>
+          <button data-who="me" data-t="loot.me"></button>
+        </nav>
+        <input class="search" id="lootSearch" type="search" data-ph="loot.search">
+        <button class="btn ghost small" id="lootCopy" data-t="btn.copy"></button>
+      </div>
+      <div class="empty" id="lootMsg"></div>
+      <div class="panel list loot" id="lootList" hidden></div>
+      <div class="caption" id="lootByCap" data-t="loot.byPlayer" hidden></div>
+      <div class="panel lines" id="lootBy" hidden></div>
+    </div>
+    <div id="lootChestView" hidden>
+      <div class="empty" id="chestMsg"></div>
+      <div id="chestList"></div>
+    </div>
+    <div id="lootCheckView" hidden>
+      <p class="note small" data-t="check.how"></p>
+      <textarea class="chestlog" id="checkText" data-ph="check.paste" spellcheck="false"></textarea>
+      <div class="controls">
+        <button class="btn" id="checkRun" data-t="check.run"></button>
+        <button class="btn ghost small" id="checkCopy" data-t="btn.copy" hidden></button>
+      </div>
+      <div class="empty" id="checkMsg" hidden></div>
+      <div id="checkResult"></div>
     </div>
   </section>
 

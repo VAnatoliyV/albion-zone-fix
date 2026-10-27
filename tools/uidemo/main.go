@@ -198,6 +198,40 @@ func writeFakes(dir string) {
 			{"name": "Krolik", "weapon": "T6_2H_BOW", "damage": 412300, "heal": 0, "firstAt": now - 600, "lastAt": now - 60},
 			{"name": "Mayhem", "weapon": "T7_MAIN_SWORD@1", "damage": 298100, "heal": 12000, "firstAt": now - 620, "lastAt": now - 61},
 			{"name": "HolyCow", "weapon": "T6_MAIN_HOLYSTAFF", "damage": 40100, "heal": 388000, "firstAt": now - 640, "lastAt": now - 62},
+			{"name": "Rosa14", "weapon": "T5_2H_FIRESTAFF", "damage": 35600, "heal": 0, "firstAt": now - 500, "lastAt": now - 90},
+			{"name": "Bruno", "weapon": "T6_2H_HAMMER", "damage": 21900, "heal": 0, "firstAt": now - 480, "lastAt": now - 70},
+		},
+		"gatherFame": 214800,
+		"gathered": []map[string]any{
+			{"item": "T5_ORE", "n": 342}, {"item": "T4_WOOD", "n": 120}, {"item": "T6_FIBER", "n": 37},
+		},
+		"loot": []map[string]any{
+			{"t": now - 900, "by": "Krolik", "mob": true, "item": "T6_BAG", "name": "Master's Bag", "n": 1, "me": true},
+			{"t": now - 880, "by": "Mayhem", "mob": true, "silver": true, "n": 4210},
+			{"t": now - 600, "by": "HolyCow", "from": "Rosa14", "item": "T5_2H_FIRESTAFF@1", "name": "Expert's Fire Staff", "n": 1},
+			{"t": now - 590, "by": "Krolik", "from": "Rosa14", "item": "T5_POTION_HEAL", "name": "Major Healing Potion", "n": 5, "me": true},
+			{"t": now - 400, "by": "Mayhem", "mob": true, "item": "T4_RUNE", "name": "Adept's Rune", "n": 12},
+			{"t": now - 120, "by": "Krolik", "mob": true, "silver": true, "n": 8800, "me": true},
+			{"t": now - 300, "by": "Bruno", "from": "TREASURE", "item": "T6_MAIN_SWORD@2", "name": "Master's Broadsword", "n": 1},
+			{"t": now - 295, "by": "Rosa14", "from": "TREASURE", "item": "T6_ARTEFACT_2H_FIRESTAFF_HELL", "name": "Burning Orb", "n": 1},
+			{"t": now - 290, "by": "Bruno", "from": "TREASURE", "item": "T5_FIBER_LEVEL1@1", "name": "Uncommon Flax", "n": 30},
+		},
+		"chests": []map[string]any{
+			{"id": 9001, "t": now - 1500, "last": now - 1500, "kind": "mob",
+				"first": []map[string]any{{"item": "T6_BAG", "name": "Master's Bag", "n": 1}, {"item": "T4_RUNE", "name": "Adept's Rune", "n": 12}},
+				"now": []map[string]any{{"item": "T6_BAG", "name": "Master's Bag", "n": 1}, {"item": "T4_RUNE", "name": "Adept's Rune", "n": 12}}},
+			{"id": 9002, "t": now - 320, "last": now - 280, "kind": "chest", "name": "TREASURE_SOLO_RARE",
+				"first": []map[string]any{
+					{"item": "T6_MAIN_SWORD@2", "name": "Master's Broadsword", "n": 1},
+					{"item": "T6_ARTEFACT_2H_FIRESTAFF_HELL", "name": "Burning Orb", "n": 1},
+					{"item": "T5_FIBER_LEVEL1@1", "name": "Uncommon Flax", "n": 30},
+					{"item": "T6_POTION_HEAL", "name": "Grandmaster's Healing Potion", "n": 4},
+					{"item": "T5_SOUL", "name": "Expert's Soul", "n": 7},
+					{"item": "T4_HEAD_CLOTH_SET2", "name": "Adept's Cleric Cowl", "n": 1}},
+				"now": []map[string]any{
+					{"item": "T6_POTION_HEAL", "name": "Grandmaster's Healing Potion", "n": 4},
+					{"item": "T5_SOUL", "name": "Expert's Soul", "n": 7},
+					{"item": "T4_HEAD_CLOTH_SET2", "name": "Adept's Cleric Cowl", "n": 1}}},
 		},
 	}
 	b, _ = json.Marshal(session)

@@ -321,7 +321,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 	html, _ := webFS.ReadFile("web/index.html")
 	js, _ := webFS.ReadFile("web/app.js")
 	used := map[string]bool{}
-	for _, m := range regexp.MustCompile(`data-t(?:itle)?="([^"]+)"`).FindAllStringSubmatch(string(html), -1) {
+	for _, m := range regexp.MustCompile(`data-(?:t|title|ph)="([^"]+)"`).FindAllStringSubmatch(string(html), -1) {
 		used[m[1]] = true
 	}
 	for _, m := range regexp.MustCompile(`\bt\('([a-zA-Z]+\.[a-zA-Z0-9]+)'`).FindAllStringSubmatch(string(js), -1) {
@@ -329,7 +329,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 	}
 	// ключи, собранные в JS из частей или переданные через переменную
 	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
-		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown",
+		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown", "loot.emptyUp",
 		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied",
 		// строки состояния «Авалон», «выключен» и способ показа карточки
 		"st.watching", "st.watchingNoMap", "st.avalonNoCapture", "st.waitingGame", "st.disabled", "btn.enable",
