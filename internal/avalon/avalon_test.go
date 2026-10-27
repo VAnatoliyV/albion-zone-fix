@@ -49,7 +49,7 @@ func TestRegion(t *testing.T) {
 			t.Errorf("Region(%q)=%q, ждал %q", addr, got, want)
 		}
 	}
-	if !RegionOK("") || !RegionOK("europe") || RegionOK("americas") || RegionOK("asia") {
+	if !RegionOK("") || !RegionOK("europe") || !RegionOK("americas") || RegionOK("asia") {
 		t.Fatal("RegionOK")
 	}
 }
@@ -69,7 +69,7 @@ func TestDecide(t *testing.T) {
 		{"дорога → дорога", pp(eu("TNL-001")), eu("TNL-002"), OK},
 		{"город → дорога", pp(eu("0000")), eu("TNL-002"), OK},
 		{"сервер неизвестен", pp(Place{Zone: "TNL-001"}), Place{Zone: "TNL-002"}, OK},
-		{"Америка", pp(Place{"TNL-001", "americas"}), Place{"TNL-002", "americas"}, NotEurope},
+		{"Америка — своя карта", pp(Place{"TNL-001", "americas"}), Place{"TNL-002", "americas"}, OK},
 		{"Азия, прошлая неизвестна", pp(Place{"TNL-001", ""}), Place{"TNL-002", "asia"}, NotEurope},
 		{"сменил сервер", pp(Place{"TNL-001", "americas"}), eu("TNL-002"), MixedRegion},
 		{"не дороги", pp(eu("0000")), eu("0004"), NotRoad},
@@ -118,11 +118,14 @@ func TestJSCodeAndURLs(t *testing.T) {
 			t.Errorf("JSCode(%q)=%q, ждал %q", in, got, want)
 		}
 	}
-	if MapURL("TNL-001") != "https://vanatoliyv.github.io/albion-craft-profit/#map/here=TNL-001" {
-		t.Fatal(MapURL("TNL-001"))
+	if MapURL("TNL-001", "europe") != "https://vanatoliyv.github.io/albion-craft-profit/#map/here=TNL-001" || MapURL("TNL-001", "") != MapURL("TNL-001", "europe") {
+		t.Fatal(MapURL("TNL-001", ""))
 	}
-	if MapURL("") != "https://vanatoliyv.github.io/albion-craft-profit/#map" || MapURL("'") != MapURL("") {
-		t.Fatal(MapURL(""))
+	if MapURL("", "") != "https://vanatoliyv.github.io/albion-craft-profit/#map" || MapURL("'", "") != MapURL("", "") {
+		t.Fatal(MapURL("", ""))
+	}
+	if MapURL("TNL-001", "americas") != "https://vanatoliyv.github.io/albion-avalon-na/#here=TNL-001" || MapURL("", "americas") != "https://vanatoliyv.github.io/albion-avalon-na/" {
+		t.Fatal(MapURL("TNL-001", "americas"))
 	}
 	if HereJS("TNL-001") != "window.avalonHere && window.avalonHere('TNL-001')" || HereJS("');") != "" {
 		t.Fatal(HereJS("TNL-001"))

@@ -126,7 +126,7 @@ func main() {
 		SessionFile: filepath.Join(dir, collector.SessionFileName),
 		OpenURL:     func(u string) { fmt.Println("открыть:", u) },
 		OpenFolder:  func(d string) { fmt.Println("папка:", d) },
-		OpenMap:     func() { fmt.Println("окно карты:", avalon.MapURL(a.HereCode())) },
+		OpenMap:     func() { fmt.Println("окно карты:", avalon.MapURL(a.HereCode(), a.HereRegion())) },
 		RecordKey:   fakeRecord(*rec),
 	})
 	if err != nil {

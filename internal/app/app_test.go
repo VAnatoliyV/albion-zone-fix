@@ -381,21 +381,23 @@ func TestPassNotEuropeAndSettingOff(t *testing.T) {
 	m := &fakeMap{}
 	a.AttachMap(m, nil)
 	t0 := time.Unix(5000, 0)
+	// Америка — своя карта: проход уходит с server=americas.
 	joinAt(a, t0, us, "TNL-001")
 	joinAt(a, t0.Add(time.Minute), us, "TNL-002")
-	if len(m.offered) != 0 || len(m.noted) != 1 || m.noted[0] != "TNL-001>TNL-002:region" {
+	if len(m.offered) != 1 || m.offered[0].Region != "americas" || len(m.noted) != 0 {
 		t.Fatalf("Америка: %+v %v", m.offered, m.noted)
 	}
-	if a.State().Here.Region != "americas" {
+	if a.State().Here.Region != "americas" || a.HereRegion() != "americas" {
 		t.Fatal(a.State().Here)
 	}
+	m.offered = nil
 	// Выключено в настройках — ничего.
 	s := a.Settings()
 	s.MapSend = false
 	a.SetSettings(s)
 	joinAt(a, t0.Add(2*time.Minute), eu, "TNL-003")
 	joinAt(a, t0.Add(3*time.Minute), eu, "TNL-004")
-	if len(m.offered) != 0 || len(m.noted) != 1 {
+	if len(m.offered) != 0 || len(m.noted) != 0 {
 		t.Fatalf("выключено: %+v %v", m.offered, m.noted)
 	}
 }

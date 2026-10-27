@@ -214,6 +214,16 @@ func (a *App) AttachMap(r MapReporter, onZone func(code string)) {
 	a.mapRep, a.onZone = r, onZone
 }
 
+// HereRegion — сервер игры, на котором сейчас игрок ("" — неизвестен).
+func (a *App) HereRegion() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.here == nil {
+		return ""
+	}
+	return a.here.Region
+}
+
 // HereCode — код текущей зоны ("" — неизвестна).
 func (a *App) HereCode() string {
 	a.mu.Lock()

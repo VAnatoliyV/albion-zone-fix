@@ -25,6 +25,9 @@ const ServerURL = "https://129-80-180-213.sslip.io"
 // SiteURL — сайт с разделом «Карта Авалона».
 const SiteURL = "https://vanatoliyv.github.io/albion-craft-profit/"
 
+// AmericasURL — карта Авалона американского сервера, отдельный сайт.
+const AmericasURL = "https://vanatoliyv.github.io/albion-avalon-na/"
+
 // Zone — зона из справочника сайта и сервера (zones.json).
 type Zone struct {
 	Code string `json:"code"`
@@ -99,8 +102,9 @@ func Region(addr string) string {
 	return ""
 }
 
-// RegionOK — с этого сервера можно слать на карту: Европа или неизвестно.
-func RegionOK(r string) bool { return r == "" || r == "europe" }
+// RegionOK — с этого сервера можно слать на карту: у Европы и Америки свои
+// карты, неизвестный сервер (старые записи) считается Европой. Азии нет.
+func RegionOK(r string) bool { return r == "" || r == "europe" || r == "americas" }
 
 // Place — где игрок: код зоны и сервер игры.
 type Place struct {
@@ -122,7 +126,7 @@ const (
 	OK          Skip = iota // проход, отправлять
 	First                   // первая зона после запуска
 	Same                    // та же зона (переподключение)
-	NotEurope               // сервер игры не Европа
+	NotEurope               // сервер игры без своей карты (Азия)
 	MixedRegion             // зоны с разных серверов (сменил сервер)
 	Unknown                 // зоны нет в справочнике
 	NotRoad                 // ни одна из зон не дорога Авалона
@@ -207,10 +211,18 @@ func JSCode(code string) string {
 	return sb.String()
 }
 
-// MapURL — раздел карты на сайте с подсвеченной зоной.
-func MapURL(code string) string {
+// MapURL — карта своего сервера с подсвеченной зоной: Европа — раздел #map
+// основного сайта, Америка — отдельный сайт.
+func MapURL(code, region string) string {
+	c := JSCode(code)
+	if region == "americas" {
+		if c == "" {
+			return AmericasURL
+		}
+		return AmericasURL + "#here=" + c
+	}
 	u := SiteURL + "#map"
-	if c := JSCode(code); c != "" {
+	if c != "" {
 		u += "/here=" + c
 	}
 	return u

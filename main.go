@@ -443,7 +443,7 @@ func main() {
 		OpenURL:    desktop.OpenURL,
 		OpenFolder: desktop.OpenFolder,
 		OpenMap: func() {
-			u := avalon.MapURL(a.HereCode())
+			u := avalon.MapURL(a.HereCode(), a.HereRegion())
 			if d := dp.Load(); d != nil {
 				d.OpenMap(u)
 			} else {
