@@ -21,7 +21,11 @@ const Lines = 40
 // идут: поддержке они не нужны, а людям незачем ими светить. Тот же список,
 // что у мака (Поддержка.игровые).
 var Game = []string{"Персонаж рядом", "имя", "баланс", "Серебро", "урон",
-	"лечение", "Фейм", "Свободка", "Updating player", "Поднял"}
+	"лечение", "Фейм", "Свободка", "Updating player", "Поднял", "Лут:", "Сбор:"}
+
+// Noise — служебный шум сборщика цен: при выключенных ценах он заполнял
+// весь хвост журнала одной и той же ошибкой отправки.
+var Noise = []string{"to ingest", "Successfully sent ingest", "127.0.0.1:1/"}
 
 // Info — текст для тикета.
 func Info(version, osVersion, logPath, home string) string {
@@ -56,6 +60,11 @@ func Clean(lines []string, n int) []string {
 }
 
 func isGame(l string) bool {
+	for _, w := range Noise {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
 	for _, w := range Game {
 		if strings.Contains(l, w) {
 			return true

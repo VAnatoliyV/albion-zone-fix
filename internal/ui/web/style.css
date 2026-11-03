@@ -330,3 +330,27 @@ body.meter #seSide .note { margin-bottom: 8px; }
 .cplayer.bad .cmiss { color: var(--red, #e66); }
 textarea.chestlog { width: 100%; box-sizing: border-box; min-height: 90px; max-height: 200px; resize: vertical; background: var(--card2); color: var(--text); border: 1px solid var(--line2); padding: 6px 8px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
 #lootCheckView .controls { margin: 6px 0 8px; }
+
+/* «Сбор» */
+.gstats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 10px; }
+.gstat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.gnum { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.glabel { font-size: 11px; color: var(--muted); }
+.list.gather { max-height: calc(100vh - 300px); }
+.item.gres .iname { flex: 0 1 auto; font-size: 13px; }
+.item.gres .gn { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 6px; }
+.item.gres .isub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.gtiers { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.gtier { font-size: 11.5px; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gtier b { color: var(--text); font-weight: 600; margin-right: 2px; }
+@media (max-width: 560px) { .gstats { grid-template-columns: repeat(2, 1fr); } }
+
+/* Свободка — мелко под числом фейма, чуть жирнее */
+.line.fameline, body.meter #seSide .line.fameline { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; align-items: center; }
+.line.fameline .licon { grid-row: 1 / span 2; }
+.line.fameline .llabel { grid-column: 2; grid-row: 1; }
+.line.fameline .lval, body.meter #seSide .line.fameline .lval { grid-column: 3; grid-row: 1; justify-self: end; }
+.line.fameline .rl { grid-column: 2; grid-row: 2; }
+.line.fameline .rv { grid-column: 3; grid-row: 2; justify-self: end; }
+.lrespec { font-size: 12px; font-weight: 700; color: var(--gold2); font-variant-numeric: tabular-nums; }
+.lrespec[hidden] { display: none; }

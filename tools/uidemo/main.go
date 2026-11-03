@@ -203,7 +203,10 @@ func writeFakes(dir string) {
 		},
 		"gatherFame": 214800,
 		"gathered": []map[string]any{
-			{"item": "T5_ORE", "n": 342}, {"item": "T4_WOOD", "n": 120}, {"item": "T6_FIBER", "n": 37},
+			{"item": "T5_ORE", "name": "Expert's Ore", "n": 342, "hits": 61, "bonus": 38, "premium": 57, "fame": 128400, "firstAt": now - 5000, "lastAt": now - 300},
+			{"item": "T4_WOOD", "name": "Adept's Logs", "n": 120, "hits": 24, "bonus": 9, "premium": 20, "fame": 41200, "firstAt": now - 4200, "lastAt": now - 2600},
+			{"item": "T6_WOOD_LEVEL1@1", "name": "Uncommon Master's Logs", "n": 64, "hits": 12, "bonus": 6, "premium": 10, "fame": 52600, "firstAt": now - 2000, "lastAt": now - 1500},
+			{"item": "T8_FIBER_LEVEL1@1", "name": "Uncommon Elder's Cotton", "n": 37, "hits": 9, "bonus": 4, "premium": 6, "fame": 45200, "firstAt": now - 2400, "lastAt": now - 900},
 		},
 		"loot": []map[string]any{
 			{"t": now - 900, "by": "Krolik", "mob": true, "item": "T6_BAG", "name": "Master's Bag", "n": 1, "me": true},

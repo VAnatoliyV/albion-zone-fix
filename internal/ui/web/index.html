@@ -67,6 +67,7 @@
     <button data-tab="shared" data-t="tab.shared"></button>
     <button data-tab="session" data-t="tab.session"></button>
     <button data-tab="loot" data-t="tab.loot"></button>
+    <button data-tab="gather" data-t="tab.gather"></button>
     <button data-tab="zonefix" data-t="tab.zonefix"></button>
   </nav>
 
@@ -120,7 +121,7 @@
     <div id="seSide">
       <div id="seBody" hidden>
         <div class="panel lines">
-          <div class="line"><span class="licon">★</span><span class="llabel" data-t="se.fame"></span><span class="lsecond" id="seRespec"></span><span class="lval" id="seFame">0</span></div>
+          <div class="line fameline"><span class="licon">★</span><span class="llabel" data-t="se.fame"></span><span class="lval" id="seFame">0</span><span class="lrespec rl" id="seRespecLabel" data-t="se.respec" hidden></span><span class="lrespec rv" id="seRespec" hidden></span></div>
           <div class="dash"></div>
           <div class="line"><span class="licon">❀</span><span class="llabel" data-t="se.gather"></span><span class="lsecond" id="seGatherHour"></span><span class="lval" id="seGather">0</span></div>
           <div class="dash"></div>
@@ -134,6 +135,26 @@
       <div class="buttons">
         <button class="btn" id="btnFame2"></button>
       </div>
+    </div>
+  </section>
+
+  <!-- Сбор: что собрано за сессию и сколько фейма дал каждый ресурс -->
+  <section class="tab" id="tab-gather" hidden>
+    <div class="empty" id="gaMsg"></div>
+    <div id="gaBody" hidden>
+      <div class="gstats">
+        <div class="gstat"><span class="gnum gold" id="gaFame">0</span><span class="glabel" data-t="ga.fame"></span></div>
+        <div class="gstat"><span class="gnum" id="gaHour">0</span><span class="glabel" data-t="ga.perHour"></span></div>
+        <div class="gstat"><span class="gnum" id="gaCount">0</span><span class="glabel" data-t="ga.count"></span></div>
+        <div class="gstat"><span class="gnum" id="gaBonus">0</span><span class="glabel" data-t="ga.bonus"></span></div>
+      </div>
+      <div class="controls">
+        <span class="caption" data-t="ga.byRes"></span>
+        <span class="mspacer"></span>
+        <button class="btn ghost small" id="gaCopy" data-t="btn.copy"></button>
+      </div>
+      <div class="panel list gather" id="gaList"></div>
+      <p class="note small" data-t="ga.note"></p>
     </div>
   </section>
 

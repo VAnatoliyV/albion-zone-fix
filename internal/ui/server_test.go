@@ -329,7 +329,7 @@ func TestPageKeysInDictionary(t *testing.T) {
 	}
 	// ключи, собранные в JS из частей или переданные через переменную
 	for _, k := range []string{"ago.min", "ago.hour", "ago.day", "st.on", "st.off", "st.ready", "st.loading", "btn.stop", "btn.start", "btn.startCollect",
-		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown", "loot.emptyUp",
+		"btn.startFame", "own.hintUp", "own.hintDown", "sh.failed", "sh.loading", "sh.local", "sh.remote", "se.noDamageUp", "se.noDamageDown", "loot.emptyUp", "ga.emptyUp", "ga.t.wood", "ga.t.ore", "ga.t.fiber", "ga.t.hide", "ga.t.rock",
 		"btn.copied", "btn.copy", "zf.recStop", "zf.rec", "set.shareOn", "set.shareOff", "sup.copied",
 		// строки состояния «Авалон», «выключен» и способ показа карточки
 		"st.watching", "st.watchingNoMap", "st.avalonNoCapture", "st.waitingGame", "st.disabled", "btn.enable",

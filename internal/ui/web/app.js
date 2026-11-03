@@ -120,7 +120,7 @@ $('tabs').addEventListener('click', e => { const b = e.target.closest('button');
 function refreshTab() {
   if (tab === 'own') refreshOwn();
   else if (tab === 'shared') refreshShared(false);
-  else if (tab === 'session' || tab === 'loot') refreshSession();
+  else if (tab === 'session' || tab === 'loot' || tab === 'gather') refreshSession();
   else if (tab === 'zonefix') renderZoneFix();
   else if (tab === 'zone') renderZone();
 }
@@ -268,13 +268,15 @@ function renderSession() {
   if (!r) return;
   const f = r.exists ? r.data : null;
   if (tab === 'loot') return renderLoot(f);
+  if (tab === 'gather') return renderGather(f);
   const list = (f && f.fighters) || [];
   const total = list.reduce((a, x) => a + (x.damage || 0), 0);
   $('seBody').hidden = !f;
   if (f) {
     const hours = Math.max(60, (f.updatedAt || 0) - (f.startedAt || 0)) / 3600;
     $('seFame').textContent = fmt(f.fame);
-    $('seRespec').textContent = f.respec > 0 ? t('se.respec') + ' ' + fmt(f.respec) : '';
+    $('seRespec').textContent = fmt(f.respec || 0);
+    $('seRespec').hidden = $('seRespecLabel').hidden = !(f.respec > 0);
     $('seGather').textContent = fmt(f.gatherFame);
     $('seGatherHour').textContent = f.gatherFame > 0 ? t('se.perHour', fmt(f.gatherFame / hours)) : '';
     $('seLooted').textContent = fmt(f.silverLooted);
@@ -310,6 +312,83 @@ function renderSession() {
   $('btnCopy').disabled = !list.length;
   $('btnCopy').textContent = t(copied ? 'btn.copied' : 'btn.copy');
 }
+
+// --- «Сбор» --------------------------------------------------------------------
+
+let gaCopied = false;
+
+// Тип и тир ресурса по коду: T6_WOOD_LEVEL1@1 → дерево, 6.1.
+const GA_TYPES = ['WOOD', 'ORE', 'FIBER', 'HIDE', 'ROCK'];
+function gaParse(code) {
+  const m = /^T(\d)_([A-Z]+)(?:_LEVEL(\d))?(?:@(\d))?/.exec(code || '');
+  if (!m) return { type: '', tier: 0, ench: 0 };
+  return { type: GA_TYPES.includes(m[2]) ? m[2] : '', tier: +m[1], ench: +(m[4] || m[3] || 0) };
+}
+
+// Строки вкладки: по одной на тип ресурса, внутри — тиры. Всё, что не
+// дерево/руда/волокно/шкура/камень, идёт отдельной строкой как есть.
+function gatherRows(f) {
+  const groups = new Map();
+  for (const x of (f && f.gathered) || []) {
+    const p = gaParse(x.item);
+    const key = p.type || x.item;
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = { key, type: p.type, name: p.type ? t('ga.t.' + p.type.toLowerCase()) : itemName(x), item: x.item, top: -1, n: 0, fame: 0, bonus: 0, premium: 0, hits: 0, firstAt: Infinity, lastAt: 0, tiers: new Map() });
+    const lvl = p.tier * 10 + p.ench;
+    if (lvl > g.top) { g.top = lvl; g.item = x.item; }
+    g.n += x.n || 0; g.fame += x.fame || 0; g.bonus += x.bonus || 0; g.premium += x.premium || 0; g.hits += x.hits || 0;
+    if (x.firstAt) g.firstAt = Math.min(g.firstAt, x.firstAt);
+    g.lastAt = Math.max(g.lastAt, x.lastAt || 0);
+    const tk = p.tier ? `${p.tier}.${p.ench}` : '';
+    if (tk) {
+      const tr = g.tiers.get(tk) || { k: tk, lvl, n: 0, fame: 0 };
+      tr.n += x.n || 0; tr.fame += x.fame || 0;
+      g.tiers.set(tk, tr);
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.fame - a.fame || b.n - a.n);
+}
+
+function renderGather(f) {
+  const rows = gatherRows(f);
+  const msg = !f ? t('se.never') : !rows.length ? t(lastSession.running ? 'ga.emptyUp' : 'se.noDamageDown') : '';
+  $('gaMsg').hidden = !msg;
+  $('gaMsg').textContent = msg;
+  $('gaBody').hidden = !rows.length;
+  if (!rows.length) return;
+  const fame = Math.max(f.gatherFame || 0, rows.reduce((a, x) => a + x.fame, 0));
+  const t0 = Math.min(...rows.map(x => x.firstAt)), t1 = Math.max(...rows.map(x => x.lastAt));
+  const hours = Math.max(60, isFinite(t0) ? t1 - t0 : 0) / 3600;
+  $('gaFame').textContent = fmt(fame);
+  $('gaHour').textContent = fmt(fame / hours);
+  $('gaCount').textContent = fmt(rows.reduce((a, x) => a + x.n, 0));
+  $('gaBonus').textContent = '+' + fmt(rows.reduce((a, x) => a + x.bonus + x.premium, 0));
+  const top = Math.max(1, ...rows.map(x => x.fame));
+  setHTML($('gaList'), rows.map(x => {
+    const tiers = [...x.tiers.values()].sort((a, b) => a.lvl - b.lvl)
+      .map(tr => `<span class="gtier" title="${esc(tr.fame ? t('ga.perUnit', fmt(tr.fame / Math.max(1, tr.n))) : '')}"><b>${tr.k}</b> ×${fmt(tr.n)}</span>`).join('');
+    const extra = [];
+    if (x.bonus) extra.push(t('ga.bonusN', fmt(x.bonus)));
+    if (x.premium) extra.push(t('ga.premiumN', fmt(x.premium)));
+    if (x.hits) extra.push(t('ga.hits', fmt(x.hits)));
+    if (x.n > 0 && x.fame) extra.push(t('ga.perUnit', fmt(x.fame / x.n)));
+    const share = fame > 0 ? Math.round(x.fame / fame * 100) + '%' : '';
+    const h = Math.max(60, (x.lastAt || 0) - (isFinite(x.firstAt) ? x.firstAt : 0)) / 3600;
+    return `<div class="item gres">${icon(x.type ? 'T8_' + x.type : x.item, true)}<div class="ibody"><div class="itop"><span class="iname">${esc(x.name)}</span><span class="gn">×${fmt(x.n)}</span><span class="share">${share}</span><span class="dmg">${fmt(x.fame)}</span><span class="dps">${t('se.perHour', fmt(x.fame / h))}</span></div><div class="bar"><i style="width:${(x.fame / top * 100).toFixed(1)}%"></i></div>${tiers ? `<div class="gtiers">${tiers}</div>` : ''}<div class="isub">${esc(extra.join(' · '))}</div></div></div>`;
+  }).join(''));
+  $('gaCopy').textContent = t(gaCopied ? 'btn.copied' : 'btn.copy');
+}
+
+$('gaCopy').addEventListener('click', async () => {
+  const f = lastSession && lastSession.exists ? lastSession.data : null;
+  const rows = gatherRows(f);
+  if (!rows.length) return;
+  const lines = [`${t('ga.fame')}: ${fmt(f.gatherFame || 0)}`];
+  for (const x of rows) lines.push(`${x.name} ×${x.n} — ${fmt(x.fame)}` + (x.tiers.size ? ` (${[...x.tiers.values()].sort((a, b) => a.lvl - b.lvl).map(tr => tr.k + ' ×' + tr.n).join(', ')})` : ''));
+  await copyText(lines.join('\n'));
+  gaCopied = true; renderGather(f);
+  setTimeout(() => { gaCopied = false; renderGather(f); }, 1500);
+});
 
 // --- «Лут» --------------------------------------------------------------------
 
@@ -846,7 +925,7 @@ function applyLook() {
   const r = $('rabbit');
   if (!r.src.endsWith('/' + src)) r.src = src;
   r.classList.toggle('still', !st.logoAnim);
-  document.body.classList.toggle('side', !!st.statusSide || tab === 'session' || tab === 'loot');
+  document.body.classList.toggle('side', !!st.statusSide || tab === 'session' || tab === 'loot' || tab === 'gather');
   document.body.classList.toggle('meter', meterLayout());
 }
 document.addEventListener('visibilitychange', applyLook);
@@ -1042,7 +1121,7 @@ function renderAll() {
   renderUpdate();
   if (tab === 'zonefix') renderZoneFix();
   if (tab === 'zone') renderZone();
-  if (tab === 'session' || tab === 'loot') renderSession();
+  if (tab === 'session' || tab === 'loot' || tab === 'gather') renderSession();
   if (tab === 'shared') renderShared();
 }
 
@@ -1054,13 +1133,13 @@ async function refresh() {
   if (S.lang && S.lang !== lang) await loadLang(S.lang);
   renderAll();
   tick++;
-  if (tab === 'own' || tab === 'session' || tab === 'loot') refreshTab();
+  if (tab === 'own' || tab === 'session' || tab === 'loot' || tab === 'gather') refreshTab();
   else if (tab === 'shared' && tick % 30 === 0) refreshShared(false);
 }
 
 (async () => {
   await loadLang('');
-  showTab(['own', 'shared', 'session', 'loot', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
+  showTab(['own', 'shared', 'session', 'loot', 'gather', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
   await refresh();
   setInterval(refresh, 2000);
 })();
