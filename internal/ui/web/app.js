@@ -1141,5 +1141,10 @@ async function refresh() {
   await loadLang('');
   showTab(['own', 'shared', 'session', 'loot', 'gather', 'zone', 'zonefix'].includes(tab) ? tab : 'zone');
   await refresh();
-  setInterval(refresh, 2000);
+  // На вкладке «Сессия» чаще: урон должен появляться почти сразу после удара.
+  // Остальные вкладки — как раньше, раз в 2 с.
+  let last = Date.now();
+  setInterval(() => {
+    if (tab === 'session' || Date.now() - last >= 1900) { last = Date.now(); refresh(); }
+  }, 700);
 })();
